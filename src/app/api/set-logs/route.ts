@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs } from "@/db/schema";
+import { workoutLogs, setLogs, machines } from "@/db/schema";
 
 interface SetLogPayload {
   date: string; // ISO date, e.g. "2026-07-04"
@@ -35,6 +35,13 @@ export async function POST(request: NextRequest) {
         .insert(workoutLogs)
         .values({ date: body.date, programDay: body.programDay ?? null })
         .returning();
+    }
+
+    // Machine/Smith/cable loads are context-bound (spec §9) — auto-register a bare
+    // machine row on first use rather than requiring a separate "add machine" step
+    // before logging is possible. Users can enrich brand/pulley-ratio/etc. later.
+    if (body.machineId) {
+      await tx.insert(machines).values({ id: body.machineId }).onConflictDoNothing();
     }
 
     const [setLog] = await tx

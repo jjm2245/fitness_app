@@ -1,7 +1,7 @@
 # Decisions log
 
-Running record of choices made while building Milestones 1-2 (spec §15) and
-anywhere this session's implementation deviates from or fills a gap in
+Running record of choices made while building Milestones 1-2 and 4 (spec §15)
+and anywhere this session's implementation deviates from or fills a gap in
 `fitness-agent-spec.md`. Newest at the bottom.
 
 ## Environment & runtime
@@ -132,3 +132,60 @@ instead; confirmed `/api/substitutions` returns `bodyweight_pullup` as a ranked
 candidate for `cable_lat_pulldown`. Test data was reset afterward
 (`truncate workout_logs cascade`) so the DB is left in a clean seeded-only
 state.
+
+## Milestone 4: Logging UX
+
+- **A default Program is now seeded** (`seedDefaultProgram` in `src/db/seed.ts`,
+  runs as part of `npm run db:seed`), built from the seed's own
+  `in_current_routine` exercises grouped by their `day` tag, using **static
+  novice defaults** from spec §1 (3 working sets, "8-12" rep range, RIR 2) —
+  not the Phase-1 "programming agent" that adapts a program from goals/days via
+  an LLM. This just gives the logging UX something concrete to log against;
+  `splitType: "ppl_pf_current_routine"` makes that explicit. Re-running the
+  seed replaces all `program_exercises` rows for this program, so it stays in
+  sync with edits to the seed file.
+- Conditioning-only days (`cardio`) get `targetSets: 1`, `repRange: null`,
+  `rirTarget: null` — their prescription is duration/incline/speed from the
+  exercise's own `params`, not a rep scheme.
+- **Concrete load suggestions**: `classifyProgression`'s `increase_load` signal
+  now includes a `suggestedLoad` (current top-set load + a default increment
+  per `load_type`: 5 lb for free_weight/bodyweight/cable, 10 lb for
+  smith/machine_selectorized/plate_loaded). These increments are **assumptions**,
+  not measured per-machine values — the `machines` table has room for real
+  pulley-ratio/plate-increment data later; this is a reasonable placeholder so
+  "increase load" is actionable today instead of just a label.
+- **Stall-buster** (`src/core/stallBuster.ts`) implements spec §7's ordered
+  ladder (micro-load bump → add rep target → add set → adjust rest → deload)
+  as a fixed constant, and picks the current rung by **counting trailing flat
+  sessions directly from session history** (`countTrailingFlatSessions`) rather
+  than persisting "which rung are we on" in a new table. A stall exactly at the
+  detection threshold starts at rung 0; each session beyond that escalates one
+  rung, capping at deload. This keeps the feature fully derived from existing
+  data (no new schema, no state to get out of sync).
+- **Machines auto-register on first use**: `POST /api/set-logs` now inserts a
+  bare `machines` row (`onConflictDoNothing`) before the `set_log` insert,
+  closing the gap noted after Milestone 1-2 where an unknown `machine_id`
+  caused a 500 (FK violation). Brand/pulley-ratio/etc. can be filled in later;
+  logging is no longer blocked on a separate "register a machine" step.
+- **"Same as last time" machine recall** (spec §16's named UX risk): the log
+  page remembers the last `machine_id` used per exercise in `localStorage` and
+  pre-fills it. Implemented as a `useState` lazy initializer reading
+  `localStorage` directly (guarded by `typeof window`) rather than an effect —
+  React's `set-state-in-effect` lint rule (new in this Next/React version)
+  flags synchronous `setState` calls inside effect bodies even for a plain
+  synchronous read; a lazy initializer is the idiomatic fix and avoids an
+  unnecessary extra render.
+- Program days are shown in a **fixed display order**
+  (`legs_shoulders, chest_triceps, back_biceps, abs, cardio`) hardcoded in
+  `GET /api/program`, matching the seed's actual day tags. Anything else would
+  sort alphabetically after — there's no generic "day scheduling" concept yet
+  since that's Phase-1 programming-agent territory.
+- Verified in an actual browser (not just curl): logged in via the real
+  `/login` form, exercised the day picker, added a set to a fresh machine ID
+  and confirmed the UI showed the live `new_machine_baseline` message, and
+  switched to the `cardio` day to confirm conditioning-only exercises render
+  without a set-entry form. This caught a real bug — the "offline queue
+  pending" counter wasn't refreshing after the fire-and-forget `flushQueue()`
+  call in `ExerciseCard.handleAddSet`, so it stuck at 1 even after a
+  successful sync. Fixed by awaiting the flush and refreshing the count again
+  afterward.

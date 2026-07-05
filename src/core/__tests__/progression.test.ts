@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyProgression, sessionVolumeLoad, type SessionSummary } from "../progression";
+import {
+  classifyProgression,
+  sessionVolumeLoad,
+  defaultLoadIncrement,
+  suggestNextLoad,
+  type SessionSummary,
+} from "../progression";
 
 const context = { repRangeMax: 12, targetRir: 2 };
 
@@ -33,6 +39,29 @@ describe("classifyProgression", () => {
     ];
     const result = classifyProgression(sessions, context);
     expect(result.type).toBe("increase_load");
+  });
+
+  it("includes a concrete suggestedLoad on increase_load when loadType is provided", () => {
+    const sessions = [
+      session("2026-07-01", [[100, 10, 2]]),
+      session("2026-07-03", [[100, 12, 1]]),
+    ];
+    const result = classifyProgression(sessions, { ...context, loadType: "free_weight" });
+    expect(result.type).toBe("increase_load");
+    if (result.type === "increase_load") {
+      expect(result.suggestedLoad).toBe(105);
+    }
+  });
+
+  it("omits suggestedLoad when loadType isn't provided", () => {
+    const sessions = [
+      session("2026-07-01", [[100, 10, 2]]),
+      session("2026-07-03", [[100, 12, 1]]),
+    ];
+    const result = classifyProgression(sessions, context);
+    if (result.type === "increase_load") {
+      expect(result.suggestedLoad).toBeUndefined();
+    }
   });
 
   it("recommends progressing when reps rise at the same load", () => {
@@ -81,5 +110,25 @@ describe("classifyProgression", () => {
     ];
     const result = classifyProgression(sessions, context);
     expect(result.type).toBe("hold");
+  });
+});
+
+describe("defaultLoadIncrement / suggestNextLoad", () => {
+  it("uses smaller increments for cable/free-weight/bodyweight than machine/smith/plate-loaded", () => {
+    expect(defaultLoadIncrement("free_weight")).toBe(5);
+    expect(defaultLoadIncrement("cable")).toBe(5);
+    expect(defaultLoadIncrement("bodyweight")).toBe(5);
+    expect(defaultLoadIncrement("smith")).toBe(10);
+    expect(defaultLoadIncrement("machine_selectorized")).toBe(10);
+    expect(defaultLoadIncrement("plate_loaded")).toBe(10);
+  });
+
+  it("falls back to a conservative default for an unrecognized load type", () => {
+    expect(defaultLoadIncrement("unknown_type")).toBe(5);
+  });
+
+  it("adds the increment to the current load", () => {
+    expect(suggestNextLoad(100, "smith")).toBe(110);
+    expect(suggestNextLoad(45, "free_weight")).toBe(50);
   });
 });

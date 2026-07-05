@@ -10,7 +10,7 @@ export interface SessionSummary {
 
 export type ProgressionSignal =
   | { type: "insufficient_data" }
-  | { type: "increase_load"; reason: string }
+  | { type: "increase_load"; reason: string; suggestedLoad?: number }
   | { type: "progressing"; reason: string }
   | { type: "true_stall"; reason: string }
   | { type: "regression"; reason: string }
@@ -22,6 +22,29 @@ export interface ProgressionContext {
   /** Sessions of flat load+reps at target effort before calling a true stall. Spec
    * doesn't pin an exact N; 3 is a documented default (see DECISIONS.md). */
   stallSessionThreshold?: number;
+  /** When provided, an increase_load signal includes a concrete suggestedLoad
+   * (current top-set load + the smallest step for this load type). */
+  loadType?: string;
+}
+
+// Rough default load-increment-per-side-or-total assumptions per load type, since
+// the app doesn't yet track actual per-machine plate/pin increments (spec §9's
+// "Machine" model has room for this later). Documented in DECISIONS.md.
+const DEFAULT_LOAD_INCREMENTS: Record<string, number> = {
+  free_weight: 5,
+  bodyweight: 5,
+  smith: 10,
+  cable: 5,
+  machine_selectorized: 10,
+  plate_loaded: 10,
+};
+
+export function defaultLoadIncrement(loadType: string): number {
+  return DEFAULT_LOAD_INCREMENTS[loadType] ?? 5;
+}
+
+export function suggestNextLoad(currentLoad: number, loadType: string): number {
+  return currentLoad + defaultLoadIncrement(loadType);
 }
 
 export function sessionVolumeLoad(session: SessionSummary): number {
@@ -30,11 +53,11 @@ export function sessionVolumeLoad(session: SessionSummary): number {
 
 /** The heaviest working set in a session, used as the representative set for
  * load/rep-range comparisons (spec's "top of rep range" language is per-set). */
-function topSet(session: SessionSummary) {
+export function topSet(session: SessionSummary) {
   return session.workingSets.reduce((best, s) => (s.load > best.load ? s : best));
 }
 
-function sessionsFromOldestToNewest(sessions: SessionSummary[]): SessionSummary[] {
+export function sessionsFromOldestToNewest(sessions: SessionSummary[]): SessionSummary[] {
   return [...sessions].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
@@ -65,6 +88,9 @@ export function classifyProgression(
     return {
       type: "increase_load",
       reason: "Hit top of rep range at or below target RIR — add the smallest load step and reset reps.",
+      suggestedLoad: context.loadType
+        ? suggestNextLoad(latestTop.load, context.loadType)
+        : undefined,
     };
   }
 

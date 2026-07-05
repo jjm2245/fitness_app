@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fitness-app",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [
+        "-c",
+        "source /Users/apple/opt/anaconda3/etc/profile.d/conda.sh && conda activate fitness-app && cd /Users/apple/fitness_app && npm run dev"
+      ],
+      "port": 3000
+    }
+  ]
+}

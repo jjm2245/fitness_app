@@ -1,9 +1,11 @@
 # Fitness Agent
 
-Private, single-user training log + progression engine. This session builds
-Milestones 1-2 from `fitness-agent-spec.md`: schema, seed data, and the
-deterministic core (no LLM, no nutrition/recovery/photos yet). See
-`DECISIONS.md` for the choices made and why.
+Private, single-user training log + progression engine. Built so far:
+Milestones 1-2 from `fitness-agent-spec.md` (schema, seed data, deterministic
+core) and Milestone 4 (logging UX — a default program, day-based session
+logging, live progression/stall-buster feedback, auto machine registration).
+No LLM, no nutrition/recovery/photos yet. See `DECISIONS.md` for the choices
+made and why.
 
 ## Prerequisites
 
@@ -48,14 +50,18 @@ Postgres running with the seed already loaded).
 ## Layout
 
 - `src/db/schema.ts` — Drizzle schema (spec §6).
-- `src/db/seed.ts` + `src/db/seed-data/` — idempotent seed loader.
+- `src/db/seed.ts` + `src/db/seed-data/` — idempotent seed loader; also seeds a
+  default Program from the current routine (`ppl_pf_current_routine`).
 - `src/core/` — deterministic engine: volume/set-counting, volume-load
-  progression + stall detection, substitution filter, per-machine tracking.
-  Pure functions, DB-agnostic, unit-tested.
+  progression + stall detection + load suggestions, stall-buster ladder,
+  substitution filter, per-machine tracking. Pure functions, DB-agnostic,
+  unit-tested.
 - `src/lib/coreAdapters.ts` — maps DB rows to the core's plain types.
 - `src/app/api/` — thin routes wiring the core to Postgres (`exercises`,
-  `set-logs`, `progression`, `substitutions`, `auth/login`).
-- `src/app/log` — minimal offline-capable logging page (IndexedDB outbox via
-  `src/lib/offlineQueue.ts`), no UI polish.
+  `program`, `set-logs`, `progression`, `substitutions`, `auth/login`).
+- `src/app/log` — day-based session logging page: pick a day, see prescribed
+  exercises + targets, log sets fast, get live progression/stall-buster
+  feedback. Offline-capable via the IndexedDB outbox in
+  `src/lib/offlineQueue.ts`. No UI polish.
 - `src/proxy.ts` — device-passcode gate (Next 16's "proxy", formerly
   "middleware").

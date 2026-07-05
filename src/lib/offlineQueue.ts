@@ -2,7 +2,7 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
-interface PendingSet {
+export interface PendingSet {
   id?: number;
   date: string;
   exerciseId: string;

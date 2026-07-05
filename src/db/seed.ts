@@ -8,6 +8,8 @@ import {
   exercises,
   exerciseMuscles,
   exerciseSubstitutions,
+  programs,
+  programExercises,
   loadTypeEnum,
   movementPatternEnum,
 } from "./schema";
@@ -158,7 +160,55 @@ async function loadSeed() {
     }
   }
 
+  await seedDefaultProgram(seed);
+
   console.log("Seed complete.");
+}
+
+// Static novice defaults straight from spec §1 (~8-12 hard sets/week landmark,
+// ~1-3 RIR working sets) applied per exercise. This is NOT the Phase-1 "programming
+// agent" (goal + days -> adaptive program) — it's a fixed program seeded from the
+// user's actual current routine so Milestone 4's logging UX has something concrete
+// to log against. See DECISIONS.md.
+const DEFAULT_SPLIT_TYPE = "ppl_pf_current_routine";
+const DEFAULT_TARGET_SETS = 3;
+const DEFAULT_REP_RANGE = "8-12";
+const DEFAULT_RIR_TARGET = "2";
+
+async function seedDefaultProgram(seed: SeedFile) {
+  let [program] = await db
+    .select()
+    .from(programs)
+    .where(eq(programs.splitType, DEFAULT_SPLIT_TYPE));
+
+  if (!program) {
+    [program] = await db.insert(programs).values({ splitType: DEFAULT_SPLIT_TYPE }).returning();
+  }
+
+  await db.delete(programExercises).where(eq(programExercises.programId, program.id));
+
+  const routineExercises = seed.exercises.filter((ex) => ex.in_current_routine);
+  const orderByDay = new Map<string, number>();
+
+  for (const ex of routineExercises) {
+    const day = ex.day ?? "unassigned";
+    const orderIndex = orderByDay.get(day) ?? 0;
+    orderByDay.set(day, orderIndex + 1);
+
+    await db.insert(programExercises).values({
+      programId: program.id,
+      day,
+      exerciseId: ex.id,
+      targetSets: ex.conditioning_only ? 1 : DEFAULT_TARGET_SETS,
+      repRange: ex.conditioning_only ? null : DEFAULT_REP_RANGE,
+      rirTarget: ex.conditioning_only ? null : DEFAULT_RIR_TARGET,
+      orderIndex,
+    });
+  }
+
+  console.log(
+    `Seeded program "${DEFAULT_SPLIT_TYPE}" with ${routineExercises.length} program-exercise rows across ${orderByDay.size} days.`
+  );
 }
 
 loadSeed()
