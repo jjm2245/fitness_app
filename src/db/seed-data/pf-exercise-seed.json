@@ -1,0 +1,482 @@
+{
+  "meta": {
+    "title": "Exercise seed graph — anchored to current PPL routine (Planet Fitness)",
+    "spec_version": "aligns with fitness-agent-spec v0.3",
+    "purpose": "Portable seed for the exercise graph. Each node = one exercise, tagged so the app can query substitutions (same movement_pattern + overlapping muscles + available equipment), count volume per muscle, and enforce balance. Hand-tagged for correctness; format is schema-agnostic so Claude Code can ingest into whatever tables it scaffolds.",
+    "emphasis_convention": "primary muscle = 1.0; meaningful secondary = 0.5; minor secondary = 0.3. Used for fractional set-counting.",
+    "load_type_values": ["free_weight", "bodyweight", "smith", "cable", "machine_selectorized", "plate_loaded"],
+    "portable_rule": "free_weight & bodyweight = true (loads transfer across gyms); smith/cable/machine = false (context-bound, track per machine_id).",
+    "notes": [
+      "SETS/REPS ARE INTENTIONALLY OMITTED — those are prescribed by the programming engine, not stored on the exercise node.",
+      "BACK CAUTION: exercises tagged affected_structures:['lumbar_spine'] are the ones to watch / swap first given the user's minor back discomfort. Deadlift is the highest spinal-load movement in the routine.",
+      "PF REALITY: standard Planet Fitness has NO loadable barbell or rack. 'Free-weight' squat/deadlift here = dumbbell or Smith. Smith bar ≈ 15-20 lb (counterweight), not 45 — its loads don't transfer to a real barbell.",
+      "DUMBBELL CAP ≈ 75 lb at PF — pressing/rowing may hit the ceiling eventually; substitutions note machine fallbacks.",
+      "ABS feed core volume; CARDIO is conditioning-only (not in per-muscle volume math).",
+      "ASSUMPTIONS I made (confirm if wrong): 'weight calf raises' = standing dumbbell or Smith calf raise; 'weight incline bench' = dumbbell or Smith incline (no free barbell at PF); 'free-weight deadlift' = dumbbell/Smith RDL-style, not a floor barbell deadlift.",
+      "SUBSTITUTIONS listed as {name, equipment, load_type, when} are candidate pointers; a few reference exercises not yet fully specced as their own nodes — Claude Code can promote them to full nodes when it expands the graph."
+    ]
+  },
+
+  "muscles": [
+    "quadriceps", "hamstrings", "glutes", "adductors", "gluteus_medius_minimus", "calves",
+    "spinal_erectors", "upper_traps", "lateral_deltoid", "anterior_deltoid", "posterior_deltoid",
+    "rhomboids", "mid_traps", "lats", "biceps", "brachialis", "brachioradialis", "triceps",
+    "upper_chest", "chest", "forearms", "rectus_abdominis", "obliques", "hip_flexors"
+  ],
+
+  "movement_patterns": [
+    "squat", "hinge", "knee_extension", "knee_flexion", "hip_adduction", "hip_abduction",
+    "plantarflexion", "horizontal_push", "incline_push", "vertical_push", "dip",
+    "horizontal_pull", "vertical_pull", "shrug", "lateral_raise", "rear_delt_fly", "chest_fly",
+    "elbow_flexion", "elbow_extension", "spinal_extension", "trunk_flexion", "trunk_rotation",
+    "conditioning"
+  ],
+
+  "exercises": [
+    {
+      "id": "machine_leg_extension", "name": "Machine leg extension", "day": "legs_shoulders",
+      "movement_pattern": "knee_extension",
+      "primary_muscles": [{"muscle": "quadriceps", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["leg_extension_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Sissy squat", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "no machine"},
+        {"name": "Smith / DB squat (compound stand-in)", "equipment": ["smith_machine"], "load_type": "smith", "when": "quad volume via compound", "in_routine": true}
+      ]
+    },
+    {
+      "id": "machine_leg_curl", "name": "Machine leg curl", "day": "legs_shoulders",
+      "movement_pattern": "knee_flexion",
+      "primary_muscles": [{"muscle": "hamstrings", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "calves", "emphasis": 0.3}],
+      "equipment_required": ["leg_curl_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Dumbbell / Smith RDL (hip-hinge hamstring)", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "no curl machine", "note": "lumbar load — see back caution"},
+        {"name": "Nordic curl (assisted)", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "weighted_calf_raise", "name": "Weighted calf raise", "day": "legs_shoulders",
+      "movement_pattern": "plantarflexion",
+      "primary_muscles": [{"muscle": "calves", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Smith calf raise", "equipment": ["smith_machine"], "load_type": "smith", "when": "want heavier load"},
+        {"name": "Leg-press calf press", "equipment": ["leg_press_machine"], "load_type": "machine_selectorized", "when": "machine available"},
+        {"name": "Single-leg bodyweight calf raise", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "hip_adductor_machine", "name": "Hip adductor machine", "day": "legs_shoulders",
+      "movement_pattern": "hip_adduction",
+      "primary_muscles": [{"muscle": "adductors", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["adductor_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Cable hip adduction", "equipment": ["cable"], "load_type": "cable", "when": "no machine"},
+        {"name": "Copenhagen plank", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "hip_abductor_machine", "name": "Hip abductor machine", "day": "legs_shoulders",
+      "movement_pattern": "hip_abduction",
+      "primary_muscles": [{"muscle": "gluteus_medius_minimus", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "glutes", "emphasis": 0.3}],
+      "equipment_required": ["abductor_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Cable hip abduction", "equipment": ["cable"], "load_type": "cable", "when": "no machine"},
+        {"name": "Banded lateral walk / seated band abduction", "equipment": ["band"], "load_type": "bodyweight", "when": "travel / bands only"}
+      ]
+    },
+    {
+      "id": "smith_squat", "name": "Smith machine / free-weight squat", "day": "legs_shoulders",
+      "movement_pattern": "squat",
+      "primary_muscles": [{"muscle": "quadriceps", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "glutes", "emphasis": 0.5}, {"muscle": "hamstrings", "emphasis": 0.3}, {"muscle": "adductors", "emphasis": 0.3}, {"muscle": "spinal_erectors", "emphasis": 0.3}],
+      "equipment_required": ["smith_machine"], "load_type": "smith",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true,
+      "notes": "PF free-weight version = DB goblet squat. Smith squat: walk feet forward, lean back into the bar (do not use free-barbell form) to protect the lower back.",
+      "substitutions": [
+        {"name": "DB goblet squat", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "free-weight / no Smith", "portable": true},
+        {"name": "Leg press", "equipment": ["leg_press_machine"], "load_type": "machine_selectorized", "when": "back-friendly loading", "note": "preferred if back flares"},
+        {"name": "Hack squat machine", "equipment": ["hack_squat_machine"], "load_type": "machine_selectorized", "when": "machine available"},
+        {"name": "Bodyweight / tempo squat", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "shoulder_shrug", "name": "Shoulder shrug", "day": "legs_shoulders",
+      "movement_pattern": "shrug",
+      "primary_muscles": [{"muscle": "upper_traps", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "forearms", "emphasis": 0.3}],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Smith shrug", "equipment": ["smith_machine"], "load_type": "smith", "when": "want heavier load"},
+        {"name": "Cable shrug", "equipment": ["cable"], "load_type": "cable", "when": "constant tension"}
+      ]
+    },
+    {
+      "id": "lateral_raise", "name": "Lateral raise (cable single-arm or DB both)", "day": "legs_shoulders",
+      "movement_pattern": "lateral_raise",
+      "primary_muscles": [{"muscle": "lateral_deltoid", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "upper_traps", "emphasis": 0.3}],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "variants": ["cable_single_arm", "db_both_arms"],
+      "substitutions": [
+        {"name": "Cable lateral raise", "equipment": ["cable"], "load_type": "cable", "when": "constant tension", "in_routine": true},
+        {"name": "Machine lateral raise", "equipment": ["lateral_raise_machine"], "load_type": "machine_selectorized", "when": "available"},
+        {"name": "Band lateral raise", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "reverse_pec_dec", "name": "Reverse pec dec", "day": "legs_shoulders",
+      "movement_pattern": "rear_delt_fly",
+      "primary_muscles": [{"muscle": "posterior_deltoid", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "rhomboids", "emphasis": 0.5}, {"muscle": "mid_traps", "emphasis": 0.5}],
+      "equipment_required": ["pec_dec_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Cable reverse fly / face pull", "equipment": ["cable"], "load_type": "cable", "when": "no machine"},
+        {"name": "DB bent-over reverse fly", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "free-weight", "portable": true},
+        {"name": "Band pull-apart", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "shoulder_press", "name": "Shoulder press", "day": "legs_shoulders",
+      "movement_pattern": "vertical_push",
+      "primary_muscles": [{"muscle": "anterior_deltoid", "emphasis": 1.0}, {"muscle": "lateral_deltoid", "emphasis": 0.5}],
+      "secondary_muscles": [{"muscle": "triceps", "emphasis": 0.5}, {"muscle": "upper_traps", "emphasis": 0.3}],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Machine shoulder press", "equipment": ["shoulder_press_machine"], "load_type": "machine_selectorized", "when": "available"},
+        {"name": "Smith shoulder press", "equipment": ["smith_machine"], "load_type": "smith", "when": "want fixed path"},
+        {"name": "Pike push-up", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+
+    {
+      "id": "machine_chest_press", "name": "Machine chest press", "day": "chest_triceps",
+      "movement_pattern": "horizontal_push",
+      "primary_muscles": [{"muscle": "chest", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "triceps", "emphasis": 0.5}, {"muscle": "anterior_deltoid", "emphasis": 0.5}],
+      "equipment_required": ["chest_press_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "DB bench press", "equipment": ["dumbbell", "bench"], "load_type": "free_weight", "when": "free-weight", "portable": true},
+        {"name": "Smith flat press", "equipment": ["smith_machine", "bench"], "load_type": "smith", "when": "fixed path"},
+        {"name": "Push-up (weighted/tempo)", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "pec_dec", "name": "Pec dec (chest fly)", "day": "chest_triceps",
+      "movement_pattern": "chest_fly",
+      "primary_muscles": [{"muscle": "chest", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "anterior_deltoid", "emphasis": 0.3}],
+      "equipment_required": ["pec_dec_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Cable fly", "equipment": ["cable"], "load_type": "cable", "when": "no machine"},
+        {"name": "DB fly", "equipment": ["dumbbell", "bench"], "load_type": "free_weight", "when": "free-weight", "portable": true}
+      ]
+    },
+    {
+      "id": "incline_bench_press", "name": "Weighted incline bench press", "day": "chest_triceps",
+      "movement_pattern": "incline_push",
+      "primary_muscles": [{"muscle": "upper_chest", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "anterior_deltoid", "emphasis": 0.5}, {"muscle": "triceps", "emphasis": 0.5}],
+      "equipment_required": ["dumbbell", "incline_bench"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "PF: DB incline or Smith incline (no free barbell).",
+      "substitutions": [
+        {"name": "Smith incline press", "equipment": ["smith_machine", "incline_bench"], "load_type": "smith", "when": "heavier / fixed path"},
+        {"name": "Incline machine press", "equipment": ["incline_press_machine"], "load_type": "machine_selectorized", "when": "available"},
+        {"name": "Decline push-up", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "bodyweight_dips", "name": "Bodyweight dips", "day": "chest_triceps",
+      "movement_pattern": "dip",
+      "primary_muscles": [{"muscle": "chest", "emphasis": 1.0}, {"muscle": "triceps", "emphasis": 0.5}],
+      "secondary_muscles": [{"muscle": "anterior_deltoid", "emphasis": 0.5}],
+      "equipment_required": ["dip_station"], "load_type": "bodyweight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "Lean forward = chest emphasis; upright = triceps emphasis.",
+      "substitutions": [
+        {"name": "Assisted dip machine", "equipment": ["assisted_dip_machine"], "load_type": "machine_selectorized", "when": "need assistance"},
+        {"name": "Bench dip", "equipment": ["bench"], "load_type": "bodyweight", "when": "no dip station"}
+      ]
+    },
+    {
+      "id": "cable_tricep_pushdown", "name": "Cable tricep pushdown (V-bar)", "day": "chest_triceps",
+      "movement_pattern": "elbow_extension",
+      "primary_muscles": [{"muscle": "triceps", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["cable"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Band pushdown", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"},
+        {"name": "DB overhead extension", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "free-weight", "portable": true}
+      ]
+    },
+    {
+      "id": "cable_overhead_tricep_ext", "name": "Cable overhead tricep extension (rope + low-to-high)", "day": "chest_triceps",
+      "movement_pattern": "elbow_extension",
+      "primary_muscles": [{"muscle": "triceps", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["cable"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "Overhead position biases the triceps long head (stretch emphasis).",
+      "substitutions": [
+        {"name": "DB overhead extension", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "free-weight", "portable": true},
+        {"name": "Overhead band extension", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "skull_crusher", "name": "Weighted skull crusher", "day": "chest_triceps",
+      "movement_pattern": "elbow_extension",
+      "primary_muscles": [{"muscle": "triceps", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["dumbbell", "bench"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "PF: DBs or fixed EZ/straight bar.",
+      "substitutions": [
+        {"name": "Cable overhead extension", "equipment": ["cable"], "load_type": "cable", "when": "constant tension", "in_routine": true},
+        {"name": "Close-grip Smith press", "equipment": ["smith_machine", "bench"], "load_type": "smith", "when": "compound triceps"}
+      ]
+    },
+
+    {
+      "id": "machine_preacher_curl", "name": "Machine preacher curl", "day": "back_biceps",
+      "movement_pattern": "elbow_flexion",
+      "primary_muscles": [{"muscle": "biceps", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "brachialis", "emphasis": 0.3}],
+      "equipment_required": ["preacher_curl_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "DB preacher / spider curl", "equipment": ["dumbbell", "incline_bench"], "load_type": "free_weight", "when": "no machine", "portable": true},
+        {"name": "Cable curl", "equipment": ["cable"], "load_type": "cable", "when": "constant tension", "in_routine": true}
+      ]
+    },
+    {
+      "id": "cable_hammer_curl", "name": "Cable hammer curl", "day": "back_biceps",
+      "movement_pattern": "elbow_flexion",
+      "primary_muscles": [{"muscle": "brachialis", "emphasis": 1.0}, {"muscle": "biceps", "emphasis": 0.5}],
+      "secondary_muscles": [{"muscle": "brachioradialis", "emphasis": 0.5}, {"muscle": "forearms", "emphasis": 0.3}],
+      "equipment_required": ["cable"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "DB hammer curl", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "free-weight", "portable": true},
+        {"name": "Band hammer curl", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "cable_bicep_curl", "name": "Cable bicep curl / Bayesian curl", "day": "back_biceps",
+      "movement_pattern": "elbow_flexion",
+      "primary_muscles": [{"muscle": "biceps", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "brachialis", "emphasis": 0.3}],
+      "equipment_required": ["cable"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "Bayesian (behind-the-body cable) biases the stretched position of the biceps.",
+      "substitutions": [
+        {"name": "DB incline curl", "equipment": ["dumbbell", "incline_bench"], "load_type": "free_weight", "when": "free-weight stretch bias", "portable": true},
+        {"name": "Band curl", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "bodyweight_pullup", "name": "Bodyweight pull-up", "day": "back_biceps",
+      "movement_pattern": "vertical_pull",
+      "primary_muscles": [{"muscle": "lats", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "biceps", "emphasis": 0.5}, {"muscle": "rhomboids", "emphasis": 0.5}, {"muscle": "mid_traps", "emphasis": 0.3}],
+      "equipment_required": ["pullup_bar"], "load_type": "bodyweight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Assisted pull-up machine", "equipment": ["assisted_pullup_machine"], "load_type": "machine_selectorized", "when": "need assistance"},
+        {"name": "Cable lat pulldown", "equipment": ["cable"], "load_type": "cable", "when": "load control", "in_routine": true}
+      ]
+    },
+    {
+      "id": "cable_lat_pulldown", "name": "Cable lat pulldown", "day": "back_biceps",
+      "movement_pattern": "vertical_pull",
+      "primary_muscles": [{"muscle": "lats", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "biceps", "emphasis": 0.5}, {"muscle": "rhomboids", "emphasis": 0.3}],
+      "equipment_required": ["lat_pulldown"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true,
+      "notes": "Pulley ratio varies by machine — track per machine_id; loads don't compare across pulldown stations.",
+      "substitutions": [
+        {"name": "Bodyweight / assisted pull-up", "equipment": ["pullup_bar"], "load_type": "bodyweight", "when": "no cable", "in_routine": true},
+        {"name": "Band pulldown", "equipment": ["band"], "load_type": "bodyweight", "when": "travel"}
+      ]
+    },
+    {
+      "id": "cable_close_grip_row", "name": "Cable seated close-grip row", "day": "back_biceps",
+      "movement_pattern": "horizontal_pull",
+      "primary_muscles": [{"muscle": "lats", "emphasis": 0.5}, {"muscle": "rhomboids", "emphasis": 1.0}, {"muscle": "mid_traps", "emphasis": 0.5}],
+      "secondary_muscles": [{"muscle": "biceps", "emphasis": 0.5}, {"muscle": "posterior_deltoid", "emphasis": 0.3}],
+      "equipment_required": ["cable"], "load_type": "cable",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true,
+      "notes": "Keep a neutral spine; chest-supported alternatives are safer if the back is cranky.",
+      "substitutions": [
+        {"name": "Chest-supported machine row", "equipment": ["row_machine"], "load_type": "machine_selectorized", "when": "back-friendly", "note": "preferred if back flares"},
+        {"name": "DB single-arm row (bench-supported)", "equipment": ["dumbbell", "bench"], "load_type": "free_weight", "when": "free-weight", "portable": true}
+      ]
+    },
+    {
+      "id": "back_extension", "name": "Back extension", "day": "back_biceps",
+      "movement_pattern": "spinal_extension",
+      "primary_muscles": [{"muscle": "spinal_erectors", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "glutes", "emphasis": 0.5}, {"muscle": "hamstrings", "emphasis": 0.5}],
+      "equipment_required": ["back_extension_bench"], "load_type": "bodyweight",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true,
+      "notes": "Directly loads the lower back — keep controlled, avoid hyperextension; first candidate to lighten/swap if back discomfort rises.",
+      "substitutions": [
+        {"name": "Bird-dog / dead-bug (anti-extension core)", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "back-friendly"},
+        {"name": "Glute bridge / hip thrust", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "posterior chain, low spinal load"}
+      ]
+    },
+    {
+      "id": "deadlift", "name": "Free-weight / Smith deadlift", "day": "back_biceps",
+      "movement_pattern": "hinge",
+      "primary_muscles": [{"muscle": "hamstrings", "emphasis": 1.0}, {"muscle": "glutes", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "spinal_erectors", "emphasis": 0.5}, {"muscle": "lats", "emphasis": 0.3}, {"muscle": "forearms", "emphasis": 0.3}, {"muscle": "upper_traps", "emphasis": 0.3}],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true,
+      "notes": "HIGHEST spinal load in the routine. PF has no loadable barbell — this is a DB or Smith RDL-style hinge. Given the user's back discomfort: prioritize form, moderate load, and treat as the first movement to regress/swap if the back flares.",
+      "substitutions": [
+        {"name": "Machine leg curl + hip thrust (split the hinge)", "equipment": ["leg_curl_machine"], "load_type": "machine_selectorized", "when": "back-friendly hamstring/glute work", "note": "preferred if back flares"},
+        {"name": "DB Romanian deadlift (lighter)", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "reduce spinal load", "portable": true},
+        {"name": "45-degree back extension", "equipment": ["back_extension_bench"], "load_type": "bodyweight", "when": "no hinge tolerance", "in_routine": true}
+      ]
+    },
+
+    {
+      "id": "hanging_leg_raise", "name": "Hanging leg raise (forearm-supported)", "day": "abs",
+      "movement_pattern": "trunk_flexion",
+      "primary_muscles": [{"muscle": "rectus_abdominis", "emphasis": 1.0}],
+      "secondary_muscles": [{"muscle": "hip_flexors", "emphasis": 0.5}, {"muscle": "obliques", "emphasis": 0.3}],
+      "equipment_required": ["captains_chair"], "load_type": "bodyweight",
+      "portable": true, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Lying weighted toe touch", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "no captain's chair", "in_routine": true},
+        {"name": "Reverse crunch", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only"}
+      ]
+    },
+    {
+      "id": "machine_ab_crunch", "name": "Machine ab crunch", "day": "abs",
+      "movement_pattern": "trunk_flexion",
+      "primary_muscles": [{"muscle": "rectus_abdominis", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["ab_crunch_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true,
+      "substitutions": [
+        {"name": "Cable crunch", "equipment": ["cable"], "load_type": "cable", "when": "no machine"},
+        {"name": "Full-extension / weighted crunch", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "bodyweight only", "in_routine": true}
+      ]
+    },
+    {
+      "id": "rotary_torso_machine", "name": "Rotary torso machine (both sides)", "day": "abs",
+      "movement_pattern": "trunk_rotation",
+      "primary_muscles": [{"muscle": "obliques", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["rotary_torso_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": true, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true,
+      "notes": "Loaded lumbar rotation — go light/controlled given back discomfort; consider anti-rotation (Pallof) as a safer alternative.",
+      "substitutions": [
+        {"name": "Russian twist (20 lb)", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "no machine", "in_routine": true},
+        {"name": "Cable Pallof press (anti-rotation)", "equipment": ["cable"], "load_type": "cable", "when": "back-friendly oblique work", "note": "safer for lumbar"}
+      ]
+    },
+    {
+      "id": "weighted_toe_touch", "name": "Lying weighted toe touch (20 lb)", "day": "abs",
+      "movement_pattern": "trunk_flexion",
+      "primary_muscles": [{"muscle": "rectus_abdominis", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true, "no_machine_alt": true,
+      "substitutions": [{"name": "Hanging leg raise", "equipment": ["captains_chair"], "load_type": "bodyweight", "when": "machine available", "in_routine": true}]
+    },
+    {
+      "id": "full_extension_crunch", "name": "Full-extension crunch", "day": "abs",
+      "movement_pattern": "trunk_flexion",
+      "primary_muscles": [{"muscle": "rectus_abdominis", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["bodyweight"], "load_type": "bodyweight",
+      "portable": true, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
+      "in_current_routine": true, "no_machine_alt": true,
+      "substitutions": [{"name": "Machine ab crunch", "equipment": ["ab_crunch_machine"], "load_type": "machine_selectorized", "when": "machine available", "in_routine": true}]
+    },
+    {
+      "id": "russian_twist_heel_touch", "name": "Russian twist (20 lb) or heel touches", "day": "abs",
+      "movement_pattern": "trunk_rotation",
+      "primary_muscles": [{"muscle": "obliques", "emphasis": 1.0}],
+      "secondary_muscles": [],
+      "equipment_required": ["dumbbell"], "load_type": "free_weight",
+      "portable": true, "unilateral": true, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
+      "in_current_routine": true, "no_machine_alt": true,
+      "notes": "Loaded rotation — Pallof press is a lower-lumbar-risk alternative.",
+      "substitutions": [{"name": "Cable Pallof press", "equipment": ["cable"], "load_type": "cable", "when": "back-friendly", "note": "safer for lumbar"}]
+    },
+
+    {
+      "id": "treadmill_incline_walk", "name": "Treadmill incline walk", "day": "cardio",
+      "movement_pattern": "conditioning",
+      "primary_muscles": [], "secondary_muscles": [],
+      "equipment_required": ["treadmill"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true, "conditioning_only": true,
+      "params": {"duration_min": 30, "incline": 12, "speed": 3},
+      "substitutions": [
+        {"name": "Stair machine", "equipment": ["stair_machine"], "load_type": "machine_selectorized", "when": "alternate", "in_routine": true},
+        {"name": "Outdoor incline walk", "equipment": ["none"], "load_type": "bodyweight", "when": "no treadmill"}
+      ]
+    },
+    {
+      "id": "stair_machine", "name": "Stair machine", "day": "cardio",
+      "movement_pattern": "conditioning",
+      "primary_muscles": [], "secondary_muscles": [],
+      "equipment_required": ["stair_machine"], "load_type": "machine_selectorized",
+      "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": [],
+      "in_current_routine": true, "conditioning_only": true,
+      "params": {"duration_min": [5, 15]},
+      "substitutions": [
+        {"name": "Treadmill incline walk", "equipment": ["treadmill"], "load_type": "machine_selectorized", "when": "alternate", "in_routine": true}
+      ]
+    }
+  ]
+}
