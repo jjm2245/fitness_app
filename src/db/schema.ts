@@ -85,6 +85,25 @@ export const profile = pgTable("profile", {
 });
 
 // ---------------------------------------------------------------------------
+// Auth — brute-force protection for the single shared passcode (spec §14,
+// now required since the app is public). Failed attempts only; rows are
+// pruned opportunistically by the login route. See DECISIONS.md.
+// ---------------------------------------------------------------------------
+
+export const loginAttempts = pgTable("login_attempts", {
+  id: serial("id").primaryKey(),
+  ip: text("ip").notNull(),
+  // withTimezone: true is required here — this column is compared against
+  // JS Date objects computed in application code (the rate-limit window).
+  // A plain `timestamp` column stores/compares using the DB server's local
+  // timezone, which silently breaks that comparison whenever the server
+  // isn't UTC (discovered live: ~4h offset against America/New_York). See
+  // DECISIONS.md — other timestamp columns in this schema are informational
+  // only and never compared against a JS Date, so they're left as-is.
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Exercise + Machine graph (the substitution asset — spec §6, §8, §9)
 // ---------------------------------------------------------------------------
 

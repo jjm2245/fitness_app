@@ -33,10 +33,21 @@ pg_ctl -D .pgdata stop
 
 ```bash
 npm install
-npm run db:migrate   # apply the schema
-npm run db:seed      # loads the exercise graph; creates an initial program only if none exists yet
-npm run dev           # http://localhost:3000, gated behind APP_PASSCODE (.env)
+cp .env.example .env  # then fill in DATABASE_URL / APP_PASSCODE / SESSION_SECRET
+npm run db:migrate    # apply the schema
+npm run db:seed       # loads the exercise graph; creates an initial program only if none exists yet
+npm run dev            # http://localhost:3000, gated behind APP_PASSCODE
 ```
+
+## Production deploy
+
+Managed Postgres (Neon recommended, use the *pooled* connection string) +
+Vercel. `DATABASE_URL`/`APP_PASSCODE`/`SESSION_SECRET` are set as Vercel
+project environment variables, never committed. Run `npm run db:migrate` and
+`npm run db:seed` manually against the production `DATABASE_URL` after each
+schema change — not wired into the build. See `DECISIONS.md` for the
+serverless-DB and auth-hardening details (expiring sessions, brute-force
+protection on login).
 
 ## Tests
 
@@ -66,6 +77,9 @@ programs and restore whichever program was active before the run).
   programs/program_days/program_exercises; used by both the editor API routes
   and the seed script. Integration-tested (`src/lib/__tests__`).
 - `src/lib/coreAdapters.ts` — maps DB rows to the core's plain types.
+- `src/lib/auth.ts` — expiring, signed session tokens (separate
+  `SESSION_SECRET` from `APP_PASSCODE`); `src/lib/rateLimit.ts` — per-IP
+  brute-force protection on login, backed by the `login_attempts` table.
 - `src/app/api/` — thin routes wiring the core to Postgres: `exercises`,
   `program` (read the active program, days pre-sorted), `programs`/
   `programs/[id]`/`programs/[id]/days`, `program-days/[id]` (+`/move`,

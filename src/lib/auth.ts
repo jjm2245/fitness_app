@@ -3,6 +3,11 @@
 
 export const SESSION_COOKIE = "fa_session";
 
+// 30 days: long enough that a personal daily-use app rarely shows the login
+// screen, short enough that a leaked/stale cookie doesn't work forever now
+// that this is public on the internet. See DECISIONS.md.
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+
 async function hmacSha256Hex(key: string, message: string): Promise<string> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -26,12 +31,12 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function expectedSessionToken(): Promise<string> {
-  const passcode = process.env.APP_PASSCODE;
-  if (!passcode) {
-    throw new Error("APP_PASSCODE is not set");
+function sessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error("SESSION_SECRET is not set");
   }
-  return hmacSha256Hex(passcode, "fitness-app-session");
+  return secret;
 }
 
 export function isValidPasscode(candidate: string): boolean {
@@ -40,8 +45,25 @@ export function isValidPasscode(candidate: string): boolean {
   return constantTimeEqual(candidate, passcode);
 }
 
+// A session token is `<expiryEpochSeconds>.<hmacHex>`, signed with
+// SESSION_SECRET — a separate secret from APP_PASSCODE, so forging a session
+// isn't tied to guessing the (low-entropy, human-typed) passcode.
+export async function createSessionToken(): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  const signature = await hmacSha256Hex(sessionSecret(), `${SESSION_COOKIE}:${expiresAt}`);
+  return { token: `${expiresAt}.${signature}`, expiresAt };
+}
+
 export async function isValidSessionToken(token: string | undefined): Promise<boolean> {
   if (!token) return false;
-  const expected = await expectedSessionToken();
-  return constantTimeEqual(token, expected);
+  const [expiresAtStr, signature] = token.split(".");
+  if (!expiresAtStr || !signature) return false;
+
+  const expiresAt = Number(expiresAtStr);
+  if (!Number.isFinite(expiresAt) || expiresAt < Math.floor(Date.now() / 1000)) {
+    return false; // malformed or expired
+  }
+
+  const expected = await hmacSha256Hex(sessionSecret(), `${SESSION_COOKIE}:${expiresAtStr}`);
+  return constantTimeEqual(signature, expected);
 }

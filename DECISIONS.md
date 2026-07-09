@@ -1,9 +1,9 @@
 # Decisions log
 
 Running record of choices made while building Milestones 1-2 and 4 (spec §15),
-plus Session 4b (program editor + logging redesign, spec v0.5 §7a), and
-anywhere this session's implementation deviates from or fills a gap in
-`fitness-agent-spec.md`. Newest at the bottom.
+Session 4b (program editor + logging redesign, spec v0.5 §7a), and the deploy
+hardening session (spec §13/§14), plus anywhere this session's implementation
+deviates from or fills a gap in `fitness-agent-spec.md`. Newest at the bottom.
 
 ## Environment & runtime
 
@@ -314,3 +314,117 @@ logging redesign. Read `fitness-agent-spec_1.5.md` §7a, §15, §8/§8a/§9 firs
   oversight.
 - Offline-first is unchanged: still the same IndexedDB outbox
   (`src/lib/offlineQueue.ts`), still queue-first-then-flush on every add.
+
+## Deploy to phone: production hardening
+
+First time the app faces the internet. No feature work — deterministic core,
+program editor, and logging behavior are unchanged except where production
+genuinely required a fix (one was found: see the timezone bug below).
+
+### Managed Postgres (Neon recommended)
+
+- `src/db/client.ts` now decides whether to require SSL by inspecting
+  `DATABASE_URL` itself, not `NODE_ENV`: `sslmode=require`/`verify-full` in
+  the string forces SSL; `host=/tmp` or `localhost` (this project's local dev
+  pattern) disables it; any other real hostname defaults to requiring SSL.
+  This means the exact same code path works locally and in production —
+  switching environments is purely a `DATABASE_URL` value change, per your
+  "keep local dev still working via an env-based DATABASE_URL" requirement.
+- **Use Neon's *pooled* connection string in production** (the one with
+  `-pooler` in the hostname, routed through PgBouncer) — not the direct one.
+  Serverless functions can spin up many concurrent instances, each wanting
+  its own DB connection; the pooled endpoint is what keeps that from
+  exhausting Postgres's real connection limit. `pool.max` is set to 5 (a cap
+  per function instance, not a global cap — the pooler handles the global
+  side). This is a config/connection-string choice, not a code dependency —
+  no new driver package was added (still `pg` + `drizzle-orm/node-postgres`,
+  not `@neondatabase/serverless`), since the existing setup already works
+  fine against a pooled Postgres endpoint.
+- Migrations and seeding against the managed DB are a **manual step**
+  (`npm run db:migrate` then `npm run db:seed` with `DATABASE_URL` pointed at
+  Neon), not wired into the Vercel build. Deliberate: auto-migrating
+  production on every deploy is a bigger footgun than one documented manual
+  step for a single-user app with infrequent schema changes.
+
+### Auth hardening (spec §14 — now required, it's public)
+
+- **Sessions now expire.** The old token was `HMAC(APP_PASSCODE,
+  "fitness-app-session")` — a fixed value that never changed and never
+  expired. New format: `<expiryEpochSeconds>.<hmacHex>`, where the HMAC
+  covers the expiry itself, so a tampered expiry invalidates the signature.
+  Verified: fresh tokens validate, tampered signatures are rejected, past
+  expiries are rejected even with a correctly-recomputed signature, malformed
+  tokens are rejected. **30-day TTL** (your choice) — cookie `maxAge` matches
+  the token TTL exactly so the browser doesn't hold onto an already-expired
+  cookie.
+- **New `SESSION_SECRET` env var, separate from `APP_PASSCODE`.** The old
+  design signed sessions with the passcode itself, meaning the "credential"
+  and the "signing key" were the same secret. Now a session can't be forged
+  without a second, independently-generated high-entropy secret
+  (`openssl rand -hex 32`), even if the passcode is weak or guessed via some
+  other channel. `isValidPasscode` still checks `APP_PASSCODE` at login,
+  unchanged in role.
+- Cookie flags: `httpOnly` (already had it), `sameSite: "lax"` (already had
+  it), `secure: process.env.NODE_ENV === "production"` (already had it —
+  Next.js sets `NODE_ENV=production` automatically for `next build`/Vercel,
+  `development` for `next dev`, so this needed no new config). Verified this
+  actually engages under `next build && next start`: the `Secure` flag was
+  present on the cookie, and curl (matching real browser behavior) correctly
+  refused to persist/resend a `Secure` cookie over plain HTTP — confirmed the
+  underlying session validation was still correct by passing the cookie
+  header manually. This will work seamlessly for real users since production
+  is HTTPS-only on Vercel.
+- **Brute-force protection**: new `login_attempts` table (`ip`, `created_at`)
+  and `src/lib/rateLimit.ts` — 5 failed attempts per IP per 15-minute window
+  triggers a 429 with `Retry-After`, blocking even a *correct* passcode until
+  the window clears (verified directly). Chosen DB-backed over in-memory
+  because Vercel serverless functions don't reliably share memory across
+  invocations — an in-memory counter would reset unpredictably and offer
+  close to no real protection. Chosen per-IP over a single global lockout
+  because a global lockout lets an attacker lock out the legitimate user by
+  deliberately failing repeatedly. IP comes from `x-forwarded-for`, which
+  Vercel's edge network sets reliably. Successful login clears that IP's
+  attempts; failed attempts opportunistically prune anything older than 24h
+  on every write, so there's no cron job needed for a single-user, low-volume
+  table.
+- **Found and fixed a real bug while building this**: `login_attempts.created_at`
+  was originally a plain `timestamp` (no timezone) column. The Postgres
+  server's local timezone (America/New_York, UTC-4) meant `now()`-derived
+  values were stored as local wall-clock time, while the rate-limit window
+  comparison used a JS `Date` (UTC-based) as a bind parameter — node-postgres
+  serializes that as a UTC string, which a no-timezone column then treats as
+  *local* time with no conversion. Net effect: the window comparison was off
+  by ~4 hours and never matched, silently defeating the rate limit (discovered
+  via live curl testing, not by inspection). Fixed by declaring the column
+  `timestamp("created_at", { withTimezone: true })`. **Other `timestamp`
+  (no-tz) columns in the schema are informational bookkeeping only and are
+  never compared against a JS `Date` in application code**, so they're left
+  as-is — but this is a real gotcha worth remembering if any future feature
+  adds a JS-Date-driven comparison against one of them.
+
+### Env / secrets
+
+- Added `.env.example` (committed, no real values) documenting the three
+  required vars: `DATABASE_URL`, `APP_PASSCODE`, `SESSION_SECRET`. Added a
+  `.gitignore` exception (`!.env.example`) since the existing `.env*` pattern
+  would otherwise have swallowed it too.
+- Audited tracked files for hardcoded secrets — none found. `.env` confirmed
+  untracked. All three vars are meant to be set directly in Vercel's project
+  environment settings for production, never committed.
+- `package.json` now declares `"engines": { "node": ">=20" }`, matching the
+  version this app has been built and tested against.
+
+### Production build verification
+
+- `next build` succeeds; every `/api/*` route correctly shows as dynamic
+  (`ƒ`), `/log`/`/program`/`/login`/`/` as static/prerendered, proxy
+  middleware bundled. Ran `next build && next start` (not just `next dev`)
+  and confirmed: unauthenticated requests redirect to `/login`; the manifest
+  is served at `/manifest.webmanifest` with the correct content-type; `sw.js`
+  is served as a static asset; the full login → session → authenticated
+  request flow works. This is the closest local approximation of the actual
+  Vercel runtime available without an account.
+- Not independently verifiable without a physical device: home-screen
+  install, full-screen "app" display, and the offline-outbox flow (log a set
+  in airplane mode, reconnect, confirm sync) on a real phone. These are
+  called out explicitly in the phone-test checklist handed to the user.
