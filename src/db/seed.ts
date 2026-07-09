@@ -3,16 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "./client";
-import {
-  muscles,
-  exercises,
-  exerciseMuscles,
-  exerciseSubstitutions,
-  programs,
-  programExercises,
-  loadTypeEnum,
-  movementPatternEnum,
-} from "./schema";
+import { muscles, exercises, exerciseMuscles, exerciseSubstitutions, loadTypeEnum, movementPatternEnum } from "./schema";
+import { listPrograms, seedProgramFromRoutine, type SeedRoutineDay } from "@/lib/programs";
 
 type SeedMuscleRef = { muscle: string; emphasis: number };
 
@@ -160,54 +152,45 @@ async function loadSeed() {
     }
   }
 
-  await seedDefaultProgram(seed);
+  await seedInitialProgramIfNone(seed);
 
   console.log("Seed complete.");
 }
 
-// Static novice defaults straight from spec §1 (~8-12 hard sets/week landmark,
-// ~1-3 RIR working sets) applied per exercise. This is NOT the Phase-1 "programming
-// agent" (goal + days -> adaptive program) — it's a fixed program seeded from the
-// user's actual current routine so Milestone 4's logging UX has something concrete
-// to log against. See DECISIONS.md.
-const DEFAULT_SPLIT_TYPE = "ppl_pf_current_routine";
-const DEFAULT_TARGET_SETS = 3;
-const DEFAULT_REP_RANGE = "8-12";
-const DEFAULT_RIR_TARGET = "2";
+const INITIAL_SPLIT_TYPE = "ppl_pf_current_routine";
 
-async function seedDefaultProgram(seed: SeedFile) {
-  let [program] = await db
-    .select()
-    .from(programs)
-    .where(eq(programs.splitType, DEFAULT_SPLIT_TYPE));
-
-  if (!program) {
-    [program] = await db.insert(programs).values({ splitType: DEFAULT_SPLIT_TYPE }).returning();
+// Runs only once: if any program already exists — including one the user has
+// since edited in the program editor — this is a no-op. Re-running `db:seed`
+// (e.g. after editing the exercise graph) must never wipe a user-edited
+// program. Uses seedProgramFromRoutine, the exact same primitives the editor
+// API calls — there is no separate "default program" policy baked in here,
+// only a one-time convenience so logging has something to log against before
+// the editor has been used. See DECISIONS.md.
+async function seedInitialProgramIfNone(seed: SeedFile) {
+  const existing = await listPrograms();
+  if (existing.length > 0) {
+    console.log(`Skipping program seed — ${existing.length} program(s) already exist.`);
+    return;
   }
-
-  await db.delete(programExercises).where(eq(programExercises.programId, program.id));
 
   const routineExercises = seed.exercises.filter((ex) => ex.in_current_routine);
-  const orderByDay = new Map<string, number>();
+  const days: SeedRoutineDay[] = [];
+  const dayIndex = new Map<string, number>();
 
   for (const ex of routineExercises) {
-    const day = ex.day ?? "unassigned";
-    const orderIndex = orderByDay.get(day) ?? 0;
-    orderByDay.set(day, orderIndex + 1);
-
-    await db.insert(programExercises).values({
-      programId: program.id,
-      day,
-      exerciseId: ex.id,
-      targetSets: ex.conditioning_only ? 1 : DEFAULT_TARGET_SETS,
-      repRange: ex.conditioning_only ? null : DEFAULT_REP_RANGE,
-      rirTarget: ex.conditioning_only ? null : DEFAULT_RIR_TARGET,
-      orderIndex,
-    });
+    const dayName = ex.day ?? "unassigned";
+    let idx = dayIndex.get(dayName);
+    if (idx === undefined) {
+      idx = days.length;
+      dayIndex.set(dayName, idx);
+      days.push({ name: dayName, exercises: [] });
+    }
+    days[idx].exercises.push({ exerciseId: ex.id, conditioningOnly: ex.conditioning_only ?? false });
   }
 
+  const program = await seedProgramFromRoutine(INITIAL_SPLIT_TYPE, days);
   console.log(
-    `Seeded program "${DEFAULT_SPLIT_TYPE}" with ${routineExercises.length} program-exercise rows across ${orderByDay.size} days.`
+    `Seeded initial program "${program.splitType}" with ${routineExercises.length} program-exercise rows across ${days.length} days.`
   );
 }
 

@@ -1,7 +1,8 @@
 # Decisions log
 
-Running record of choices made while building Milestones 1-2 and 4 (spec §15)
-and anywhere this session's implementation deviates from or fills a gap in
+Running record of choices made while building Milestones 1-2 and 4 (spec §15),
+plus Session 4b (program editor + logging redesign, spec v0.5 §7a), and
+anywhere this session's implementation deviates from or fills a gap in
 `fitness-agent-spec.md`. Newest at the bottom.
 
 ## Environment & runtime
@@ -189,3 +190,127 @@ state.
   call in `ExerciseCard.handleAddSet`, so it stuck at 1 even after a
   successful sync. Fixed by awaiting the flush and refreshing the count again
   afterward.
+
+## Session 4b: program editor + logging redesign (spec v0.5 §7a)
+
+Closes both known leaks from the v0.5 audit and builds the program editor +
+logging redesign. Read `fitness-agent-spec_1.5.md` §7a, §15, §8/§8a/§9 first.
+
+### Schema: program_days table (leak #2 fix)
+
+- Added a `program_days` table (`id`, `program_id`, `name`, `order_index`) and
+  changed `program_exercises.day` (a free-text tag) to `day_id`, a real FK.
+  Day order now comes entirely from `program_days.order_index` — real,
+  reorderable, renameable data — instead of the hardcoded `DAY_ORDER` literal
+  that used to live in `GET /api/program`. That literal is gone; the route now
+  just calls `getProgramWithDays()` and returns days pre-sorted by the DB.
+- **Migration had to be split into two steps.** `drizzle-kit generate` has an
+  interactive "did you rename this column?" resolver that requires a TTY,
+  which this environment doesn't have (`Error: Interactive prompts require a
+  TTY terminal`). A single migration that both dropped `program_exercises.day`
+  /`.program_id` and added `program_days` + `.day_id` triggered that prompt
+  (it looked like a possible column rename). Fix: split into two unambiguous
+  migrations — (1) pure addition: new `program_days` table + nullable
+  `day_id`, with the old `day`/`program_id` columns relaxed to nullable but
+  kept; (2) pure removal: drop `day`/`program_id`, tighten `day_id` to
+  `NOT NULL`. Each step alone has no rename ambiguity, so `generate` succeeds
+  without a TTY. `--custom` was tried first but only produces an empty SQL
+  file — it does **not** update the tracked schema snapshot, which would have
+  left `drizzle-kit`'s own bookkeeping out of sync with reality.
+- Data migration path: the DB's *only* existing `program_exercises` rows were
+  from the old blanket `seedDefaultProgram()` — zero `program_days` rows, not
+  referenced by any `set_logs`, fully reproducible by reseeding. Truncated
+  `programs` (cascades to `program_exercises`) between the two migration
+  steps rather than writing a real backfill script, with explicit user
+  sign-off first (the auto-mode classifier correctly flagged the `TRUNCATE...
+  CASCADE` as a mass-delete and blocked it pending confirmation — see the
+  transcript). No real logged workout history existed at that point (cleared
+  in an earlier session's cleanup), so this cost nothing.
+
+### Retiring the blanket default program (leak #1 fix)
+
+- `src/lib/programs.ts` is now the **only** read/write path for
+  `programs`/`program_days`/`program_exercises`. Both the program-editor API
+  routes and the seed script call into it — there is no separate "seeded
+  default" code path anymore. `seedProgramFromRoutine()` in that file builds
+  the initial PPL using the exact same `createProgram`/`addDay`/
+  `addExerciseToDay` primitives the editor's API calls, not a bespoke insert.
+- `DEFAULT_PROGRAM_EXERCISE_TARGETS` (3 sets, "8-12", RIR 2) still exists as a
+  single exported constant, but it's now explicitly a **pre-fill default for
+  `addExerciseToDay`**, freely overridden per call — not a fixed policy.
+  `updateProgramExercise` edits any field independently per row; nothing
+  downstream reads the constant as ground truth.
+- **The seed is now non-destructive.** `seedInitialProgramIfNone()` checks
+  `listPrograms()` first and is a no-op if any program already exists —
+  including one the user has since edited in `/program`. This was a
+  correctness fix, not just a style change: the old `seedDefaultProgram()`
+  unconditionally deleted and recreated every `program_exercises` row on
+  every `npm run db:seed` run, which would have silently destroyed any editor
+  edits the next time the seed script ran for an unrelated reason (e.g.
+  re-syncing exercise tags). Verified directly: renamed a day via SQL,
+  re-ran `db:seed`, confirmed the rename survived and the log printed
+  "Skipping program seed — 1 program(s) already exist."
+
+### Program editor (`/program`, spec §7a)
+
+- Full CRUD: create/rename/delete/activate programs; add/rename/delete/reorder
+  days; add exercises from the graph with per-exercise editable targets;
+  reorder/remove exercises within a day.
+- **Reordering uses up/down buttons that swap `order_index` with the adjacent
+  sibling**, not drag-and-drop and not "send the whole new order" — approved
+  as the simpler, equally-functional choice. `moveDay`/`moveProgramExercise`
+  find the nearest neighbor in the move direction and swap; a no-op at the
+  top/bottom (no neighbor found) rather than erroring.
+- `setActiveProgram()` deactivates whatever else was active in the same
+  transaction — exactly one program is ever active, which is what
+  `getActiveProgram()` in `GET /api/program` (the logging screen's data
+  source) depends on.
+- Verified live in the browser: edited a target (sets 3→4), saved, confirmed
+  in Postgres; moved an exercise up, confirmed the `order_index` swap; both
+  reverted to restore the clean seeded state afterward.
+
+### Logging redesign (`/log`)
+
+- **Previous-session reference**: `GET /api/exercises/[id]/last-session`
+  reuses `toSessionSummaries` + `sessionsFromOldestToNewest` from the
+  existing core modules — no new logic, just a thin read path. Scoped to the
+  same machine lane as the current selection (machine-bound loads aren't
+  comparable across machines, spec §9), so it refetches whenever the active
+  exercise or machine changes. Shows actual per-set numbers ("Last time: 50 x
+  10, 8, 8"), not just a set count, per your polish note.
+- **Target as a guideline chip**: restyled as a muted, pill-shaped `<span>`
+  labeled "target:", visually distinct from the interactive log-entry
+  inputs — reads as a hint, not a control, per your polish note. It always
+  shows the *original* program-exercise's target, even after a swap (see
+  below), since the target represents the prescribed stimulus for that
+  program slot, not a property of whichever exercise currently fills it.
+- **Inline machine tagging**: a `<select>` of existing machines (from
+  `GET /api/machines`) plus an adjacent "+ Add" that calls
+  `POST /api/machines` immediately and optimistically sets the field —
+  offline, that POST just fails silently and the typed value is used anyway,
+  since `POST /api/set-logs` already auto-registers unknown machine ids on
+  sync (Milestone-4 behavior, unchanged). This is the one place a network
+  failure is deliberately swallowed, and it's swallowed *because* the
+  fallback path (auto-register-on-sync) already guarantees correctness
+  offline.
+- **Swap affordance**: "Swap" calls the existing, unmodified
+  `GET /api/substitutions?exerciseId=...` (deterministic candidates only — no
+  LLM final-pick, per scope) and lists ranked candidates with a caption
+  quoting spec §8's "preserves weekly stimulus, not the load number." Picking
+  one updates the card's *active* exercise (id/name/loadType/portable) for
+  the rest of this session only; a "reset" link restores the program's
+  original exercise. **Verified explicitly**: logged a set after swapping
+  `cable_lat_pulldown` → `bodyweight_pullup` and confirmed in Postgres that
+  `set_logs.exercise_id = 'bodyweight_pullup'`, not the original — this was
+  the one requirement flagged as needing to be "explicitly right," and it is.
+  The substitutions endpoint was extended to return `name`/`loadType`/
+  `portable` alongside `id`/`score` (previously id+score only) so the swap UI
+  didn't need a second round-trip against `/api/exercises`; `src/core/
+  substitution.ts` itself was not touched.
+- The swap's equipment filter still falls back to "every equipment tag seen
+  across all exercises" (unchanged from Milestone 1-2) since there's no
+  captured `profile.equipment_profile` yet — out of scope for this session
+  (no new profile UI was requested), noted here so it doesn't look like an
+  oversight.
+- Offline-first is unchanged: still the same IndexedDB outbox
+  (`src/lib/offlineQueue.ts`), still queue-first-then-flush on every add.

@@ -172,12 +172,25 @@ export const programs = pgTable("programs", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const programExercises = pgTable("program_exercises", {
+// A day is real, ordered, renameable data — not a hardcoded tag. order_index
+// here is what drives the day picker's sort order (replaces the old DAY_ORDER
+// literal that used to live in the program API; see DECISIONS.md).
+export const programDays = pgTable("program_days", {
   id: serial("id").primaryKey(),
   programId: integer("program_id")
     .notNull()
     .references(() => programs.id, { onDelete: "cascade" }),
-  day: text("day").notNull(),
+  name: text("name").notNull(),
+  orderIndex: integer("order_index").notNull().default(0),
+});
+
+export const programExercises = pgTable("program_exercises", {
+  id: serial("id").primaryKey(),
+  // programId lives on program_days now (day -> program), avoiding a
+  // duplicate/driftable FK here.
+  dayId: integer("day_id")
+    .notNull()
+    .references(() => programDays.id, { onDelete: "cascade" }),
   exerciseId: text("exercise_id")
     .notNull()
     .references(() => exercises.id),

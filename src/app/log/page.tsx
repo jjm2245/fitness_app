@@ -1,15 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { queueSet, getPendingSets, flushQueue } from "@/lib/offlineQueue";
 
-interface ProgramExerciseRow {
-  day: string;
-  orderIndex: number;
+interface ProgramExerciseDetail {
+  id: number;
+  dayId: number;
+  exerciseId: string;
   targetSets: number;
   repRange: string | null;
   rirTarget: string | null;
-  exerciseId: string;
+  orderIndex: number;
   exerciseName: string;
   loadType: string;
   portable: boolean;
@@ -17,10 +19,30 @@ interface ProgramExerciseRow {
   params: Record<string, unknown> | null;
 }
 
-interface ProgramResponse {
-  programId: number;
+interface ProgramDayDetail {
+  id: number;
+  name: string;
+  orderIndex: number;
+  exercises: ProgramExerciseDetail[];
+}
+
+interface ProgramDetail {
+  id: number;
   splitType: string;
-  days: Array<{ day: string; exercises: ProgramExerciseRow[] }>;
+  days: ProgramDayDetail[];
+}
+
+interface MachineOption {
+  id: string;
+  notes: string | null;
+}
+
+interface SubstitutionCandidate {
+  id: string;
+  name: string;
+  score: number;
+  loadType: string;
+  portable: boolean;
 }
 
 type ProgressionResult =
@@ -36,6 +58,11 @@ type ProgressionResult =
         | { type: "hold"; reason: string };
       intervention?: { id: string; message: string };
     };
+
+interface PreviousSession {
+  date: string;
+  sets: Array<{ load: number; reps: number; rir: number | null }>;
+}
 
 interface LoggedSet {
   setType: "warmup" | "working";
@@ -55,46 +82,94 @@ function lastMachineKey(exerciseId: string) {
   return `fitness-app:last-machine:${exerciseId}`;
 }
 
-function ExerciseCard({ ex, onLogged }: { ex: ProgramExerciseRow; onLogged: () => void }) {
-  // Lazy-initialized from localStorage (spec §16: "same as last time?" machine
-  // recall) instead of an effect, since it's a synchronous read with no
-  // subscription to keep alive.
+function formatPreviousSession(session: PreviousSession | null): string {
+  if (!session) return "No previous session yet";
+  const parts = session.sets.map((s) => `${s.reps}`).join(", ");
+  const load = session.sets[0]?.load;
+  return `Last time: ${load ?? "?"} x ${parts}`;
+}
+
+function ExerciseCard({
+  ex,
+  machines,
+  onMachineAdded,
+  onLogged,
+}: {
+  ex: ProgramExerciseDetail;
+  machines: MachineOption[];
+  onMachineAdded: () => void;
+  onLogged: () => void;
+}) {
+  // The exercise actually being logged this session — starts as the program's
+  // prescribed exercise, can change via "Swap". The program itself is never
+  // touched; this is purely a client-side substitution for today (spec §8:
+  // "a short parallel track").
+  const [activeExercise, setActiveExercise] = useState({
+    id: ex.exerciseId,
+    name: ex.exerciseName,
+    loadType: ex.loadType,
+    portable: ex.portable,
+  });
+
   const [machineId, setMachineId] = useState(() => {
     if (ex.portable || typeof window === "undefined") return "";
     return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "";
   });
+  const [newMachineName, setNewMachineName] = useState("");
+
   const [setType, setSetType] = useState<"warmup" | "working">("working");
   const [load, setLoad] = useState(45);
   const [reps, setReps] = useState(8);
   const [rir, setRir] = useState(Number(ex.rirTarget ?? 2));
   const [loggedToday, setLoggedToday] = useState<LoggedSet[]>([]);
+
+  const [previousSession, setPreviousSession] = useState<PreviousSession | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
   const [checking, setChecking] = useState(false);
+
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapCandidates, setSwapCandidates] = useState<SubstitutionCandidate[] | null>(null);
+  const [swapLoading, setSwapLoading] = useState(false);
+
+  const resolvedMachineId = activeExercise.portable ? null : machineId.trim() || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const params = new URLSearchParams();
+      if (resolvedMachineId) params.set("machineId", resolvedMachineId);
+      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?${params.toString()}`);
+      const data: { session: PreviousSession | null } = await res.json();
+      if (!cancelled) setPreviousSession(data.session);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExercise.id, resolvedMachineId]);
 
   const checkProgression = useCallback(async () => {
     setChecking(true);
     try {
       const params = new URLSearchParams({
-        exerciseId: ex.exerciseId,
+        exerciseId: activeExercise.id,
         repRangeMax: String(parseRepRangeMax(ex.repRange)),
         targetRir: String(ex.rirTarget ?? 2),
       });
-      if (!ex.portable && machineId.trim()) params.set("machineId", machineId.trim());
+      if (resolvedMachineId) params.set("machineId", resolvedMachineId);
       const res = await fetch(`/api/progression?${params.toString()}`);
       const data: ProgressionResult = await res.json();
       setProgression(data);
     } finally {
       setChecking(false);
     }
-  }, [ex.exerciseId, ex.repRange, ex.rirTarget, ex.portable, machineId]);
+  }, [activeExercise.id, ex.repRange, ex.rirTarget, resolvedMachineId]);
 
   async function handleAddSet(e: React.FormEvent) {
     e.preventDefault();
-    const resolvedMachineId = ex.portable ? null : machineId.trim() || null;
 
     await queueSet({
       date: new Date().toISOString().slice(0, 10),
-      exerciseId: ex.exerciseId,
+      exerciseId: activeExercise.id, // the exercise actually performed, not necessarily ex.exerciseId
       machineId: resolvedMachineId,
       setIndex: loggedToday.length + 1,
       setType,
@@ -104,14 +179,61 @@ function ExerciseCard({ ex, onLogged }: { ex: ProgramExerciseRow; onLogged: () =
     });
 
     if (resolvedMachineId) {
-      localStorage.setItem(lastMachineKey(ex.exerciseId), resolvedMachineId);
+      localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
     }
 
     setLoggedToday((prev) => [...prev, { setType, load, reps, rir }]);
     onLogged();
     await flushQueue();
-    onLogged(); // refresh the pending count again now that the sync attempt is done
+    onLogged();
     void checkProgression();
+  }
+
+  async function openSwap() {
+    setSwapOpen((open) => !open);
+    if (swapCandidates || swapLoading) return;
+    setSwapLoading(true);
+    try {
+      const res = await fetch(`/api/substitutions?exerciseId=${encodeURIComponent(ex.exerciseId)}`);
+      const data: SubstitutionCandidate[] = await res.json();
+      setSwapCandidates(data);
+    } finally {
+      setSwapLoading(false);
+    }
+  }
+
+  function pickSwap(candidate: SubstitutionCandidate) {
+    setActiveExercise({
+      id: candidate.id,
+      name: candidate.name,
+      loadType: candidate.loadType,
+      portable: candidate.portable,
+    });
+    setMachineId(candidate.portable ? "" : localStorage.getItem(lastMachineKey(candidate.id)) ?? "");
+    setSwapOpen(false);
+  }
+
+  function resetSwap() {
+    setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable });
+    setMachineId(ex.portable ? "" : localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "");
+    setSwapOpen(false);
+  }
+
+  async function addMachine() {
+    const name = newMachineName.trim();
+    if (!name) return;
+    setMachineId(name); // optimistic — works even offline, since set-logs auto-registers on sync
+    setNewMachineName("");
+    try {
+      const res = await fetch("/api/machines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: name }),
+      });
+      if (res.ok) onMachineAdded();
+    } catch {
+      // offline — fine, /api/set-logs auto-registers the machine when it syncs
+    }
   }
 
   if (ex.conditioningOnly) {
@@ -125,17 +247,79 @@ function ExerciseCard({ ex, onLogged }: { ex: ProgramExerciseRow; onLogged: () =
 
   return (
     <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333" }}>
-      <strong>{ex.exerciseName}</strong>{" "}
-      <span style={{ opacity: 0.7 }}>
-        ({ex.targetSets} x {ex.repRange ?? "?"} @ RIR {ex.rirTarget ?? "?"})
-      </span>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <strong>{activeExercise.name}</strong>
+        {activeExercise.id !== ex.exerciseId && (
+          <span style={{ fontSize: 12, opacity: 0.7 }}>
+            (swapped from {ex.exerciseName} —{" "}
+            <button type="button" onClick={resetSwap} style={{ fontSize: 12 }}>
+              reset
+            </button>
+            )
+          </span>
+        )}
+        {/* Guideline chip, never enforced — the program's target for this slot. */}
+        <span
+          style={{
+            fontSize: 12,
+            opacity: 0.6,
+            border: "1px solid #444",
+            borderRadius: 999,
+            padding: "1px 8px",
+          }}
+        >
+          target: {ex.targetSets} x {ex.repRange ?? "?"} @ RIR {ex.rirTarget ?? "?"}
+        </span>
+        <button type="button" onClick={openSwap} style={{ fontSize: 12 }}>
+          Swap
+        </button>
+      </div>
 
-      {!ex.portable && (
-        <div>
+      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{formatPreviousSession(previousSession)}</p>
+
+      {swapOpen && (
+        <div style={{ fontSize: 13, border: "1px solid #333", borderRadius: 6, padding: 8, margin: "6px 0" }}>
+          <p style={{ opacity: 0.7, margin: 0 }}>
+            Deterministic candidates — same movement pattern, overlapping muscles, preserves weekly stimulus (not
+            the load number).
+          </p>
+          {swapLoading && <p>Loading…</p>}
+          {swapCandidates?.length === 0 && <p>No candidates available right now.</p>}
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {swapCandidates?.map((c) => (
+              <li key={c.id}>
+                <button type="button" onClick={() => pickSwap(c)}>
+                  {c.name}
+                </button>{" "}
+                <span style={{ opacity: 0.6 }}>({c.loadType})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!activeExercise.portable && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <label>
-            Machine ID{" "}
-            <input value={machineId} onChange={(e) => setMachineId(e.target.value)} placeholder="e.g. pf_legext_1" />
+            Machine{" "}
+            <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+              <option value="">(none selected)</option>
+              {machines.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}
+                </option>
+              ))}
+            </select>
           </label>
+          <input
+            value={newMachineName}
+            onChange={(e) => setNewMachineName(e.target.value)}
+            placeholder="new machine id"
+            style={{ width: 130 }}
+          />
+          <button type="button" onClick={addMachine}>
+            + Add
+          </button>
         </div>
       )}
 
@@ -189,14 +373,20 @@ function ExerciseCard({ ex, onLogged }: { ex: ProgramExerciseRow; onLogged: () =
 }
 
 export default function LogPage() {
-  const [program, setProgram] = useState<ProgramResponse | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [program, setProgram] = useState<ProgramDetail | null>(null);
+  const [selectedDayId, setSelectedDayId] = useState<number | null>(null);
+  const [machines, setMachines] = useState<MachineOption[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
 
   const refreshPendingCount = useCallback(async () => {
     const pending = await getPendingSets();
     setPendingCount(pending.length);
+  }, []);
+
+  const refreshMachines = useCallback(async () => {
+    const res = await fetch("/api/machines");
+    if (res.ok) setMachines(await res.json());
   }, []);
 
   const handleFlush = useCallback(async () => {
@@ -209,14 +399,16 @@ export default function LogPage() {
     let cancelled = false;
 
     (async () => {
-      const [programRes, pending] = await Promise.all([
-        fetch("/api/program").then((r) => (r.ok ? (r.json() as Promise<ProgramResponse>) : null)),
+      const [programRes, pending, machinesRes] = await Promise.all([
+        fetch("/api/program").then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null)),
         getPendingSets(),
+        fetch("/api/machines").then((r) => (r.ok ? (r.json() as Promise<MachineOption[]>) : [])),
       ]);
       if (cancelled) return;
       setProgram(programRes);
-      if (programRes && programRes.days.length > 0) setSelectedDay(programRes.days[0].day);
+      if (programRes && programRes.days.length > 0) setSelectedDayId(programRes.days[0].id);
       setPendingCount(pending.length);
+      setMachines(machinesRes);
     })();
 
     window.addEventListener("online", handleFlush);
@@ -226,9 +418,9 @@ export default function LogPage() {
     };
   }, [handleFlush]);
 
-  const currentDayExercises = useMemo(
-    () => program?.days.find((d) => d.day === selectedDay)?.exercises ?? [],
-    [program, selectedDay]
+  const currentDay = useMemo(
+    () => program?.days.find((d) => d.id === selectedDayId) ?? null,
+    [program, selectedDayId]
   );
 
   return (
@@ -243,28 +435,41 @@ export default function LogPage() {
       {syncStatus && <p style={{ fontSize: 13, opacity: 0.8 }}>{syncStatus}</p>}
 
       {!program ? (
-        <p>No active program found. Run `npm run db:seed` to create the default program.</p>
+        <p>
+          No active program found. Visit <Link href="/program">/program</Link> to create one, or run `npm run
+          db:seed`.
+        </p>
       ) : (
         <>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             {program.days.map((d) => (
               <button
-                key={d.day}
-                onClick={() => setSelectedDay(d.day)}
-                style={{ fontWeight: d.day === selectedDay ? "bold" : "normal" }}
+                key={d.id}
+                onClick={() => setSelectedDayId(d.id)}
+                style={{ fontWeight: d.id === selectedDayId ? "bold" : "normal" }}
               >
-                {d.day}
+                {d.name}
               </button>
             ))}
           </div>
 
           <ul style={{ listStyle: "none", padding: 0 }}>
-            {currentDayExercises.map((ex) => (
-              <ExerciseCard key={ex.exerciseId} ex={ex} onLogged={refreshPendingCount} />
+            {currentDay?.exercises.map((ex) => (
+              <ExerciseCard
+                key={ex.id}
+                ex={ex}
+                machines={machines}
+                onMachineAdded={refreshMachines}
+                onLogged={refreshPendingCount}
+              />
             ))}
           </ul>
         </>
       )}
+
+      <p>
+        <Link href="/program">Edit program</Link>
+      </p>
     </main>
   );
 }

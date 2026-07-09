@@ -1,11 +1,12 @@
 # Fitness Agent
 
 Private, single-user training log + progression engine. Built so far:
-Milestones 1-2 from `fitness-agent-spec.md` (schema, seed data, deterministic
-core) and Milestone 4 (logging UX — a default program, day-based session
-logging, live progression/stall-buster feedback, auto machine registration).
-No LLM, no nutrition/recovery/photos yet. See `DECISIONS.md` for the choices
-made and why.
+Milestones 1-2 (schema, seed data, deterministic core), Milestone 4 (logging
+UX), and Session 4b (program editor + logging redesign — the routine is now
+user-owned editable data, not a seeded default; logging shows previous-session
+numbers, guideline-not-law targets, inline machine tagging, and a
+deterministic swap affordance). No LLM, no nutrition/recovery/photos yet. See
+`DECISIONS.md` for the choices made and why.
 
 ## Prerequisites
 
@@ -33,7 +34,7 @@ pg_ctl -D .pgdata stop
 ```bash
 npm install
 npm run db:migrate   # apply the schema
-npm run db:seed      # load pf-exercise-seed.json into exercises/muscles/substitutions
+npm run db:seed      # loads the exercise graph; creates an initial program only if none exists yet
 npm run dev           # http://localhost:3000, gated behind APP_PASSCODE (.env)
 ```
 
@@ -44,24 +45,39 @@ npm test
 ```
 
 Includes unit tests for the deterministic core (`src/core/*`, no DB needed)
-and an integration test for the seed loader (`src/db/__tests__`, needs
-Postgres running with the seed already loaded).
+and integration tests for the seed loader and the `programs.ts` CRUD lib
+(`src/db/__tests__`, `src/lib/__tests__`; both need Postgres running with the
+seed already loaded — the programs tests create/clean up their own test
+programs and restore whichever program was active before the run).
 
 ## Layout
 
-- `src/db/schema.ts` — Drizzle schema (spec §6).
-- `src/db/seed.ts` + `src/db/seed-data/` — idempotent seed loader; also seeds a
-  default Program from the current routine (`ppl_pf_current_routine`).
+- `src/db/schema.ts` — Drizzle schema (spec §6). `program_days` is real,
+  ordered, renameable data; `program_exercises.day_id` is a real FK (not a
+  free-text tag).
+- `src/db/seed.ts` + `src/db/seed-data/` — idempotent seed loader for the
+  exercise graph; seeds an initial PPL program **only if no program exists
+  yet** (`npm run db:seed` never overwrites an edited program).
 - `src/core/` — deterministic engine: volume/set-counting, volume-load
   progression + stall detection + load suggestions, stall-buster ladder,
   substitution filter, per-machine tracking. Pure functions, DB-agnostic,
-  unit-tested.
+  unit-tested. No routine-specific literals — audited clean, kept that way.
+- `src/lib/programs.ts` — the only read/write path for
+  programs/program_days/program_exercises; used by both the editor API routes
+  and the seed script. Integration-tested (`src/lib/__tests__`).
 - `src/lib/coreAdapters.ts` — maps DB rows to the core's plain types.
-- `src/app/api/` — thin routes wiring the core to Postgres (`exercises`,
-  `program`, `set-logs`, `progression`, `substitutions`, `auth/login`).
-- `src/app/log` — day-based session logging page: pick a day, see prescribed
-  exercises + targets, log sets fast, get live progression/stall-buster
-  feedback. Offline-capable via the IndexedDB outbox in
-  `src/lib/offlineQueue.ts`. No UI polish.
+- `src/app/api/` — thin routes wiring the core to Postgres: `exercises`,
+  `program` (read the active program, days pre-sorted), `programs`/
+  `programs/[id]`/`programs/[id]/days`, `program-days/[id]` (+`/move`,
+  `/exercises`), `program-exercises/[id]` (+`/move`), `machines`,
+  `exercises/[id]/last-session`, `set-logs`, `progression`, `substitutions`,
+  `auth/login`.
+- `src/app/program` — program editor: create/rename/delete/activate programs;
+  add/rename/delete/reorder (up/down) days; add exercises with per-exercise
+  editable targets, reorder/remove.
+- `src/app/log` — day-based session logging: previous-session reference,
+  target shown as a guideline chip, inline machine tagging (select + one-tap
+  add), a deterministic "Swap" affordance, offline-capable via the IndexedDB
+  outbox in `src/lib/offlineQueue.ts`. No UI polish.
 - `src/proxy.ts` — device-passcode gate (Next 16's "proxy", formerly
   "middleware").
