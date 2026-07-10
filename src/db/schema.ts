@@ -187,6 +187,12 @@ export const programs = pgTable("programs", {
   id: serial("id").primaryKey(),
   splitType: text("split_type").notNull(),
   active: boolean("active").notNull().default(true),
+  // A reusable-block library is just a hidden "program" whose program_days are
+  // the blocks (e.g. "Abs — machine", "Cardio"). This reuses the entire
+  // program/day/exercise structure + CRUD lib rather than duplicating it. Only
+  // one such row exists; listPrograms() excludes it so it never shows in the
+  // program switcher. See DECISIONS.md.
+  isBlockLibrary: boolean("is_block_library").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -252,6 +258,28 @@ export const setLogs = pgTable("set_logs", {
   reps: integer("reps").notNull(),
   rir: numeric("rir"),
   romNote: text("rom_note"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Cardio / conditioning gets its own shape (duration/incline/speed/… — never
+// sets×reps×load) and its own table. Keeping it out of set_logs is structural,
+// not a filter: the deterministic core only ever reads set_logs, so cardio is
+// physically invisible to the volume/progression math (spec §7a / seed's
+// conditioning_only). See DECISIONS.md.
+export const cardioLogs = pgTable("cardio_logs", {
+  id: serial("id").primaryKey(),
+  workoutLogId: integer("workout_log_id")
+    .notNull()
+    .references(() => workoutLogs.id, { onDelete: "cascade" }),
+  exerciseId: text("exercise_id")
+    .notNull()
+    .references(() => exercises.id),
+  durationMin: numeric("duration_min"),
+  incline: numeric("incline"),
+  speed: numeric("speed"),
+  distance: numeric("distance"),
+  level: numeric("level"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

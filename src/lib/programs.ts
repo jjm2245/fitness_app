@@ -48,7 +48,11 @@ export interface ProgramWithDays extends Program {
 // ---------------------------------------------------------------------------
 
 export async function listPrograms(): Promise<Program[]> {
-  return db.select().from(programs).orderBy(desc(programs.active), asc(programs.id));
+  return db
+    .select()
+    .from(programs)
+    .where(eq(programs.isBlockLibrary, false))
+    .orderBy(desc(programs.active), asc(programs.id));
 }
 
 export async function getProgram(id: number): Promise<Program | null> {
@@ -57,8 +61,32 @@ export async function getProgram(id: number): Promise<Program | null> {
 }
 
 export async function getActiveProgram(): Promise<Program | null> {
-  const [row] = await db.select().from(programs).where(eq(programs.active, true));
+  const [row] = await db
+    .select()
+    .from(programs)
+    .where(and(eq(programs.active, true), eq(programs.isBlockLibrary, false)));
   return row ?? null;
+}
+
+// The block library is a single hidden program whose days are the reusable
+// blocks. Created lazily on first use so nothing depends on seed order.
+const BLOCK_LIBRARY_SPLIT = "__block_library__";
+
+export async function getOrCreateBlockLibrary(): Promise<Program> {
+  const [existing] = await db.select().from(programs).where(eq(programs.isBlockLibrary, true));
+  if (existing) return existing;
+  const [row] = await db
+    .insert(programs)
+    .values({ splitType: BLOCK_LIBRARY_SPLIT, active: false, isBlockLibrary: true })
+    .returning();
+  return row;
+}
+
+/** All reusable blocks (the block-library program's days, with their exercises). */
+export async function listBlocks(): Promise<ProgramDayWithExercises[]> {
+  const lib = await getOrCreateBlockLibrary();
+  const full = await getProgramWithDays(lib.id);
+  return full?.days ?? [];
 }
 
 export async function createProgram(splitType: string, active = false): Promise<Program> {

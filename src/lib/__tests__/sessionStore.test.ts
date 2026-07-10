@@ -9,6 +9,12 @@ import {
   getSessionMeta,
   sync,
   pendingCount,
+  logCardio,
+  getSessionCardio,
+  deleteCardio,
+  attachToComposition,
+  getSessionComposition,
+  removeFromComposition,
 } from "../sessionStore";
 
 // The session store is the load-bearing offline layer. These tests drive its
@@ -38,6 +44,12 @@ function mockOnline() {
         return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
       }
       if (/\/api\/set-logs\/\d+$/.test(url)) {
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      }
+      if (url === "/api/cardio-logs" && method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
+      }
+      if (/\/api\/cardio-logs\/\d+$/.test(url)) {
         return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
       }
       if (url === "/api/sessions/finish") {
@@ -187,5 +199,74 @@ describe("finish session", () => {
     const again = await finishSession(date);
     expect(again.finishSynced).toBe(false);
     expect(new Date(again.finishedAt!).getTime()).toBeGreaterThanOrEqual(new Date(before).getTime());
+  });
+});
+
+describe("cardio (separate store, synced/pending like sets)", () => {
+  it("logs cardio offline, keeps it visible, and syncs when back online", async () => {
+    const date = freshDate();
+    mockOffline();
+    await logCardio({
+      date, exerciseId: "treadmill_incline_walk", exerciseName: "Treadmill",
+      durationMin: 30, incline: 12, speed: 3, distance: null, level: null, notes: null,
+    });
+    let entries = await getSessionCardio(date);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].syncState).toBe("pending_create");
+    expect(await pendingCount(date)).toBe(1); // cardio counts toward pending
+
+    mockOnline();
+    const result = await sync();
+    expect(result.created).toBe(1);
+    entries = await getSessionCardio(date);
+    expect(entries[0].syncState).toBe("synced");
+    expect(entries[0].serverId).not.toBeNull();
+    expect(await pendingCount(date)).toBe(0);
+  });
+
+  it("deletes a synced cardio entry via DELETE on next sync", async () => {
+    const date = freshDate();
+    mockOnline();
+    const row = await logCardio({
+      date, exerciseId: "stair_machine", exerciseName: "Stairs",
+      durationMin: 10, incline: null, speed: null, distance: null, level: 5, notes: null,
+    });
+    await sync();
+    mockOffline();
+    await deleteCardio(row.localId!);
+    expect(await getSessionCardio(date)).toHaveLength(0);
+    mockOnline();
+    const result = await sync();
+    expect(result.deleted).toBe(1);
+  });
+});
+
+describe("session composition (local-only attach)", () => {
+  beforeEach(mockOnline);
+
+  it("attaches block exercises, dedupes, and removes", async () => {
+    const date = freshDate();
+    await attachToComposition(
+      date,
+      [
+        { exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false },
+        { exerciseId: "hanging_leg_raise", exerciseName: "Leg raise", loadType: "bodyweight", portable: true, conditioningOnly: false },
+      ],
+      "block:Abs"
+    );
+    // Attaching an overlapping set again shouldn't duplicate.
+    await attachToComposition(
+      date,
+      [{ exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false }],
+      "block:Abs"
+    );
+    let comp = await getSessionComposition(date);
+    expect(comp).toHaveLength(2);
+    expect(comp.map((c) => c.exerciseId)).toContain("machine_ab_crunch");
+
+    await removeFromComposition(date, "machine_ab_crunch");
+    comp = await getSessionComposition(date);
+    expect(comp).toHaveLength(1);
+    expect(comp[0].exerciseId).toBe("hanging_leg_raise");
   });
 });

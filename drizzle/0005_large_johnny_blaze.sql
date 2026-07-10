@@ -1,0 +1,1 @@
+ALTER TABLE "programs" ADD COLUMN "is_block_library" boolean DEFAULT false NOT NULL;

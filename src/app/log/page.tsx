@@ -13,13 +13,21 @@ import {
   finishSession,
   sync,
   pendingCount,
+  attachToComposition,
+  getSessionComposition,
+  removeFromComposition,
+  logCardio,
+  getSessionCardio,
+  deleteCardio,
   type SessionSet,
   type SessionMeta,
+  type SessionCardio,
+  type CompositionItem,
+  type AttachExercise,
 } from "@/lib/sessionStore";
 
 interface ProgramExerciseDetail {
   id: number;
-  dayId: number;
   exerciseId: string;
   targetSets: number;
   repRange: string | null;
@@ -50,6 +58,21 @@ interface MachineOption {
   notes: string | null;
 }
 
+interface ExerciseRow {
+  id: string;
+  name: string;
+  loadType: string;
+  portable: boolean;
+  conditioningOnly: boolean;
+  params: Record<string, unknown> | null;
+}
+
+interface BlockDetail {
+  id: number;
+  name: string;
+  exercises: ProgramExerciseDetail[];
+}
+
 interface SubstitutionCandidate {
   id: string;
   name: string;
@@ -72,48 +95,42 @@ type ProgressionResult =
       intervention?: { id: string; message: string };
     };
 
-interface PreviousSession {
-  date: string;
-  sets: Array<{ load: number; reps: number; rir: number | null }>;
+// Unified shape for anything loggable in a session — a program exercise or a
+// composition (block / ad-hoc) item. `target` is present only for program
+// exercises; composition items are removable from the session.
+interface LoggableExercise {
+  key: string;
+  exerciseId: string;
+  exerciseName: string;
+  loadType: string;
+  portable: boolean;
+  conditioningOnly: boolean;
+  target: { targetSets: number; repRange: string | null; rirTarget: string | null } | null;
+  params: Record<string, unknown> | null;
+  source: string | null; // e.g. "block:Cardio" — null for program exercises
 }
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
-
 function parseRepRangeMax(repRange: string | null): number {
   if (!repRange) return 12;
   const parts = repRange.split("-");
   const max = Number(parts[parts.length - 1]);
   return Number.isFinite(max) ? max : 12;
 }
-
 function lastMachineKey(exerciseId: string) {
   return `fitness-app:last-machine:${exerciseId}`;
 }
-
-function formatPreviousSession(session: PreviousSession | null): string {
-  if (!session) return "No previous session yet";
-  const reps = session.sets.map((s) => `${s.reps}`).join(", ");
-  const load = session.sets[0]?.load;
-  return `Last time: ${load ?? "?"} × ${reps}`;
+function num(v: unknown): number | null {
+  return typeof v === "number" ? v : null;
 }
 
-// One logged set: shows synced/pending state, inline edit + delete. All three
-// operations go through the durable store, so they work offline — including
-// correcting a set that already synced.
-function LoggedSetRow({
-  set,
-  onChanged,
-}: {
-  set: SessionSet;
-  onChanged: () => void;
-}) {
+function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
   const [rir, setRir] = useState(set.rir ?? 0);
-
   const pending = set.syncState !== "synced";
 
   async function save() {
@@ -122,7 +139,6 @@ function LoggedSetRow({
     setEditing(false);
     onChanged();
   }
-
   async function remove() {
     await deleteSet(set.localId!);
     onChanged();
@@ -141,7 +157,6 @@ function LoggedSetRow({
       </li>
     );
   }
-
   return (
     <li style={{ display: "flex", gap: 8, alignItems: "center", margin: "3px 0", fontSize: 14 }}>
       <span title={pending ? "Not yet synced" : "Synced"}>{pending ? "○" : "✓"}</span>
@@ -154,7 +169,7 @@ function LoggedSetRow({
   );
 }
 
-function ExerciseCard({
+function StrengthCard({
   ex,
   machines,
   sessionSets,
@@ -162,14 +177,16 @@ function ExerciseCard({
   onMachineAdded,
   onSessionChanged,
   onToggleComplete,
+  onRemoveFromSession,
 }: {
-  ex: ProgramExerciseDetail;
+  ex: LoggableExercise;
   machines: MachineOption[];
   sessionSets: SessionSet[];
   completed: boolean;
   onMachineAdded: () => void;
   onSessionChanged: () => void;
   onToggleComplete: (exerciseId: string, completed: boolean) => void;
+  onRemoveFromSession: ((exerciseId: string) => void) | null;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -177,26 +194,21 @@ function ExerciseCard({
     loadType: ex.loadType,
     portable: ex.portable,
   });
-
   const [machineId, setMachineId] = useState(() => {
     if (ex.portable || typeof window === "undefined") return "";
     return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "";
   });
   const [newMachineName, setNewMachineName] = useState("");
-
   const [setType, setSetType] = useState<"warmup" | "working">("working");
   const [load, setLoad] = useState(45);
   const [reps, setReps] = useState(8);
-  const [rir, setRir] = useState(Number(ex.rirTarget ?? 2));
+  const [rir, setRir] = useState(Number(ex.target?.rirTarget ?? 2));
   const [error, setError] = useState<string | null>(null);
-
-  const [previousSession, setPreviousSession] = useState<PreviousSession | null>(null);
+  const [previous, setPrevious] = useState<string | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
   const [checking, setChecking] = useState(false);
-
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapCandidates, setSwapCandidates] = useState<SubstitutionCandidate[] | null>(null);
-  const [swapLoading, setSwapLoading] = useState(false);
 
   const resolvedMachineId = activeExercise.portable ? null : machineId.trim() || null;
   const loggedSets = sessionSets.filter((s) => s.exerciseId === activeExercise.id);
@@ -207,8 +219,13 @@ function ExerciseCard({
       const params = new URLSearchParams();
       if (resolvedMachineId) params.set("machineId", resolvedMachineId);
       const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?${params.toString()}`);
-      const data: { session: PreviousSession | null } = await res.json();
-      if (!cancelled) setPreviousSession(data.session);
+      const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
+      if (cancelled) return;
+      if (!data.session) setPrevious("No previous session yet");
+      else {
+        const reps = data.session.sets.map((s) => s.reps).join(", ");
+        setPrevious(`Last time: ${data.session.sets[0]?.load ?? "?"} × ${reps}`);
+      }
     })();
     return () => {
       cancelled = true;
@@ -220,33 +237,25 @@ function ExerciseCard({
     try {
       const params = new URLSearchParams({
         exerciseId: activeExercise.id,
-        repRangeMax: String(parseRepRangeMax(ex.repRange)),
-        targetRir: String(ex.rirTarget ?? 2),
+        repRangeMax: String(parseRepRangeMax(ex.target?.repRange ?? null)),
+        targetRir: String(ex.target?.rirTarget ?? 2),
       });
       if (resolvedMachineId) params.set("machineId", resolvedMachineId);
       const res = await fetch(`/api/progression?${params.toString()}`);
-      const data: ProgressionResult = await res.json();
-      setProgression(data);
+      setProgression(await res.json());
     } finally {
       setChecking(false);
     }
-  }, [activeExercise.id, ex.repRange, ex.rirTarget, resolvedMachineId]);
+  }, [activeExercise.id, ex.target, resolvedMachineId]);
 
   async function handleAddSet(e: React.FormEvent) {
     e.preventDefault();
-    if (!Number.isFinite(reps) || reps < 1) {
-      setError("Reps must be at least 1.");
-      return;
-    }
-    if (!Number.isFinite(load) || load < 0) {
-      setError("Load can't be negative.");
-      return;
-    }
+    if (!Number.isFinite(reps) || reps < 1) return setError("Reps must be at least 1.");
+    if (!Number.isFinite(load) || load < 0) return setError("Load can't be negative.");
     setError(null);
-
     await logSet({
       date: todayIso(),
-      exerciseId: activeExercise.id, // the exercise actually performed (post-swap)
+      exerciseId: activeExercise.id,
       exerciseName: activeExercise.name,
       machineId: resolvedMachineId,
       setType,
@@ -254,47 +263,30 @@ function ExerciseCard({
       reps,
       rir,
     });
-
-    if (resolvedMachineId) {
-      localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
-    }
+    if (resolvedMachineId) localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
     onSessionChanged();
   }
 
   async function openSwap() {
-    setSwapOpen((open) => !open);
-    if (swapCandidates || swapLoading) return;
-    setSwapLoading(true);
-    try {
-      const res = await fetch(`/api/substitutions?exerciseId=${encodeURIComponent(ex.exerciseId)}`);
-      const data: SubstitutionCandidate[] = await res.json();
-      setSwapCandidates(data);
-    } finally {
-      setSwapLoading(false);
-    }
+    setSwapOpen((o) => !o);
+    if (swapCandidates) return;
+    const res = await fetch(`/api/substitutions?exerciseId=${encodeURIComponent(ex.exerciseId)}`);
+    setSwapCandidates(await res.json());
   }
-
-  function pickSwap(candidate: SubstitutionCandidate) {
-    setActiveExercise({
-      id: candidate.id,
-      name: candidate.name,
-      loadType: candidate.loadType,
-      portable: candidate.portable,
-    });
-    setMachineId(candidate.portable ? "" : localStorage.getItem(lastMachineKey(candidate.id)) ?? "");
+  function pickSwap(c: SubstitutionCandidate) {
+    setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable });
+    setMachineId(c.portable ? "" : localStorage.getItem(lastMachineKey(c.id)) ?? "");
     setSwapOpen(false);
   }
-
   function resetSwap() {
     setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable });
     setMachineId(ex.portable ? "" : localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "");
     setSwapOpen(false);
   }
-
   async function addMachine() {
     const name = newMachineName.trim();
     if (!name) return;
-    setMachineId(name); // optimistic — works offline; set-logs auto-registers on sync
+    setMachineId(name);
     setNewMachineName("");
     try {
       const res = await fetch("/api/machines", {
@@ -304,76 +296,43 @@ function ExerciseCard({
       });
       if (res.ok) onMachineAdded();
     } catch {
-      // offline — fine, /api/set-logs auto-registers the machine when it syncs
+      /* offline — set-logs auto-registers on sync */
     }
   }
 
-  // Conditioning (cardio) has no strength-log shape yet — Part 3 adds it.
-  if (ex.conditioningOnly) {
-    return (
-      <li style={{ marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #333" }}>
-        <strong>{ex.exerciseName}</strong> — conditioning
-        {ex.params ? <span style={{ opacity: 0.6 }}> ({JSON.stringify(ex.params)})</span> : null}
-      </li>
-    );
-  }
-
   return (
-    <li
-      style={{
-        marginBottom: 20,
-        paddingBottom: 16,
-        borderBottom: "1px solid #333",
-        opacity: completed ? 0.55 : 1,
-      }}
-    >
+    <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333", opacity: completed ? 0.55 : 1 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <input
-            type="checkbox"
-            checked={completed}
-            onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)}
-            title="Mark exercise done"
-          />
+          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
+        {ex.source && <span style={{ fontSize: 11, opacity: 0.6 }}>[{ex.source}]</span>}
         {activeExercise.id !== ex.exerciseId && (
           <span style={{ fontSize: 12, opacity: 0.7 }}>
-            (swapped from {ex.exerciseName} —{" "}
-            <button type="button" onClick={resetSwap} style={{ fontSize: 12 }}>
-              reset
-            </button>
-            )
+            (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} style={{ fontSize: 12 }}>reset</button>)
           </span>
         )}
-        <span
-          style={{ fontSize: 12, opacity: 0.6, border: "1px solid #444", borderRadius: 999, padding: "1px 8px" }}
-        >
-          target: {ex.targetSets} × {ex.repRange ?? "?"} @ RIR {ex.rirTarget ?? "?"}
-        </span>
-        <button type="button" onClick={openSwap} style={{ fontSize: 12 }}>
-          Swap
-        </button>
+        {ex.target && (
+          <span style={{ fontSize: 12, opacity: 0.6, border: "1px solid #444", borderRadius: 999, padding: "1px 8px" }}>
+            target: {ex.target.targetSets} × {ex.target.repRange ?? "?"} @ RIR {ex.target.rirTarget ?? "?"}
+          </span>
+        )}
+        <button type="button" onClick={openSwap} style={{ fontSize: 12 }}>Swap</button>
+        {onRemoveFromSession && (
+          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} style={{ fontSize: 12 }}>Remove</button>
+        )}
       </div>
 
-      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{formatPreviousSession(previousSession)}</p>
+      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{previous ?? "…"}</p>
 
       {swapOpen && (
         <div style={{ fontSize: 13, border: "1px solid #333", borderRadius: 6, padding: 8, margin: "6px 0" }}>
-          <p style={{ opacity: 0.7, margin: 0 }}>
-            Deterministic candidates — same movement pattern, overlapping muscles, preserves weekly stimulus (not
-            the load number).
-          </p>
-          {swapLoading && <p>Loading…</p>}
-          {swapCandidates?.length === 0 && <p>No candidates available right now.</p>}
+          <p style={{ opacity: 0.7, margin: 0 }}>Deterministic candidates — preserve weekly stimulus, not the load number.</p>
+          {swapCandidates?.length === 0 && <p>No candidates available.</p>}
           <ul style={{ listStyle: "none", padding: 0 }}>
             {swapCandidates?.map((c) => (
-              <li key={c.id}>
-                <button type="button" onClick={() => pickSwap(c)}>
-                  {c.name}
-                </button>{" "}
-                <span style={{ opacity: 0.6 }}>({c.loadType})</span>
-              </li>
+              <li key={c.id}><button type="button" onClick={() => pickSwap(c)}>{c.name}</button> <span style={{ opacity: 0.6 }}>({c.loadType})</span></li>
             ))}
           </ul>
         </div>
@@ -381,26 +340,14 @@ function ExerciseCard({
 
       {!activeExercise.portable && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <label>
-            Machine{" "}
+          <label>Machine{" "}
             <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
               <option value="">(none selected)</option>
-              {machines.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
+              {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
           </label>
-          <input
-            value={newMachineName}
-            onChange={(e) => setNewMachineName(e.target.value)}
-            placeholder="new machine id"
-            style={{ width: 130 }}
-          />
-          <button type="button" onClick={addMachine}>
-            + Add
-          </button>
+          <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder="new machine id" style={{ width: 130 }} />
+          <button type="button" onClick={addMachine}>+ Add</button>
         </div>
       )}
 
@@ -420,28 +367,23 @@ function ExerciseCard({
 
       {loggedSets.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: "4px 0" }}>
-          {loggedSets.map((s) => (
-            <LoggedSetRow key={s.localId} set={s} onChanged={onSessionChanged} />
-          ))}
+          {loggedSets.map((s) => <LoggedSetRow key={s.localId} set={s} onChanged={onSessionChanged} />)}
         </ul>
       )}
 
       <button type="button" onClick={checkProgression} disabled={checking} style={{ fontSize: 13 }}>
         {checking ? "Checking…" : "Check progression"}
       </button>
-
       {progression && (
         <div style={{ fontSize: 13, marginTop: 4, opacity: 0.9 }}>
           {progression.status === "new_machine_baseline" ? (
-            <p>New machine — re-baselining, not a stall: {progression.reason}</p>
+            <p>New machine — re-baselining, not a stall.</p>
           ) : (
             <>
               <p>
                 {progression.signal.type}
                 {"reason" in progression.signal ? `: ${progression.signal.reason}` : ""}
-                {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null
-                  ? ` (try ${progression.signal.suggestedLoad} lb)`
-                  : ""}
+                {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${progression.signal.suggestedLoad} lb)` : ""}
               </p>
               {progression.intervention && <p>Stall-buster: {progression.intervention.message}</p>}
             </>
@@ -452,17 +394,126 @@ function ExerciseCard({
   );
 }
 
+function CardioCard({
+  ex,
+  sessionCardio,
+  completed,
+  onSessionChanged,
+  onToggleComplete,
+  onRemoveFromSession,
+}: {
+  ex: LoggableExercise;
+  sessionCardio: SessionCardio[];
+  completed: boolean;
+  onSessionChanged: () => void;
+  onToggleComplete: (exerciseId: string, completed: boolean) => void;
+  onRemoveFromSession: ((exerciseId: string) => void) | null;
+}) {
+  const p = ex.params ?? {};
+  const [durationMin, setDurationMin] = useState<string>(String(num(p.duration_min) ?? ""));
+  const [incline, setIncline] = useState<string>(String(num(p.incline) ?? ""));
+  const [speed, setSpeed] = useState<string>(String(num(p.speed) ?? ""));
+  const [distance, setDistance] = useState<string>("");
+  const [level, setLevel] = useState<string>(String(num(p.level) ?? ""));
+  const [error, setError] = useState<string | null>(null);
+  const [previous, setPrevious] = useState<string | null>(null);
+
+  const entries = sessionCardio.filter((c) => c.exerciseId === ex.exerciseId);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`/api/exercises/${ex.exerciseId}/last-session`);
+      const data: { cardio: { durationMin: string | null; incline: string | null; speed: string | null } | null } = await res.json();
+      if (cancelled) return;
+      if (!data.cardio) setPrevious("No previous cardio yet");
+      else {
+        const bits = [
+          data.cardio.durationMin ? `${data.cardio.durationMin} min` : null,
+          data.cardio.incline ? `incline ${data.cardio.incline}` : null,
+          data.cardio.speed ? `speed ${data.cardio.speed}` : null,
+        ].filter(Boolean);
+        setPrevious(`Last time: ${bits.join(", ") || "logged"}`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ex.exerciseId]);
+
+  const toNum = (s: string) => (s.trim() === "" ? null : Number(s));
+
+  async function handleLog(e: React.FormEvent) {
+    e.preventDefault();
+    if (durationMin.trim() === "" && distance.trim() === "") {
+      return setError("Enter at least a duration or distance.");
+    }
+    setError(null);
+    await logCardio({
+      date: todayIso(),
+      exerciseId: ex.exerciseId,
+      exerciseName: ex.exerciseName,
+      durationMin: toNum(durationMin),
+      incline: toNum(incline),
+      speed: toNum(speed),
+      distance: toNum(distance),
+      level: toNum(level),
+      notes: null,
+    });
+    onSessionChanged();
+  }
+
+  return (
+    <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333", opacity: completed ? 0.55 : 1 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
+          <strong>{ex.exerciseName}</strong>
+        </label>
+        <span style={{ fontSize: 11, opacity: 0.6 }}>cardio{ex.source ? ` · ${ex.source}` : ""}</span>
+        {onRemoveFromSession && (
+          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} style={{ fontSize: 12 }}>Remove</button>
+        )}
+      </div>
+      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{previous ?? "…"}</p>
+
+      <form onSubmit={handleLog} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "6px 0" }}>
+        <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} style={{ width: 56 }} placeholder="min" title="Duration (min)" />
+        <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} style={{ width: 56 }} placeholder="incline" title="Incline" />
+        <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} style={{ width: 56 }} placeholder="speed" title="Speed" />
+        <input type="number" value={distance} onChange={(e) => setDistance(e.target.value)} style={{ width: 64 }} placeholder="distance" title="Distance" />
+        <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: 48 }} placeholder="level" title="Level" />
+        <button type="submit">Log cardio</button>
+      </form>
+      {error && <p style={{ color: "#f66", fontSize: 13, margin: "2px 0" }}>{error}</p>}
+
+      {entries.length > 0 && (
+        <ul style={{ listStyle: "none", padding: 0, margin: "4px 0" }}>
+          {entries.map((c) => (
+            <li key={c.localId} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, margin: "3px 0" }}>
+              <span title={c.syncState !== "synced" ? "Not yet synced" : "Synced"}>{c.syncState !== "synced" ? "○" : "✓"}</span>
+              <span>
+                {[
+                  c.durationMin != null ? `${c.durationMin} min` : null,
+                  c.incline != null ? `incline ${c.incline}` : null,
+                  c.speed != null ? `speed ${c.speed}` : null,
+                  c.distance != null ? `${c.distance} dist` : null,
+                  c.level != null ? `level ${c.level}` : null,
+                ].filter(Boolean).join(", ") || "logged"}
+              </span>
+              <button type="button" onClick={async () => { await deleteCardio(c.localId!); onSessionChanged(); }} style={{ fontSize: 12 }}>Delete</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function FinishSummary({
-  date,
-  sessionSets,
-  dayExerciseCount,
-  meta,
-  pending,
-  onConfirm,
-  onClose,
+  date, sessionSets, sessionCardio, dayExerciseCount, meta, pending, onConfirm, onClose,
 }: {
   date: string;
   sessionSets: SessionSet[];
+  sessionCardio: SessionCardio[];
   dayExerciseCount: number;
   meta: SessionMeta | null;
   pending: number;
@@ -475,53 +526,34 @@ function FinishSummary({
     cur.count += 1;
     byExercise.set(s.exerciseId, cur);
   }
-  const exerciseCount = byExercise.size;
   const setCount = sessionSets.length;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.7)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "#111", border: "1px solid #444", borderRadius: 10, padding: 20, maxWidth: 420, width: "100%" }}>
         <h2 style={{ marginTop: 0 }}>Finish session — {date}</h2>
         <p>
-          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} logged across{" "}
-          <strong>{exerciseCount}</strong> of {dayExerciseCount} program {dayExerciseCount === 1 ? "exercise" : "exercises"}.
+          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{byExercise.size}</strong> of {dayExerciseCount} program{" "}
+          {dayExerciseCount === 1 ? "exercise" : "exercises"}
+          {sessionCardio.length > 0 && <> · <strong>{sessionCardio.length}</strong> cardio {sessionCardio.length === 1 ? "entry" : "entries"}</>}.
         </p>
-        {exerciseCount === 0 ? (
+        {byExercise.size === 0 && sessionCardio.length === 0 ? (
           <p style={{ opacity: 0.7 }}>Nothing logged yet — you can still finish, or keep logging.</p>
         ) : (
           <ul style={{ paddingLeft: 18 }}>
-            {Array.from(byExercise.values()).map((e) => (
-              <li key={e.name}>
-                {e.name} — {e.count} {e.count === 1 ? "set" : "sets"}
-              </li>
-            ))}
+            {Array.from(byExercise.values()).map((e) => <li key={e.name}>{e.name} — {e.count} {e.count === 1 ? "set" : "sets"}</li>)}
+            {sessionCardio.map((c) => <li key={c.localId}>{c.exerciseName} — cardio</li>)}
           </ul>
         )}
         <p style={{ fontSize: 13, opacity: 0.7 }}>
           {pending > 0 ? `${pending} change(s) not yet synced — they'll sync when you're back online.` : "All changes synced."}
         </p>
         {meta?.finishedAt && (
-          <p style={{ fontSize: 13, opacity: 0.7 }}>
-            Previously finished at {new Date(meta.finishedAt).toLocaleTimeString()} — finishing again re-stamps it.
-          </p>
+          <p style={{ fontSize: 13, opacity: 0.7 }}>Previously finished at {new Date(meta.finishedAt).toLocaleTimeString()} — finishing again re-stamps it.</p>
         )}
         <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <button type="button" onClick={onConfirm} style={{ fontWeight: "bold" }}>
-            Confirm finish
-          </button>
-          <button type="button" onClick={onClose}>
-            Keep logging
-          </button>
+          <button type="button" onClick={onConfirm} style={{ fontWeight: "bold" }}>Confirm finish</button>
+          <button type="button" onClick={onClose}>Keep logging</button>
         </div>
       </div>
     </div>
@@ -532,23 +564,29 @@ export default function LogPage() {
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [selectedDayId, setSelectedDayId] = useState<number | null>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
+  const [allExercises, setAllExercises] = useState<ExerciseRow[]>([]);
+  const [blocks, setBlocks] = useState<BlockDetail[]>([]);
   const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
+  const [sessionCardio, setSessionCardio] = useState<SessionCardio[]>([]);
+  const [composition, setComposition] = useState<CompositionItem[]>([]);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [pending, setPending] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
   const [showFinish, setShowFinish] = useState(false);
+  const [blockToAdd, setBlockToAdd] = useState("");
+  const [exerciseToAdd, setExerciseToAdd] = useState("");
 
   const date = todayIso();
 
   const refreshSession = useCallback(async () => {
-    const [sets, done, m, p] = await Promise.all([
-      getSessionSets(date),
-      getCompletedExercises(date),
-      getSessionMeta(date),
-      pendingCount(date),
+    const [sets, cardio, comp, done, m, p] = await Promise.all([
+      getSessionSets(date), getSessionCardio(date), getSessionComposition(date),
+      getCompletedExercises(date), getSessionMeta(date), pendingCount(date),
     ]);
     setSessionSets(sets);
+    setSessionCardio(cardio);
+    setComposition(comp);
     setCompleted(done);
     setMeta(m);
     setPending(p);
@@ -559,9 +597,6 @@ export default function LogPage() {
     if (res.ok) setMachines(await res.json());
   }, []);
 
-  // Log/edit/delete write to the durable store first (instant, offline-safe),
-  // then we refresh the UI from the store and fire a best-effort sync, then
-  // refresh again so the pending/synced indicators settle.
   const onSessionChanged = useCallback(async () => {
     await refreshSession();
     await sync().catch(() => {});
@@ -570,47 +605,98 @@ export default function LogPage() {
 
   const handleSync = useCallback(async () => {
     const r = await sync();
-    setSyncStatus(
-      `Synced: +${r.created} ~${r.updated} −${r.deleted}${r.finished ? ` finish×${r.finished}` : ""}${
-        r.failed ? `, ${r.failed} still pending` : ""
-      }`
-    );
+    setSyncStatus(`Synced: +${r.created} ~${r.updated} −${r.deleted}${r.finished ? ` finish×${r.finished}` : ""}${r.failed ? `, ${r.failed} still pending` : ""}`);
     await refreshSession();
   }, [refreshSession]);
 
-  const toggleComplete = useCallback(
-    async (exerciseId: string, isComplete: boolean) => {
-      await setExerciseCompleted(date, exerciseId, isComplete);
-      await refreshSession();
-    },
-    [date, refreshSession]
-  );
+  const toggleComplete = useCallback(async (exerciseId: string, isComplete: boolean) => {
+    await setExerciseCompleted(date, exerciseId, isComplete);
+    await refreshSession();
+  }, [date, refreshSession]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [programRes, machinesRes] = await Promise.all([
+      const [programRes, machinesRes, exercisesRes, blocksRes] = await Promise.all([
         fetch("/api/program").then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null)),
         fetch("/api/machines").then((r) => (r.ok ? (r.json() as Promise<MachineOption[]>) : [])),
+        fetch("/api/exercises").then((r) => (r.ok ? (r.json() as Promise<ExerciseRow[]>) : [])),
+        fetch("/api/blocks").then((r) => (r.ok ? (r.json() as Promise<BlockDetail[]>) : [])),
       ]);
       if (cancelled) return;
       setProgram(programRes);
       if (programRes && programRes.days.length > 0) setSelectedDayId(programRes.days[0].id);
       setMachines(machinesRes);
+      setAllExercises(exercisesRes);
+      setBlocks(blocksRes);
       await refreshSession();
     })();
-
     window.addEventListener("online", handleSync);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("online", handleSync);
-    };
+    return () => { cancelled = true; window.removeEventListener("online", handleSync); };
   }, [handleSync, refreshSession]);
 
-  const currentDay = useMemo(
-    () => program?.days.find((d) => d.id === selectedDayId) ?? null,
-    [program, selectedDayId]
-  );
+  const currentDay = useMemo(() => program?.days.find((d) => d.id === selectedDayId) ?? null, [program, selectedDayId]);
+
+  // Merge program-day exercises with composition (block/ad-hoc) items into one
+  // loggable list; composition items already present in the day are skipped.
+  const loggables: LoggableExercise[] = useMemo(() => {
+    const dayIds = new Set((currentDay?.exercises ?? []).map((e) => e.exerciseId));
+    const fromProgram: LoggableExercise[] = (currentDay?.exercises ?? []).map((e) => ({
+      key: `pe:${e.id}`,
+      exerciseId: e.exerciseId,
+      exerciseName: e.exerciseName,
+      loadType: e.loadType,
+      portable: e.portable,
+      conditioningOnly: e.conditioningOnly,
+      target: { targetSets: e.targetSets, repRange: e.repRange, rirTarget: e.rirTarget },
+      params: e.params,
+      source: null,
+    }));
+    const fromComposition: LoggableExercise[] = composition
+      .filter((c) => !dayIds.has(c.exerciseId))
+      .map((c) => ({
+        key: `co:${c.exerciseId}`,
+        exerciseId: c.exerciseId,
+        exerciseName: c.exerciseName,
+        loadType: c.loadType,
+        portable: c.portable,
+        conditioningOnly: c.conditioningOnly,
+        target: null,
+        params: null,
+        source: c.source,
+      }));
+    return [...fromProgram, ...fromComposition];
+  }, [currentDay, composition]);
+
+  async function addBlock() {
+    const block = blocks.find((b) => String(b.id) === blockToAdd);
+    if (!block) return;
+    const items: AttachExercise[] = block.exercises.map((e) => ({
+      exerciseId: e.exerciseId,
+      exerciseName: e.exerciseName,
+      loadType: e.loadType,
+      portable: e.portable,
+      conditioningOnly: e.conditioningOnly,
+    }));
+    await attachToComposition(date, items, `block:${block.name}`);
+    setBlockToAdd("");
+    await refreshSession();
+  }
+
+  async function addAdhocExercise() {
+    const exx = allExercises.find((e) => e.id === exerciseToAdd);
+    if (!exx) return;
+    await attachToComposition(date, [{
+      exerciseId: exx.id, exerciseName: exx.name, loadType: exx.loadType, portable: exx.portable, conditioningOnly: exx.conditioningOnly,
+    }], "adhoc");
+    setExerciseToAdd("");
+    await refreshSession();
+  }
+
+  async function removeFromSession(exerciseId: string) {
+    await removeFromComposition(date, exerciseId);
+    await refreshSession();
+  }
 
   async function confirmFinish() {
     await finishSession(date);
@@ -620,79 +706,88 @@ export default function LogPage() {
   }
 
   const strengthExerciseCount = currentDay?.exercises.filter((e) => !e.conditioningOnly).length ?? 0;
+  const totalLogged = sessionSets.length + sessionCardio.length;
 
   return (
     <main style={{ maxWidth: 560, margin: "2rem auto", fontFamily: "sans-serif", paddingBottom: 80 }}>
       <h1>Log a session</h1>
       <p style={{ fontSize: 14 }}>
         {pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}{" "}
-        <button onClick={handleSync} style={{ marginLeft: 8 }}>
-          Sync now
-        </button>
+        <button onClick={handleSync} style={{ marginLeft: 8 }}>Sync now</button>
         {meta?.finishedAt && <span style={{ marginLeft: 8, opacity: 0.7 }}>· finished {new Date(meta.finishedAt).toLocaleTimeString()}</span>}
       </p>
       {syncStatus && <p style={{ fontSize: 13, opacity: 0.8 }}>{syncStatus}</p>}
 
       {!program ? (
-        <p>
-          No active program found. Visit <Link href="/program">/program</Link> to create one, or run `npm run
-          db:seed`.
-        </p>
+        <p>No active program. Visit <Link href="/program">/program</Link> to create one, or run `npm run db:seed`.</p>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {program.days.map((d) => (
-              <button
-                key={d.id}
-                onClick={() => setSelectedDayId(d.id)}
-                style={{ fontWeight: d.id === selectedDayId ? "bold" : "normal" }}
-              >
-                {d.name}
-              </button>
+              <button key={d.id} onClick={() => setSelectedDayId(d.id)} style={{ fontWeight: d.id === selectedDayId ? "bold" : "normal" }}>{d.name}</button>
             ))}
           </div>
 
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, fontSize: 14 }}>
+            <span>
+              Add block:{" "}
+              <select value={blockToAdd} onChange={(e) => setBlockToAdd(e.target.value)}>
+                <option value="">choose…</option>
+                {blocks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <button type="button" onClick={addBlock} disabled={!blockToAdd}>Attach</button>
+            </span>
+            <span>
+              Add exercise:{" "}
+              <select value={exerciseToAdd} onChange={(e) => setExerciseToAdd(e.target.value)}>
+                <option value="">choose…</option>
+                {allExercises.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <button type="button" onClick={addAdhocExercise} disabled={!exerciseToAdd}>Attach</button>
+            </span>
+          </div>
+
           <ul style={{ listStyle: "none", padding: 0 }}>
-            {currentDay?.exercises.map((ex) => (
-              <ExerciseCard
-                key={ex.id}
-                ex={ex}
-                machines={machines}
-                sessionSets={sessionSets}
-                completed={completed.has(ex.exerciseId)}
-                onMachineAdded={refreshMachines}
-                onSessionChanged={onSessionChanged}
-                onToggleComplete={toggleComplete}
-              />
-            ))}
+            {loggables.map((ex) =>
+              ex.conditioningOnly ? (
+                <CardioCard
+                  key={ex.key}
+                  ex={ex}
+                  sessionCardio={sessionCardio}
+                  completed={completed.has(ex.exerciseId)}
+                  onSessionChanged={onSessionChanged}
+                  onToggleComplete={toggleComplete}
+                  onRemoveFromSession={ex.source ? removeFromSession : null}
+                />
+              ) : (
+                <StrengthCard
+                  key={ex.key}
+                  ex={ex}
+                  machines={machines}
+                  sessionSets={sessionSets}
+                  completed={completed.has(ex.exerciseId)}
+                  onMachineAdded={refreshMachines}
+                  onSessionChanged={onSessionChanged}
+                  onToggleComplete={toggleComplete}
+                  onRemoveFromSession={ex.source ? removeFromSession : null}
+                />
+              )
+            )}
           </ul>
         </>
       )}
 
-      <div
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: 12,
-          background: "#0a0a0a",
-          borderTop: "1px solid #333",
-          display: "flex",
-          justifyContent: "center",
-          gap: 12,
-        }}
-      >
-        <Link href="/program">Edit program</Link>
-        <button type="button" onClick={() => setShowFinish(true)} style={{ fontWeight: "bold" }}>
-          Finish session ({sessionSets.length})
-        </button>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: 12, background: "#0a0a0a", borderTop: "1px solid #333", display: "flex", justifyContent: "center", gap: 12 }}>
+        <Link href="/program">Program</Link>
+        <Link href="/blocks">Blocks</Link>
+        <button type="button" onClick={() => setShowFinish(true)} style={{ fontWeight: "bold" }}>Finish session ({totalLogged})</button>
       </div>
 
       {showFinish && (
         <FinishSummary
           date={date}
           sessionSets={sessionSets}
+          sessionCardio={sessionCardio}
           dayExerciseCount={strengthExerciseCount}
           meta={meta}
           pending={pending}

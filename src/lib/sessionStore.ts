@@ -38,6 +38,43 @@ export interface SessionMeta {
   finishSynced: boolean;
 }
 
+// Session composition: which blocks/ad-hoc exercises the user added to today's
+// session, independent of whether a set has been logged against them yet — so a
+// freshly-attached block survives a reload. Local-only (a UI convenience), never
+// synced. One entry per exercise for a date.
+export interface CompositionItem {
+  key: string; // `${date}::${exerciseId}`
+  date: string;
+  exerciseId: string;
+  exerciseName: string;
+  loadType: string;
+  portable: boolean;
+  conditioningOnly: boolean;
+  source: string; // "block:Cardio" | "adhoc"
+  orderIndex: number;
+}
+
+// Cardio is logged with a different shape (duration/incline/speed/…) and lives
+// in its own store, mirroring the strength-set synced/pending pattern. It never
+// feeds the volume/progression math (that only reads set_logs / cardio is a
+// separate table server-side too).
+export type CardioSyncState = SetSyncState;
+
+export interface SessionCardio {
+  localId?: number;
+  date: string;
+  exerciseId: string;
+  exerciseName: string;
+  durationMin: number | null;
+  incline: number | null;
+  speed: number | null;
+  distance: number | null;
+  level: number | null;
+  notes: string | null;
+  serverId: number | null;
+  syncState: CardioSyncState;
+}
+
 interface SessionDB extends DBSchema {
   sets: {
     key: number;
@@ -53,19 +90,37 @@ interface SessionDB extends DBSchema {
     key: string;
     value: SessionMeta;
   };
+  composition: {
+    key: string;
+    value: CompositionItem;
+    indexes: { "by-date": string };
+  };
+  cardio: {
+    key: number;
+    value: SessionCardio;
+    indexes: { "by-date": string };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<SessionDB>> | null = null;
 
 function getDb() {
   if (!dbPromise) {
-    dbPromise = openDB<SessionDB>("fitness-app-session", 1, {
-      upgrade(db) {
-        const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
-        sets.createIndex("by-date", "date");
-        const completed = db.createObjectStore("completed", { keyPath: "key" });
-        completed.createIndex("by-date", "date");
-        db.createObjectStore("meta", { keyPath: "date" });
+    dbPromise = openDB<SessionDB>("fitness-app-session", 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
+          sets.createIndex("by-date", "date");
+          const completed = db.createObjectStore("completed", { keyPath: "key" });
+          completed.createIndex("by-date", "date");
+          db.createObjectStore("meta", { keyPath: "date" });
+        }
+        if (oldVersion < 2) {
+          const composition = db.createObjectStore("composition", { keyPath: "key" });
+          composition.createIndex("by-date", "date");
+          const cardio = db.createObjectStore("cardio", { keyPath: "localId", autoIncrement: true });
+          cardio.createIndex("by-date", "date");
+        }
       },
     });
   }
@@ -185,6 +240,82 @@ export async function finishSession(date: string): Promise<SessionMeta> {
   return meta;
 }
 
+// --- Session composition (attached blocks / ad-hoc exercises, local only) ---
+
+export interface AttachExercise {
+  exerciseId: string;
+  exerciseName: string;
+  loadType: string;
+  portable: boolean;
+  conditioningOnly: boolean;
+}
+
+export async function attachToComposition(
+  date: string,
+  items: AttachExercise[],
+  source: string
+): Promise<void> {
+  const db = await getDb();
+  const existing = await db.getAllFromIndex("composition", "by-date", date);
+  let order = existing.length;
+  for (const item of items) {
+    const key = `${date}::${item.exerciseId}`;
+    if (await db.get("composition", key)) continue; // already in the session
+    await db.put("composition", { key, date, source, orderIndex: order++, ...item });
+  }
+}
+
+export async function getSessionComposition(date: string): Promise<CompositionItem[]> {
+  const db = await getDb();
+  const rows = await db.getAllFromIndex("composition", "by-date", date);
+  return rows.sort((a, b) => a.orderIndex - b.orderIndex);
+}
+
+export async function removeFromComposition(date: string, exerciseId: string): Promise<void> {
+  const db = await getDb();
+  await db.delete("composition", `${date}::${exerciseId}`);
+}
+
+// --- Cardio ----------------------------------------------------------------
+
+export interface LogCardioInput {
+  date: string;
+  exerciseId: string;
+  exerciseName: string;
+  durationMin: number | null;
+  incline: number | null;
+  speed: number | null;
+  distance: number | null;
+  level: number | null;
+  notes: string | null;
+}
+
+export async function logCardio(input: LogCardioInput): Promise<SessionCardio> {
+  const db = await getDb();
+  const row: SessionCardio = { ...input, serverId: null, syncState: "pending_create" };
+  const localId = await db.add("cardio", row);
+  return { ...row, localId };
+}
+
+export async function getSessionCardio(date: string): Promise<SessionCardio[]> {
+  const db = await getDb();
+  const rows = await db.getAllFromIndex("cardio", "by-date", date);
+  return rows
+    .filter((c) => c.syncState !== "pending_delete")
+    .sort((a, b) => (a.localId ?? 0) - (b.localId ?? 0));
+}
+
+export async function deleteCardio(localId: number): Promise<void> {
+  const db = await getDb();
+  const row = await db.get("cardio", localId);
+  if (!row) return;
+  if (row.syncState === "pending_create") {
+    await db.delete("cardio", localId);
+  } else {
+    await db.put("cardio", { ...row, syncState: "pending_delete" });
+  }
+}
+
 // --- Sync ------------------------------------------------------------------
 
 export interface SyncResult {
@@ -197,8 +328,11 @@ export interface SyncResult {
 
 export async function pendingCount(date?: string): Promise<number> {
   const db = await getDb();
-  const rows = date ? await db.getAllFromIndex("sets", "by-date", date) : await db.getAll("sets");
-  let n = rows.filter((s) => s.syncState !== "synced").length;
+  const setRows = date ? await db.getAllFromIndex("sets", "by-date", date) : await db.getAll("sets");
+  let n = setRows.filter((s) => s.syncState !== "synced").length;
+
+  const cardioRows = date ? await db.getAllFromIndex("cardio", "by-date", date) : await db.getAll("cardio");
+  n += cardioRows.filter((c) => c.syncState !== "synced").length;
 
   const metas = date ? [await db.get("meta", date)] : await db.getAll("meta");
   for (const m of metas) {
@@ -252,6 +386,41 @@ export async function sync(): Promise<SyncResult> {
       }
     } catch {
       result.failed += 1; // stays in its pending state, retried next sync
+    }
+  }
+
+  const cardioRows = await db.getAll("cardio");
+  for (const row of cardioRows) {
+    try {
+      if (row.syncState === "pending_create") {
+        const res = await fetch("/api/cardio-logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: row.date,
+            exerciseId: row.exerciseId,
+            durationMin: row.durationMin,
+            incline: row.incline,
+            speed: row.speed,
+            distance: row.distance,
+            level: row.level,
+            notes: row.notes,
+          }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const created = await res.json();
+        await db.put("cardio", { ...row, serverId: created.id, syncState: "synced" });
+        result.created += 1;
+      } else if (row.syncState === "pending_delete") {
+        if (row.serverId != null) {
+          const res = await fetch(`/api/cardio-logs/${row.serverId}`, { method: "DELETE" });
+          if (!res.ok && res.status !== 404) throw new Error(String(res.status));
+        }
+        if (row.localId != null) await db.delete("cardio", row.localId);
+        result.deleted += 1;
+      }
+    } catch {
+      result.failed += 1;
     }
   }
 

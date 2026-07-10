@@ -36,6 +36,20 @@
       "when": 1783654484951,
       "tag": "0004_blushing_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783657758568,
+      "tag": "0005_large_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783710729196,
+      "tag": "0006_nervous_epoch",
+      "breakpoints": true
     }
   ]
 }

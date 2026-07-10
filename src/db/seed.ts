@@ -4,7 +4,15 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "./client";
 import { muscles, exercises, exerciseMuscles, exerciseSubstitutions, loadTypeEnum, movementPatternEnum } from "./schema";
-import { listPrograms, seedProgramFromRoutine, type SeedRoutineDay } from "@/lib/programs";
+import {
+  listPrograms,
+  seedProgramFromRoutine,
+  getOrCreateBlockLibrary,
+  listBlocks,
+  addDay,
+  addExerciseToDay,
+  type SeedRoutineDay,
+} from "@/lib/programs";
 
 type SeedMuscleRef = { muscle: string; emphasis: number };
 
@@ -153,6 +161,7 @@ async function loadSeed() {
   }
 
   await seedInitialProgramIfNone(seed);
+  await seedStarterBlocksIfNone(seed);
 
   console.log("Seed complete.");
 }
@@ -192,6 +201,36 @@ async function seedInitialProgramIfNone(seed: SeedFile) {
   console.log(
     `Seeded initial program "${program.splitType}" with ${routineExercises.length} program-exercise rows across ${days.length} days.`
   );
+}
+
+// Starter reusable blocks so the one-tap "attach abs/cardio at the end" flow
+// works out of the box. Non-destructive: only seeds if the block library is
+// empty. Built from the seed's abs/cardio day exercises via the same
+// addDay/addExerciseToDay primitives the /blocks editor uses.
+async function seedStarterBlocksIfNone(seed: SeedFile) {
+  const lib = await getOrCreateBlockLibrary();
+  const existingBlocks = await listBlocks();
+  if (existingBlocks.length > 0) {
+    console.log(`Skipping block seed — ${existingBlocks.length} block(s) already exist.`);
+    return;
+  }
+
+  const blockDayNames: Record<string, string> = { abs: "Abs", cardio: "Cardio" };
+  let created = 0;
+  for (const [seedDay, blockName] of Object.entries(blockDayNames)) {
+    const exs = seed.exercises.filter((ex) => ex.in_current_routine && ex.day === seedDay);
+    if (exs.length === 0) continue;
+    const day = await addDay(lib.id, blockName);
+    for (const ex of exs) {
+      await addExerciseToDay(
+        day.id,
+        ex.id,
+        ex.conditioning_only ? { targetSets: 1, repRange: null, rirTarget: null } : {}
+      );
+    }
+    created += 1;
+  }
+  console.log(`Seeded ${created} starter block(s) into the block library.`);
 }
 
 loadSeed()

@@ -17,6 +17,8 @@ import {
   removeProgramExercise,
   moveProgramExercise,
   seedProgramFromRoutine,
+  getOrCreateBlockLibrary,
+  listBlocks,
   DEFAULT_PROGRAM_EXERCISE_TARGETS,
 } from "../programs";
 
@@ -75,6 +77,24 @@ describe("programs CRUD", () => {
     const program = await makeProgram("test_program_get");
     const fetched = await getProgram(program.id);
     expect(fetched?.splitType).toBe("test_program_get");
+  });
+
+  it("excludes the block library from listPrograms but exposes it via listBlocks", async () => {
+    const lib = await getOrCreateBlockLibrary();
+    expect(lib.isBlockLibrary).toBe(true);
+
+    const programsList = await listPrograms();
+    expect(programsList.some((p) => p.id === lib.id)).toBe(false); // hidden from the switcher
+
+    // A block is just one of the library's days.
+    const block = await addDay(lib.id, "test_block_abs");
+    await addExerciseToDay(block.id, EXERCISE_A);
+    const blocks = await listBlocks();
+    const seen = blocks.find((b) => b.id === block.id);
+    expect(seen).toBeDefined();
+    expect(seen?.exercises[0].exerciseId).toBe(EXERCISE_A);
+
+    await deleteDay(block.id); // cleanup (leave library row; it's a singleton)
   });
 
   it("renames a program", async () => {
