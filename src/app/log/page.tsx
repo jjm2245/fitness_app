@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import styles from "./log.module.css";
 import {
   logSet,
   editSet,
@@ -158,13 +159,15 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
     );
   }
   return (
-    <li style={{ display: "flex", gap: 8, alignItems: "center", margin: "3px 0", fontSize: 14 }}>
-      <span title={pending ? "Not yet synced" : "Synced"}>{pending ? "○" : "✓"}</span>
+    <li className={styles.loggedRow}>
+      <span className={pending ? styles.pending : styles.synced} title={pending ? "Not yet synced" : "Synced"}>
+        {pending ? "○" : "✓"}
+      </span>
       <span>
         {set.setType === "warmup" ? "Warm-up" : "Working"}: {set.load} lb × {set.reps} @ RIR {set.rir ?? "—"}
       </span>
-      <button type="button" onClick={() => setEditing(true)} style={{ fontSize: 12 }}>Edit</button>
-      <button type="button" onClick={remove} style={{ fontSize: 12 }}>Delete</button>
+      <button type="button" onClick={() => setEditing(true)} className={styles.secondaryBtn}>Edit</button>
+      <button type="button" onClick={remove} className={styles.secondaryBtn}>Delete</button>
     </li>
   );
 }
@@ -301,30 +304,30 @@ function StrengthCard({
   }
 
   return (
-    <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333", opacity: completed ? 0.55 : 1 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+      <div className={styles.exHeader}>
+        <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
-        {ex.source && <span style={{ fontSize: 11, opacity: 0.6 }}>[{ex.source}]</span>}
+        {ex.source && <span className={styles.tag}>[{ex.source}]</span>}
         {activeExercise.id !== ex.exerciseId && (
-          <span style={{ fontSize: 12, opacity: 0.7 }}>
-            (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} style={{ fontSize: 12 }}>reset</button>)
+          <span className={styles.tag}>
+            (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} className={styles.secondaryBtn}>reset</button>)
           </span>
         )}
         {ex.target && (
-          <span style={{ fontSize: 12, opacity: 0.6, border: "1px solid #444", borderRadius: 999, padding: "1px 8px" }}>
+          <span className={styles.chip}>
             target: {ex.target.targetSets} × {ex.target.repRange ?? "?"} @ RIR {ex.target.rirTarget ?? "?"}
           </span>
         )}
-        <button type="button" onClick={openSwap} style={{ fontSize: 12 }}>Swap</button>
+        <button type="button" onClick={openSwap} className={styles.secondaryBtn}>Swap</button>
         {onRemoveFromSession && (
-          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} style={{ fontSize: 12 }}>Remove</button>
+          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
         )}
       </div>
 
-      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{previous ?? "…"}</p>
+      <p className={styles.prev}>{previous ?? "…"}</p>
 
       {swapOpen && (
         <div style={{ fontSize: 13, border: "1px solid #333", borderRadius: 6, padding: 8, margin: "6px 0" }}>
@@ -351,27 +354,27 @@ function StrengthCard({
         </div>
       )}
 
-      <form onSubmit={handleAddSet} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "6px 0" }}>
+      <form onSubmit={handleAddSet} className={styles.entryForm}>
         <select value={setType} onChange={(e) => setSetType(e.target.value as "warmup" | "working")}>
           <option value="working">Working</option>
           <option value="warmup">Warm-up</option>
         </select>
-        <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 64 }} title="Load" />
+        <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} title="Load" />
         <span>lb ×</span>
-        <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 48 }} title="Reps" />
+        <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} title="Reps" />
         <span>reps @ RIR</span>
-        <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} style={{ width: 48 }} title="RIR" />
-        <button type="submit">Add set</button>
+        <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} title="RIR" />
+        <button type="submit" className={styles.primary}>Add set</button>
       </form>
-      {error && <p style={{ color: "#f66", fontSize: 13, margin: "2px 0" }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
       {loggedSets.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "4px 0" }}>
+        <ul className={styles.logged}>
           {loggedSets.map((s) => <LoggedSetRow key={s.localId} set={s} onChanged={onSessionChanged} />)}
         </ul>
       )}
 
-      <button type="button" onClick={checkProgression} disabled={checking} style={{ fontSize: 13 }}>
+      <button type="button" onClick={checkProgression} disabled={checking} className={styles.secondaryBtn}>
         {checking ? "Checking…" : "Check progression"}
       </button>
       {progression && (
@@ -462,34 +465,36 @@ function CardioCard({
   }
 
   return (
-    <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333", opacity: completed ? 0.55 : 1 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+      <div className={styles.exHeader}>
+        <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
           <strong>{ex.exerciseName}</strong>
         </label>
-        <span style={{ fontSize: 11, opacity: 0.6 }}>cardio{ex.source ? ` · ${ex.source}` : ""}</span>
+        <span className={styles.tag}>cardio{ex.source ? ` · ${ex.source}` : ""}</span>
         {onRemoveFromSession && (
-          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} style={{ fontSize: 12 }}>Remove</button>
+          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
         )}
       </div>
-      <p style={{ fontSize: 13, opacity: 0.8, margin: "4px 0" }}>{previous ?? "…"}</p>
+      <p className={styles.prev}>{previous ?? "…"}</p>
 
-      <form onSubmit={handleLog} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "6px 0" }}>
-        <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} style={{ width: 56 }} placeholder="min" title="Duration (min)" />
-        <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} style={{ width: 56 }} placeholder="incline" title="Incline" />
-        <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} style={{ width: 56 }} placeholder="speed" title="Speed" />
-        <input type="number" value={distance} onChange={(e) => setDistance(e.target.value)} style={{ width: 64 }} placeholder="distance" title="Distance" />
-        <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: 48 }} placeholder="level" title="Level" />
-        <button type="submit">Log cardio</button>
+      <form onSubmit={handleLog} className={styles.entryForm}>
+        <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="min" title="Duration (min)" />
+        <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} placeholder="incline" title="Incline" />
+        <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} placeholder="speed" title="Speed" />
+        <input type="number" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="distance" title="Distance" />
+        <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="level" title="Level" />
+        <button type="submit" className={styles.primary}>Log cardio</button>
       </form>
-      {error && <p style={{ color: "#f66", fontSize: 13, margin: "2px 0" }}>{error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
 
       {entries.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "4px 0" }}>
+        <ul className={styles.logged}>
           {entries.map((c) => (
-            <li key={c.localId} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, margin: "3px 0" }}>
-              <span title={c.syncState !== "synced" ? "Not yet synced" : "Synced"}>{c.syncState !== "synced" ? "○" : "✓"}</span>
+            <li key={c.localId} className={styles.loggedRow}>
+              <span className={c.syncState !== "synced" ? styles.pending : styles.synced} title={c.syncState !== "synced" ? "Not yet synced" : "Synced"}>
+                {c.syncState !== "synced" ? "○" : "✓"}
+              </span>
               <span>
                 {[
                   c.durationMin != null ? `${c.durationMin} min` : null,
@@ -499,7 +504,7 @@ function CardioCard({
                   c.level != null ? `level ${c.level}` : null,
                 ].filter(Boolean).join(", ") || "logged"}
               </span>
-              <button type="button" onClick={async () => { await deleteCardio(c.localId!); onSessionChanged(); }} style={{ fontSize: 12 }}>Delete</button>
+              <button type="button" onClick={async () => { await deleteCardio(c.localId!); onSessionChanged(); }} className={styles.secondaryBtn}>Delete</button>
             </li>
           ))}
         </ul>
@@ -529,8 +534,8 @@ function FinishSummary({
   const setCount = sessionSets.length;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "#111", border: "1px solid #444", borderRadius: 10, padding: 20, maxWidth: 420, width: "100%" }}>
+    <div className={styles.modalBackdrop}>
+      <div className={styles.modal}>
         <h2 style={{ marginTop: 0 }}>Finish session — {date}</h2>
         <p>
           <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{byExercise.size}</strong> of {dayExerciseCount} program{" "}
@@ -551,8 +556,8 @@ function FinishSummary({
         {meta?.finishedAt && (
           <p style={{ fontSize: 13, opacity: 0.7 }}>Previously finished at {new Date(meta.finishedAt).toLocaleTimeString()} — finishing again re-stamps it.</p>
         )}
-        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <button type="button" onClick={onConfirm} style={{ fontWeight: "bold" }}>Confirm finish</button>
+        <div className={styles.modalActions}>
+          <button type="button" onClick={onConfirm} className={styles.primary}>Confirm finish</button>
           <button type="button" onClick={onClose}>Keep logging</button>
         </div>
       </div>
@@ -709,45 +714,51 @@ export default function LogPage() {
   const totalLogged = sessionSets.length + sessionCardio.length;
 
   return (
-    <main style={{ maxWidth: 560, margin: "2rem auto", fontFamily: "sans-serif", paddingBottom: 80 }}>
+    <main className={styles.page}>
       <h1>Log a session</h1>
-      <p style={{ fontSize: 14 }}>
-        {pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}{" "}
-        <button onClick={handleSync} style={{ marginLeft: 8 }}>Sync now</button>
-        {meta?.finishedAt && <span style={{ marginLeft: 8, opacity: 0.7 }}>· finished {new Date(meta.finishedAt).toLocaleTimeString()}</span>}
-      </p>
-      {syncStatus && <p style={{ fontSize: 13, opacity: 0.8 }}>{syncStatus}</p>}
+      <div className={styles.statusBar}>
+        <span>{pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}</span>
+        <button onClick={handleSync} className={styles.secondaryBtn}>Sync now</button>
+        {meta?.finishedAt && <span>· finished {new Date(meta.finishedAt).toLocaleTimeString()}</span>}
+        {syncStatus && <span>· {syncStatus}</span>}
+      </div>
 
       {!program ? (
         <p>No active program. Visit <Link href="/program">/program</Link> to create one, or run `npm run db:seed`.</p>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <div className={styles.dayTabs}>
             {program.days.map((d) => (
-              <button key={d.id} onClick={() => setSelectedDayId(d.id)} style={{ fontWeight: d.id === selectedDayId ? "bold" : "normal" }}>{d.name}</button>
+              <button
+                key={d.id}
+                onClick={() => setSelectedDayId(d.id)}
+                className={d.id === selectedDayId ? styles.dayTabActive : styles.dayTab}
+              >
+                {d.name}
+              </button>
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, fontSize: 14 }}>
+          <div className={styles.addRow}>
             <span>
-              Add block:{" "}
+              Add block:
               <select value={blockToAdd} onChange={(e) => setBlockToAdd(e.target.value)}>
                 <option value="">choose…</option>
                 {blocks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <button type="button" onClick={addBlock} disabled={!blockToAdd}>Attach</button>
+              <button type="button" onClick={addBlock} disabled={!blockToAdd} className={styles.secondaryBtn}>Attach</button>
             </span>
             <span>
-              Add exercise:{" "}
+              Add exercise:
               <select value={exerciseToAdd} onChange={(e) => setExerciseToAdd(e.target.value)}>
                 <option value="">choose…</option>
                 {allExercises.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
-              <button type="button" onClick={addAdhocExercise} disabled={!exerciseToAdd}>Attach</button>
+              <button type="button" onClick={addAdhocExercise} disabled={!exerciseToAdd} className={styles.secondaryBtn}>Attach</button>
             </span>
           </div>
 
-          <ul style={{ listStyle: "none", padding: 0 }}>
+          <ul className={styles.list}>
             {loggables.map((ex) =>
               ex.conditioningOnly ? (
                 <CardioCard
@@ -777,10 +788,14 @@ export default function LogPage() {
         </>
       )}
 
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, padding: 12, background: "#0a0a0a", borderTop: "1px solid #333", display: "flex", justifyContent: "center", gap: 12 }}>
-        <Link href="/program">Program</Link>
-        <Link href="/blocks">Blocks</Link>
-        <button type="button" onClick={() => setShowFinish(true)} style={{ fontWeight: "bold" }}>Finish session ({totalLogged})</button>
+      <div className={styles.finishBar}>
+        <span className={styles.links}>
+          <Link href="/program">Program</Link>
+          <Link href="/blocks">Blocks</Link>
+        </span>
+        <button type="button" onClick={() => setShowFinish(true)} className={styles.primary}>
+          Finish session ({totalLogged})
+        </button>
       </div>
 
       {showFinish && (

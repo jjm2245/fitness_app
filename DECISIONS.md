@@ -428,3 +428,102 @@ genuinely required a fix (one was found: see the timezone bug below).
   install, full-screen "app" display, and the offline-outbox flow (log a set
   in airplane mode, reconnect, confirm sync) on a real phone. These are
   called out explicitly in the phone-test checklist handed to the user.
+
+## Logging-model rework (session lifecycle, blocks, cardio, UX)
+
+After real phone use, four gaps: no clear commit at set/exercise/session
+level, no way to end a session, abs/cardio couldn't be reused or skipped
+easily, and cardio couldn't be logged at all. Fixed in four parts. No LLM,
+deterministic core untouched and re-audited clean, single-user, offline-first
+preserved throughout.
+
+### Part 1 — Session lifecycle + durable offline log (commit eb13799)
+
+- **The real fix was the offline layer.** The old outbox drained and forgot
+  synced rows, so there was nothing durable to render a "logged today" list,
+  edit, or summarize from offline. Rebuilt it as a durable local session log
+  (`src/lib/sessionStore.ts`, IndexedDB): every set is a permanent row with
+  `serverId` + `syncState` (pending_create / synced / pending_update /
+  pending_delete). Sync updates rows in place. The UI always reads from this
+  store, never the network — so confirmation, edit, delete, completed-state,
+  and the finish summary all work fully offline.
+- **Same-session edit-after-sync, offline** (explicit user requirement):
+  editing a synced set offline transitions it to `pending_update` and PATCHes
+  on the next sync; deleting a synced set soft-marks `pending_delete` and
+  DELETEs on sync; deleting a never-synced set is a pure local removal. Old
+  historical edits stay online-only (out of scope). Proven with 6
+  fake-indexeddb tests (added `fake-indexeddb` as a devDependency — the store
+  is browser-only and can't be exercised through the preview, which has no
+  network toggle).
+- **Finish is re-stampable, not a one-way door** (explicit user requirement):
+  `workout_logs.finished_at` (new nullable timestamptz, migration 0004);
+  `POST /api/sessions/finish` upserts by date so a session that only ever
+  existed offline can still be finished. The pre-commit summary ("N sets
+  across M of Y program exercises", per-exercise breakdown, sync status) is
+  computed entirely from the local store.
+- New `PATCH`/`DELETE /api/set-logs/[id]`. Completed-exercise flags are
+  local-only (a "what's left" convenience, not worth syncing).
+
+### Part 2 — Reusable blocks (commit e405025)
+
+- **Schema reuse over new tables**: a block is a `program_day` under a single
+  hidden block-library program (`programs.is_block_library`, migration 0005).
+  This reuses the whole program/day/exercise CRUD lib and API routes verbatim
+  — the `/blocks` editor is the same extracted `DayEditor` component as
+  `/program`, just pointed at the library. `listPrograms()`/
+  `getActiveProgram()` exclude the library so it never appears in the switcher.
+- **Attach-to-session is client-only** (no DB relation): a local IndexedDB
+  `composition` store records which blocks/ad-hoc exercises are added to
+  today, so a freshly attached block survives a reload before any set is
+  logged. Sets logged against them are ordinary `set_logs` rows. Attaching or
+  skipping never blocks finishing.
+- Seeds starter "Abs" and "Cardio" blocks from the seed's abs/cardio day
+  exercises, non-destructively (only if the library is empty), so the one-tap
+  flow works out of the box. The existing program's abs/cardio *days* are left
+  as-is — the user can delete them from the program in the editor if they'd
+  rather rely on blocks (not done destructively for them).
+
+### Part 3 — Cardio logging (commit e405025)
+
+- **Separate `cardio_logs` table** (migration 0006): duration/incline/speed/
+  distance/level, never sets×reps×load. Isolation from the volume/progression
+  math is **structural, not a filter** — the deterministic core only ever
+  reads `set_logs`, so cardio is physically invisible to it. Verified: a
+  logged cardio entry lands in `cardio_logs`, 0 rows in `set_logs`, and
+  `grep` finds no cardio/block/routine references in `src/core/*`.
+- Cardio has its own local store (mirroring the set synced/pending pattern),
+  its own `POST`/`DELETE /api/cardio-logs`, and `last-session` branches on
+  `conditioning_only` to return a cardio-shaped "last time". `/log` routes
+  conditioning exercises to a cardio card, everything else to the strength
+  card, over one merged program+composition loggable list.
+
+### Part 4 — Usability / visual cleanup
+
+- Fixed dark theme + design tokens + comfortable tap targets (≥40px controls)
+  in `globals.css` — improves every screen at once — plus a `log.module.css`
+  (CSS Modules, per plan, no UI framework) for the logging screen: bordered
+  cards, muted guideline-chip target, blue primary actions (one per card +
+  the sticky "Finish session" bar), colored synced/pending indicators,
+  de-emphasized completed cards. Styling only; the model from Parts 1–3 is
+  unchanged. Verified clean at 375px mobile width (no overflow after capping
+  control max-widths).
+
+### Self-check (required before done)
+
+- **No routine literals in `src/core/*`** — re-grepped for cardio/block/
+  exercise/day/muscle/routine names: clean. Core imports no DB/schema.
+- **Offline finish + summary verified**: 9 fake-indexeddb tests cover the sync
+  state machine (offline log, edit-after-sync-offline, soft-delete, cardio
+  offline, finish offline + re-stamp, composition attach/dedupe/remove); the
+  finish summary is computed from the local store so it renders with no
+  network.
+- **Tests**: 85 pass. Clean typecheck, lint, and production build.
+- **Migrations 0004–0006 applied to LOCAL only.** Production Neon migration is
+  deliberately still pending — to be run once the user has tested this build.
+
+### Tooling note
+
+Running `next build` (verification) while a `next dev` preview server was
+alive clobbered the shared `.next/` and 500'd the dev server. Not a code
+issue — fixed by stopping the preview before building. Worth remembering:
+don't `next build` against a live dev server sharing the same `.next`.
