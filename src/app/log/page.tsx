@@ -2,7 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { queueSet, getPendingSets, flushQueue } from "@/lib/offlineQueue";
+import {
+  logSet,
+  editSet,
+  deleteSet,
+  getSessionSets,
+  getCompletedExercises,
+  setExerciseCompleted,
+  getSessionMeta,
+  finishSession,
+  sync,
+  pendingCount,
+  type SessionSet,
+  type SessionMeta,
+} from "@/lib/sessionStore";
 
 interface ProgramExerciseDetail {
   id: number;
@@ -64,11 +77,8 @@ interface PreviousSession {
   sets: Array<{ load: number; reps: number; rir: number | null }>;
 }
 
-interface LoggedSet {
-  setType: "warmup" | "working";
-  load: number;
-  reps: number;
-  rir: number | null;
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function parseRepRangeMax(repRange: string | null): number {
@@ -84,26 +94,83 @@ function lastMachineKey(exerciseId: string) {
 
 function formatPreviousSession(session: PreviousSession | null): string {
   if (!session) return "No previous session yet";
-  const parts = session.sets.map((s) => `${s.reps}`).join(", ");
+  const reps = session.sets.map((s) => `${s.reps}`).join(", ");
   const load = session.sets[0]?.load;
-  return `Last time: ${load ?? "?"} x ${parts}`;
+  return `Last time: ${load ?? "?"} × ${reps}`;
+}
+
+// One logged set: shows synced/pending state, inline edit + delete. All three
+// operations go through the durable store, so they work offline — including
+// correcting a set that already synced.
+function LoggedSetRow({
+  set,
+  onChanged,
+}: {
+  set: SessionSet;
+  onChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [load, setLoad] = useState(set.load);
+  const [reps, setReps] = useState(set.reps);
+  const [rir, setRir] = useState(set.rir ?? 0);
+
+  const pending = set.syncState !== "synced";
+
+  async function save() {
+    if (reps < 1 || load < 0) return;
+    await editSet(set.localId!, { load, reps, rir });
+    setEditing(false);
+    onChanged();
+  }
+
+  async function remove() {
+    await deleteSet(set.localId!);
+    onChanged();
+  }
+
+  if (editing) {
+    return (
+      <li style={{ display: "flex", gap: 4, alignItems: "center", margin: "3px 0", fontSize: 14 }}>
+        <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 56 }} />
+        <span>×</span>
+        <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 44 }} />
+        <span>@</span>
+        <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} style={{ width: 40 }} />
+        <button type="button" onClick={save}>Save</button>
+        <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+      </li>
+    );
+  }
+
+  return (
+    <li style={{ display: "flex", gap: 8, alignItems: "center", margin: "3px 0", fontSize: 14 }}>
+      <span title={pending ? "Not yet synced" : "Synced"}>{pending ? "○" : "✓"}</span>
+      <span>
+        {set.setType === "warmup" ? "Warm-up" : "Working"}: {set.load} lb × {set.reps} @ RIR {set.rir ?? "—"}
+      </span>
+      <button type="button" onClick={() => setEditing(true)} style={{ fontSize: 12 }}>Edit</button>
+      <button type="button" onClick={remove} style={{ fontSize: 12 }}>Delete</button>
+    </li>
+  );
 }
 
 function ExerciseCard({
   ex,
   machines,
+  sessionSets,
+  completed,
   onMachineAdded,
-  onLogged,
+  onSessionChanged,
+  onToggleComplete,
 }: {
   ex: ProgramExerciseDetail;
   machines: MachineOption[];
+  sessionSets: SessionSet[];
+  completed: boolean;
   onMachineAdded: () => void;
-  onLogged: () => void;
+  onSessionChanged: () => void;
+  onToggleComplete: (exerciseId: string, completed: boolean) => void;
 }) {
-  // The exercise actually being logged this session — starts as the program's
-  // prescribed exercise, can change via "Swap". The program itself is never
-  // touched; this is purely a client-side substitution for today (spec §8:
-  // "a short parallel track").
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
     name: ex.exerciseName,
@@ -121,7 +188,7 @@ function ExerciseCard({
   const [load, setLoad] = useState(45);
   const [reps, setReps] = useState(8);
   const [rir, setRir] = useState(Number(ex.rirTarget ?? 2));
-  const [loggedToday, setLoggedToday] = useState<LoggedSet[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const [previousSession, setPreviousSession] = useState<PreviousSession | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
@@ -132,6 +199,7 @@ function ExerciseCard({
   const [swapLoading, setSwapLoading] = useState(false);
 
   const resolvedMachineId = activeExercise.portable ? null : machineId.trim() || null;
+  const loggedSets = sessionSets.filter((s) => s.exerciseId === activeExercise.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,12 +234,21 @@ function ExerciseCard({
 
   async function handleAddSet(e: React.FormEvent) {
     e.preventDefault();
+    if (!Number.isFinite(reps) || reps < 1) {
+      setError("Reps must be at least 1.");
+      return;
+    }
+    if (!Number.isFinite(load) || load < 0) {
+      setError("Load can't be negative.");
+      return;
+    }
+    setError(null);
 
-    await queueSet({
-      date: new Date().toISOString().slice(0, 10),
-      exerciseId: activeExercise.id, // the exercise actually performed, not necessarily ex.exerciseId
+    await logSet({
+      date: todayIso(),
+      exerciseId: activeExercise.id, // the exercise actually performed (post-swap)
+      exerciseName: activeExercise.name,
       machineId: resolvedMachineId,
-      setIndex: loggedToday.length + 1,
       setType,
       load,
       reps,
@@ -181,12 +258,7 @@ function ExerciseCard({
     if (resolvedMachineId) {
       localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
     }
-
-    setLoggedToday((prev) => [...prev, { setType, load, reps, rir }]);
-    onLogged();
-    await flushQueue();
-    onLogged();
-    void checkProgression();
+    onSessionChanged();
   }
 
   async function openSwap() {
@@ -222,7 +294,7 @@ function ExerciseCard({
   async function addMachine() {
     const name = newMachineName.trim();
     if (!name) return;
-    setMachineId(name); // optimistic — works even offline, since set-logs auto-registers on sync
+    setMachineId(name); // optimistic — works offline; set-logs auto-registers on sync
     setNewMachineName("");
     try {
       const res = await fetch("/api/machines", {
@@ -236,19 +308,35 @@ function ExerciseCard({
     }
   }
 
+  // Conditioning (cardio) has no strength-log shape yet — Part 3 adds it.
   if (ex.conditioningOnly) {
     return (
       <li style={{ marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #333" }}>
         <strong>{ex.exerciseName}</strong> — conditioning
-        {ex.params ? <span> ({JSON.stringify(ex.params)})</span> : null}
+        {ex.params ? <span style={{ opacity: 0.6 }}> ({JSON.stringify(ex.params)})</span> : null}
       </li>
     );
   }
 
   return (
-    <li style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #333" }}>
+    <li
+      style={{
+        marginBottom: 20,
+        paddingBottom: 16,
+        borderBottom: "1px solid #333",
+        opacity: completed ? 0.55 : 1,
+      }}
+    >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <strong>{activeExercise.name}</strong>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={completed}
+            onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)}
+            title="Mark exercise done"
+          />
+          <strong>{activeExercise.name}</strong>
+        </label>
         {activeExercise.id !== ex.exerciseId && (
           <span style={{ fontSize: 12, opacity: 0.7 }}>
             (swapped from {ex.exerciseName} —{" "}
@@ -258,17 +346,10 @@ function ExerciseCard({
             )
           </span>
         )}
-        {/* Guideline chip, never enforced — the program's target for this slot. */}
         <span
-          style={{
-            fontSize: 12,
-            opacity: 0.6,
-            border: "1px solid #444",
-            borderRadius: 999,
-            padding: "1px 8px",
-          }}
+          style={{ fontSize: 12, opacity: 0.6, border: "1px solid #444", borderRadius: 999, padding: "1px 8px" }}
         >
-          target: {ex.targetSets} x {ex.repRange ?? "?"} @ RIR {ex.rirTarget ?? "?"}
+          target: {ex.targetSets} × {ex.repRange ?? "?"} @ RIR {ex.rirTarget ?? "?"}
         </span>
         <button type="button" onClick={openSwap} style={{ fontSize: 12 }}>
           Swap
@@ -329,19 +410,18 @@ function ExerciseCard({
           <option value="warmup">Warm-up</option>
         </select>
         <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 64 }} title="Load" />
-        <span>lb x</span>
+        <span>lb ×</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 48 }} title="Reps" />
         <span>reps @ RIR</span>
         <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} style={{ width: 48 }} title="RIR" />
         <button type="submit">Add set</button>
       </form>
+      {error && <p style={{ color: "#f66", fontSize: 13, margin: "2px 0" }}>{error}</p>}
 
-      {loggedToday.length > 0 && (
-        <ul style={{ fontSize: 14, opacity: 0.85 }}>
-          {loggedToday.map((s, i) => (
-            <li key={i}>
-              {s.setType === "warmup" ? "Warm-up" : "Working"}: {s.load} lb x {s.reps} @ RIR {s.rir}
-            </li>
+      {loggedSets.length > 0 && (
+        <ul style={{ listStyle: "none", padding: 0, margin: "4px 0" }}>
+          {loggedSets.map((s) => (
+            <LoggedSetRow key={s.localId} set={s} onChanged={onSessionChanged} />
           ))}
         </ul>
       )}
@@ -372,65 +452,184 @@ function ExerciseCard({
   );
 }
 
+function FinishSummary({
+  date,
+  sessionSets,
+  dayExerciseCount,
+  meta,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  date: string;
+  sessionSets: SessionSet[];
+  dayExerciseCount: number;
+  meta: SessionMeta | null;
+  pending: number;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const byExercise = new Map<string, { name: string; count: number }>();
+  for (const s of sessionSets) {
+    const cur = byExercise.get(s.exerciseId) ?? { name: s.exerciseName, count: 0 };
+    cur.count += 1;
+    byExercise.set(s.exerciseId, cur);
+  }
+  const exerciseCount = byExercise.size;
+  const setCount = sessionSets.length;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div style={{ background: "#111", border: "1px solid #444", borderRadius: 10, padding: 20, maxWidth: 420, width: "100%" }}>
+        <h2 style={{ marginTop: 0 }}>Finish session — {date}</h2>
+        <p>
+          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} logged across{" "}
+          <strong>{exerciseCount}</strong> of {dayExerciseCount} program {dayExerciseCount === 1 ? "exercise" : "exercises"}.
+        </p>
+        {exerciseCount === 0 ? (
+          <p style={{ opacity: 0.7 }}>Nothing logged yet — you can still finish, or keep logging.</p>
+        ) : (
+          <ul style={{ paddingLeft: 18 }}>
+            {Array.from(byExercise.values()).map((e) => (
+              <li key={e.name}>
+                {e.name} — {e.count} {e.count === 1 ? "set" : "sets"}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p style={{ fontSize: 13, opacity: 0.7 }}>
+          {pending > 0 ? `${pending} change(s) not yet synced — they'll sync when you're back online.` : "All changes synced."}
+        </p>
+        {meta?.finishedAt && (
+          <p style={{ fontSize: 13, opacity: 0.7 }}>
+            Previously finished at {new Date(meta.finishedAt).toLocaleTimeString()} — finishing again re-stamps it.
+          </p>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <button type="button" onClick={onConfirm} style={{ fontWeight: "bold" }}>
+            Confirm finish
+          </button>
+          <button type="button" onClick={onClose}>
+            Keep logging
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LogPage() {
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [selectedDayId, setSelectedDayId] = useState<number | null>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
+  const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [meta, setMeta] = useState<SessionMeta | null>(null);
+  const [pending, setPending] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
+  const [showFinish, setShowFinish] = useState(false);
 
-  const refreshPendingCount = useCallback(async () => {
-    const pending = await getPendingSets();
-    setPendingCount(pending.length);
-  }, []);
+  const date = todayIso();
+
+  const refreshSession = useCallback(async () => {
+    const [sets, done, m, p] = await Promise.all([
+      getSessionSets(date),
+      getCompletedExercises(date),
+      getSessionMeta(date),
+      pendingCount(date),
+    ]);
+    setSessionSets(sets);
+    setCompleted(done);
+    setMeta(m);
+    setPending(p);
+  }, [date]);
 
   const refreshMachines = useCallback(async () => {
     const res = await fetch("/api/machines");
     if (res.ok) setMachines(await res.json());
   }, []);
 
-  const handleFlush = useCallback(async () => {
-    const { synced, failed } = await flushQueue();
-    setSyncStatus(`Synced ${synced}, still pending ${failed}`);
-    await refreshPendingCount();
-  }, [refreshPendingCount]);
+  // Log/edit/delete write to the durable store first (instant, offline-safe),
+  // then we refresh the UI from the store and fire a best-effort sync, then
+  // refresh again so the pending/synced indicators settle.
+  const onSessionChanged = useCallback(async () => {
+    await refreshSession();
+    await sync().catch(() => {});
+    await refreshSession();
+  }, [refreshSession]);
+
+  const handleSync = useCallback(async () => {
+    const r = await sync();
+    setSyncStatus(
+      `Synced: +${r.created} ~${r.updated} −${r.deleted}${r.finished ? ` finish×${r.finished}` : ""}${
+        r.failed ? `, ${r.failed} still pending` : ""
+      }`
+    );
+    await refreshSession();
+  }, [refreshSession]);
+
+  const toggleComplete = useCallback(
+    async (exerciseId: string, isComplete: boolean) => {
+      await setExerciseCompleted(date, exerciseId, isComplete);
+      await refreshSession();
+    },
+    [date, refreshSession]
+  );
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      const [programRes, pending, machinesRes] = await Promise.all([
+      const [programRes, machinesRes] = await Promise.all([
         fetch("/api/program").then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null)),
-        getPendingSets(),
         fetch("/api/machines").then((r) => (r.ok ? (r.json() as Promise<MachineOption[]>) : [])),
       ]);
       if (cancelled) return;
       setProgram(programRes);
       if (programRes && programRes.days.length > 0) setSelectedDayId(programRes.days[0].id);
-      setPendingCount(pending.length);
       setMachines(machinesRes);
+      await refreshSession();
     })();
 
-    window.addEventListener("online", handleFlush);
+    window.addEventListener("online", handleSync);
     return () => {
       cancelled = true;
-      window.removeEventListener("online", handleFlush);
+      window.removeEventListener("online", handleSync);
     };
-  }, [handleFlush]);
+  }, [handleSync, refreshSession]);
 
   const currentDay = useMemo(
     () => program?.days.find((d) => d.id === selectedDayId) ?? null,
     [program, selectedDayId]
   );
 
+  async function confirmFinish() {
+    await finishSession(date);
+    setShowFinish(false);
+    await onSessionChanged();
+    setSyncStatus("Session finished.");
+  }
+
+  const strengthExerciseCount = currentDay?.exercises.filter((e) => !e.conditioningOnly).length ?? 0;
+
   return (
-    <main style={{ maxWidth: 560, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <main style={{ maxWidth: 560, margin: "2rem auto", fontFamily: "sans-serif", paddingBottom: 80 }}>
       <h1>Log a session</h1>
-      <p>
-        Offline queue pending: {pendingCount}{" "}
-        <button onClick={handleFlush} style={{ marginLeft: 8 }}>
+      <p style={{ fontSize: 14 }}>
+        {pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}{" "}
+        <button onClick={handleSync} style={{ marginLeft: 8 }}>
           Sync now
         </button>
+        {meta?.finishedAt && <span style={{ marginLeft: 8, opacity: 0.7 }}>· finished {new Date(meta.finishedAt).toLocaleTimeString()}</span>}
       </p>
       {syncStatus && <p style={{ fontSize: 13, opacity: 0.8 }}>{syncStatus}</p>}
 
@@ -459,17 +658,48 @@ export default function LogPage() {
                 key={ex.id}
                 ex={ex}
                 machines={machines}
+                sessionSets={sessionSets}
+                completed={completed.has(ex.exerciseId)}
                 onMachineAdded={refreshMachines}
-                onLogged={refreshPendingCount}
+                onSessionChanged={onSessionChanged}
+                onToggleComplete={toggleComplete}
               />
             ))}
           </ul>
         </>
       )}
 
-      <p>
+      <div
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: 12,
+          background: "#0a0a0a",
+          borderTop: "1px solid #333",
+          display: "flex",
+          justifyContent: "center",
+          gap: 12,
+        }}
+      >
         <Link href="/program">Edit program</Link>
-      </p>
+        <button type="button" onClick={() => setShowFinish(true)} style={{ fontWeight: "bold" }}>
+          Finish session ({sessionSets.length})
+        </button>
+      </div>
+
+      {showFinish && (
+        <FinishSummary
+          date={date}
+          sessionSets={sessionSets}
+          dayExerciseCount={strengthExerciseCount}
+          meta={meta}
+          pending={pending}
+          onConfirm={confirmFinish}
+          onClose={() => setShowFinish(false)}
+        />
+      )}
     </main>
   );
 }

@@ -229,6 +229,10 @@ export const workoutLogs = pgTable("workout_logs", {
   programDay: text("program_day"),
   programId: integer("program_id").references(() => programs.id),
   notes: text("notes"),
+  // Stamped when the user taps "Finish session" (spec §7a lifecycle). Nullable:
+  // a session in progress has no finish time. Not a one-way door — re-finishing
+  // re-stamps it. withTimezone since it's compared/displayed as a real instant.
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

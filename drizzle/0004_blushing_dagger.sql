@@ -1,0 +1,1 @@
+ALTER TABLE "workout_logs" ADD COLUMN "finished_at" timestamp with time zone;

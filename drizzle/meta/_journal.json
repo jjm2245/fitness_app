@@ -29,6 +29,13 @@
       "when": 1783630950923,
       "tag": "0003_mixed_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783654484951,
+      "tag": "0004_blushing_dagger",
+      "breakpoints": true
     }
   ]
 }

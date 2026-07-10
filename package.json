@@ -32,6 +32,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "fake-indexeddb": "^6.2.5",
     "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.9"
