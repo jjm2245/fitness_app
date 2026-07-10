@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, DayEditor, type ProgramDayDetail, type ExerciseOption } from "@/components/DayEditor";
+import styles from "@/components/DayEditor.module.css";
 
 // Reusable blocks are the block-library program's days. This editor is the same
 // day/exercise editor as /program, pointed at blocks — define "Abs — machine",
@@ -34,7 +35,7 @@ export default function BlocksEditorPage() {
   }
 
   return (
-    <main style={{ maxWidth: 640, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <main className={styles.page}>
       <p>
         <Link href="/log">Back to logging</Link> · <Link href="/program">Program editor</Link>
       </p>
@@ -48,7 +49,7 @@ export default function BlocksEditorPage() {
         <DayEditor key={block.id} day={block} exercises={allExercises} onChanged={refresh} dayNoun="block" />
       ))}
 
-      <form onSubmit={createBlock} style={{ display: "flex", gap: 6, marginTop: 12 }}>
+      <form onSubmit={createBlock} className={styles.inlineForm} style={{ marginTop: 12 }}>
         <input value={newBlockName} onChange={(e) => setNewBlockName(e.target.value)} placeholder="New block name" />
         <button type="submit">Add block</button>
       </form>

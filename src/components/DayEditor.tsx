@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import styles from "./DayEditor.module.css";
 
 // Shared day/exercise editor used by both the program editor (/program) and the
 // reusable-block editor (/blocks). A "block" is structurally a program_day, so
@@ -57,7 +58,7 @@ function AddExerciseForm({ dayId, exercises, onAdded }: { dayId: number; exercis
   }
 
   return (
-    <form onSubmit={handleAdd} style={{ display: "flex", gap: 6, marginTop: 6 }}>
+    <form onSubmit={handleAdd} className={styles.inlineForm} style={{ marginTop: 8 }}>
       <select value={exerciseId} onChange={(e) => setExerciseId(e.target.value)}>
         {exercises.map((ex) => (
           <option key={ex.id} value={ex.id}>
@@ -101,25 +102,24 @@ function ProgramExerciseRow({ ex, onChanged }: { ex: ProgramExerciseDetail; onCh
   }
 
   return (
-    <li style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "4px 0" }}>
-      <button type="button" onClick={() => move("up")} aria-label="Move up">
+    <li className={styles.exRow}>
+      <strong className={styles.exName}>{ex.exerciseName}</strong>
+      <button type="button" onClick={() => move("up")} aria-label="Move up" className={styles.iconBtn}>
         ↑
       </button>
-      <button type="button" onClick={() => move("down")} aria-label="Move down">
+      <button type="button" onClick={() => move("down")} aria-label="Move down" className={styles.iconBtn}>
         ↓
       </button>
-      <strong style={{ minWidth: 160 }}>{ex.exerciseName}</strong>
       <input
         type="number"
         value={targetSets}
         onChange={(e) => setTargetSets(Number(e.target.value))}
-        style={{ width: 48 }}
         title="Target sets"
       />
       <span>x</span>
-      <input value={repRange} onChange={(e) => setRepRange(e.target.value)} placeholder="rep range" style={{ width: 70 }} />
+      <input value={repRange} onChange={(e) => setRepRange(e.target.value)} placeholder="rep range" className={styles.repRange} />
       <span>@ RIR</span>
-      <input value={rirTarget} onChange={(e) => setRirTarget(e.target.value)} style={{ width: 40 }} />
+      <input value={rirTarget} onChange={(e) => setRirTarget(e.target.value)} className={styles.rir} />
       <button type="button" onClick={save}>
         Save
       </button>
@@ -160,15 +160,15 @@ export function DayEditor({
   }
 
   return (
-    <section style={{ border: "1px solid #333", borderRadius: 6, padding: 12, marginBottom: 16 }}>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <button type="button" onClick={() => move("up")} aria-label={`Move ${dayNoun} up`}>
+    <section className={styles.day}>
+      <div className={styles.dayHeader}>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={styles.dayName} />
+        <button type="button" onClick={() => move("up")} aria-label={`Move ${dayNoun} up`} className={styles.iconBtn}>
           ↑
         </button>
-        <button type="button" onClick={() => move("down")} aria-label={`Move ${dayNoun} down`}>
+        <button type="button" onClick={() => move("down")} aria-label={`Move ${dayNoun} down`} className={styles.iconBtn}>
           ↓
         </button>
-        <input value={name} onChange={(e) => setName(e.target.value)} style={{ fontWeight: "bold" }} />
         <button type="button" onClick={rename}>
           Rename
         </button>
@@ -177,7 +177,7 @@ export function DayEditor({
         </button>
       </div>
 
-      <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
+      <ul className={styles.exList}>
         {day.exercises.map((ex) => (
           <ProgramExerciseRow key={ex.id} ex={ex} onChanged={onChanged} />
         ))}

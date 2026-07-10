@@ -1,0 +1,87 @@
+/* Shared responsive styling for the program/block editors. Everything wraps and
+   shrinks so nothing overflows on a phone. */
+
+.page {
+  max-width: 640px;
+  margin: 1.5rem auto;
+  padding: 0 14px 40px;
+}
+
+.section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.inlineForm {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.day {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+  background: var(--surface);
+}
+
+.dayHeader {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dayName {
+  font-weight: bold;
+  flex: 1 1 100%;
+  min-width: 120px;
+}
+
+.exList {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+}
+
+.exRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 6px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.exName {
+  flex: 1 1 100%;
+  font-weight: 600;
+}
+.exRow input[type="number"] {
+  width: 56px;
+}
+.repRange {
+  width: 76px;
+}
+.rir {
+  width: 48px;
+}
+
+.iconBtn {
+  min-width: 40px;
+  padding: 6px 10px;
+}
+
+.provBadge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}

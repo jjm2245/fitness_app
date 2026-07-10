@@ -8,6 +8,7 @@ import {
   type ProgramDayDetail,
   type ExerciseOption,
 } from "@/components/DayEditor";
+import styles from "@/components/DayEditor.module.css";
 
 interface ProgramSummary {
   id: number;
@@ -100,44 +101,37 @@ export default function ProgramEditorPage() {
   }
 
   return (
-    <main style={{ maxWidth: 640, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <main className={styles.page}>
       <p>
         <Link href="/log">Back to logging</Link>
       </p>
       <h1>Program editor</h1>
 
-      <section style={{ marginBottom: 20 }}>
+      <section className={styles.section}>
         <label>
           Program:{" "}
-          <select
-            value={selectedId ?? ""}
-            onChange={(e) => selectProgram(Number(e.target.value))}
-          >
+          <select value={selectedId ?? ""} onChange={(e) => selectProgram(Number(e.target.value))}>
             {programs.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.splitType} {p.active ? "(active)" : ""}
               </option>
             ))}
           </select>
-        </label>{" "}
+        </label>
         {detail && !detail.active && (
           <button type="button" onClick={activateSelected}>
             Set active
           </button>
         )}
-        <form onSubmit={createNewProgram} style={{ display: "inline-flex", gap: 6, marginLeft: 12 }}>
-          <input
-            value={newProgramName}
-            onChange={(e) => setNewProgramName(e.target.value)}
-            placeholder="New program name"
-          />
+        <form onSubmit={createNewProgram} className={styles.inlineForm}>
+          <input value={newProgramName} onChange={(e) => setNewProgramName(e.target.value)} placeholder="New program name" />
           <button type="submit">Create program</button>
         </form>
       </section>
 
       {detail && (
         <>
-          <section style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 20 }}>
+          <section className={styles.section}>
             <input value={programNameDraft} onChange={(e) => setProgramNameDraft(e.target.value)} />
             <button type="button" onClick={renameSelected}>
               Rename program
@@ -151,7 +145,7 @@ export default function ProgramEditorPage() {
             <DayEditor key={day.id} day={day} exercises={allExercises} onChanged={() => refresh(selectedId!)} />
           ))}
 
-          <form onSubmit={addDayToSelected} style={{ display: "flex", gap: 6 }}>
+          <form onSubmit={addDayToSelected} className={styles.inlineForm}>
             <input value={newDayName} onChange={(e) => setNewDayName(e.target.value)} placeholder="New day name" />
             <button type="submit">Add day</button>
           </form>
