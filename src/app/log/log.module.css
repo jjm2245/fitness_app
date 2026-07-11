@@ -66,6 +66,11 @@
 .cardDone {
   opacity: 0.5;
 }
+/* Ad-hoc / outside-program exercises read as visually separate (spec §6). */
+.cardAdhoc {
+  border-style: dashed;
+  background: #101010;
+}
 
 .exHeader {
   display: flex;

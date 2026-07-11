@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, DayEditor, type ProgramDayDetail, type ExerciseOption } from "@/components/DayEditor";
+import { api, DayEditor, type ProgramDayDetail } from "@/components/DayEditor";
 import styles from "@/components/DayEditor.module.css";
 
 // Reusable blocks are the block-library program's days. This editor is the same
@@ -10,7 +10,6 @@ import styles from "@/components/DayEditor.module.css";
 // "Cardio", etc. once, then attach them to a session in one tap from /log.
 export default function BlocksEditorPage() {
   const [blocks, setBlocks] = useState<ProgramDayDetail[]>([]);
-  const [allExercises, setAllExercises] = useState<ExerciseOption[]>([]);
   const [newBlockName, setNewBlockName] = useState("");
 
   const refresh = useCallback(async () => {
@@ -19,9 +18,7 @@ export default function BlocksEditorPage() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const exs = await api<Array<{ id: string; name: string }>>("/api/exercises");
-      setAllExercises(exs.map((e) => ({ id: e.id, name: e.name })));
+    void (async () => {
       await refresh();
     })();
   }, [refresh]);
@@ -46,7 +43,7 @@ export default function BlocksEditorPage() {
       </p>
 
       {blocks.map((block) => (
-        <DayEditor key={block.id} day={block} exercises={allExercises} onChanged={refresh} dayNoun="block" />
+        <DayEditor key={block.id} day={block} onChanged={refresh} dayNoun="block" />
       ))}
 
       <form onSubmit={createBlock} className={styles.inlineForm} style={{ marginTop: 12 }}>

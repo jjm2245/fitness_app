@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import styles from "./log.module.css";
+import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import {
   logSet,
   editSet,
@@ -39,6 +40,8 @@ interface ProgramExerciseDetail {
   portable: boolean;
   conditioningOnly: boolean;
   params: Record<string, unknown> | null;
+  source: string;
+  untagged: boolean;
 }
 
 interface ProgramDayDetail {
@@ -57,15 +60,6 @@ interface ProgramDetail {
 interface MachineOption {
   id: string;
   notes: string | null;
-}
-
-interface ExerciseRow {
-  id: string;
-  name: string;
-  loadType: string;
-  portable: boolean;
-  conditioningOnly: boolean;
-  params: Record<string, unknown> | null;
 }
 
 interface BlockDetail {
@@ -108,7 +102,9 @@ interface LoggableExercise {
   conditioningOnly: boolean;
   target: { targetSets: number; repRange: string | null; rirTarget: string | null } | null;
   params: Record<string, unknown> | null;
-  source: string | null; // e.g. "block:Cardio" — null for program exercises
+  origin: string | null; // where it came from in the session: "block:Cardio" — null for program-day exercises
+  provenance: string; // curated | library | custom
+  untagged: boolean;
 }
 
 function todayIso() {
@@ -337,13 +333,15 @@ function StrengthCard({
   }
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
       <div className={styles.exHeader}>
         <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
-        {ex.source && <span className={styles.tag}>[{ex.source}]</span>}
+        <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
+        {ex.origin && <span className={styles.tag}>[{ex.origin}]</span>}
+        {ex.untagged && <span className={styles.tag}>· not counted in volume until tagged</span>}
         {activeExercise.id !== ex.exerciseId && (
           <span className={styles.tag}>
             (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} className={styles.secondaryBtn}>reset</button>)
@@ -501,13 +499,14 @@ function CardioCard({
   }
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
       <div className={styles.exHeader}>
         <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
           <strong>{ex.exerciseName}</strong>
         </label>
-        <span className={styles.tag}>cardio{ex.source ? ` · ${ex.source}` : ""}</span>
+        <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
+        <span className={styles.tag}>cardio{ex.origin ? ` · ${ex.origin}` : ""}</span>
         {onRemoveFromSession && (
           <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
         )}
@@ -605,7 +604,6 @@ export default function LogPage() {
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [selectedDayId, setSelectedDayId] = useState<number | null>(null);
   const [machines, setMachines] = useState<MachineOption[]>([]);
-  const [allExercises, setAllExercises] = useState<ExerciseRow[]>([]);
   const [blocks, setBlocks] = useState<BlockDetail[]>([]);
   const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
   const [sessionCardio, setSessionCardio] = useState<SessionCardio[]>([]);
@@ -616,7 +614,6 @@ export default function LogPage() {
   const [syncStatus, setSyncStatus] = useState("");
   const [showFinish, setShowFinish] = useState(false);
   const [blockToAdd, setBlockToAdd] = useState("");
-  const [exerciseToAdd, setExerciseToAdd] = useState("");
 
   const date = todayIso();
 
@@ -658,17 +655,15 @@ export default function LogPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [programRes, machinesRes, exercisesRes, blocksRes] = await Promise.all([
+      const [programRes, machinesRes, blocksRes] = await Promise.all([
         fetch("/api/program").then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null)),
         fetch("/api/machines").then((r) => (r.ok ? (r.json() as Promise<MachineOption[]>) : [])),
-        fetch("/api/exercises").then((r) => (r.ok ? (r.json() as Promise<ExerciseRow[]>) : [])),
         fetch("/api/blocks").then((r) => (r.ok ? (r.json() as Promise<BlockDetail[]>) : [])),
       ]);
       if (cancelled) return;
       setProgram(programRes);
       if (programRes && programRes.days.length > 0) setSelectedDayId(programRes.days[0].id);
       setMachines(machinesRes);
-      setAllExercises(exercisesRes);
       setBlocks(blocksRes);
       await refreshSession();
     })();
@@ -691,7 +686,9 @@ export default function LogPage() {
       conditioningOnly: e.conditioningOnly,
       target: { targetSets: e.targetSets, repRange: e.repRange, rirTarget: e.rirTarget },
       params: e.params,
-      source: null,
+      origin: null,
+      provenance: e.source,
+      untagged: e.untagged,
     }));
     const fromComposition: LoggableExercise[] = composition
       .filter((c) => !dayIds.has(c.exerciseId))
@@ -704,7 +701,9 @@ export default function LogPage() {
         conditioningOnly: c.conditioningOnly,
         target: null,
         params: null,
-        source: c.source,
+        origin: c.source,
+        provenance: c.provenance,
+        untagged: c.untagged,
       }));
     return [...fromProgram, ...fromComposition];
   }, [currentDay, composition]);
@@ -718,19 +717,30 @@ export default function LogPage() {
       loadType: e.loadType,
       portable: e.portable,
       conditioningOnly: e.conditioningOnly,
+      provenance: e.source,
+      untagged: e.untagged,
     }));
     await attachToComposition(date, items, `block:${block.name}`);
     setBlockToAdd("");
     await refreshSession();
   }
 
-  async function addAdhocExercise() {
-    const exx = allExercises.find((e) => e.id === exerciseToAdd);
-    if (!exx) return;
-    await attachToComposition(date, [{
-      exerciseId: exx.id, exerciseName: exx.name, loadType: exx.loadType, portable: exx.portable, conditioningOnly: exx.conditioningOnly,
-    }], "adhoc");
-    setExerciseToAdd("");
+  // Ad-hoc add via search (library/curated) or a just-created custom — attaches
+  // to the SESSION only (no program/block created).
+  async function addAdhocExercise(r: ExerciseSearchResult) {
+    await attachToComposition(
+      date,
+      [{
+        exerciseId: r.id,
+        exerciseName: r.name,
+        loadType: r.loadType,
+        portable: r.portable,
+        conditioningOnly: r.conditioningOnly,
+        provenance: r.source,
+        untagged: r.untagged,
+      }],
+      "adhoc"
+    );
     await refreshSession();
   }
 
@@ -784,13 +794,9 @@ export default function LogPage() {
               </select>
               <button type="button" onClick={addBlock} disabled={!blockToAdd} className={styles.secondaryBtn}>Attach</button>
             </span>
-            <span>
+            <span style={{ flex: "1 1 240px" }}>
               Add exercise:
-              <select value={exerciseToAdd} onChange={(e) => setExerciseToAdd(e.target.value)}>
-                <option value="">choose…</option>
-                {allExercises.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-              <button type="button" onClick={addAdhocExercise} disabled={!exerciseToAdd} className={styles.secondaryBtn}>Attach</button>
+              <ExerciseSearch onPick={addAdhocExercise} placeholder="Search library / curated, or create custom…" />
             </span>
           </div>
 
@@ -804,7 +810,7 @@ export default function LogPage() {
                   completed={completed.has(ex.exerciseId)}
                   onSessionChanged={onSessionChanged}
                   onToggleComplete={toggleComplete}
-                  onRemoveFromSession={ex.source ? removeFromSession : null}
+                  onRemoveFromSession={ex.origin ? removeFromSession : null}
                 />
               ) : (
                 <StrengthCard
@@ -816,7 +822,7 @@ export default function LogPage() {
                   onMachineAdded={refreshMachines}
                   onSessionChanged={onSessionChanged}
                   onToggleComplete={toggleComplete}
-                  onRemoveFromSession={ex.source ? removeFromSession : null}
+                  onRemoveFromSession={ex.origin ? removeFromSession : null}
                 />
               )
             )}

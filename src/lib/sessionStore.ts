@@ -53,7 +53,9 @@ export interface CompositionItem {
   loadType: string;
   portable: boolean;
   conditioningOnly: boolean;
-  source: string; // "block:Cardio" | "adhoc"
+  source: string; // origin in the session: "block:Cardio" | "program:PPL" | "adhoc"
+  provenance: string; // exercise provenance: "curated" | "library" | "custom"
+  untagged: boolean;
   orderIndex: number;
 }
 
@@ -252,6 +254,8 @@ export interface AttachExercise {
   loadType: string;
   portable: boolean;
   conditioningOnly: boolean;
+  provenance: string; // curated | library | custom
+  untagged: boolean;
 }
 
 export async function attachToComposition(

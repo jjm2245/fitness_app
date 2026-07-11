@@ -68,6 +68,10 @@ export const setTypeEnum = pgEnum("set_type", ["warmup", "working"]);
 // consumes — the core never sees this label. See DECISIONS.md + coreAdapters.
 export const effortEnum = pgEnum("effort", ["more_in_me", "near_failure", "to_failure"]);
 
+// Where an exercise came from — for provenance badges and to distinguish the
+// hand-tagged curated core from the broad open library and free-typed customs.
+export const exerciseSourceEnum = pgEnum("exercise_source", ["curated", "library", "custom"]);
+
 // ---------------------------------------------------------------------------
 // Profile (singleton — single-user app, one row)
 // ---------------------------------------------------------------------------
@@ -120,7 +124,10 @@ export const exercises = pgTable("exercises", {
   id: text("id").primaryKey(), // slug from seed, e.g. "machine_leg_extension"
   name: text("name").notNull(),
   day: text("day"), // routine day tag from seed: legs_shoulders | chest_triceps | back_biceps | abs | cardio
-  movementPattern: movementPatternEnum("movement_pattern").notNull(),
+  // Nullable now: library exercises don't carry our movement_pattern taxonomy,
+  // and free-typed customs are untagged until the user (or, later, the LLM)
+  // tags them. A null pattern simply never matches in substitution.
+  movementPattern: movementPatternEnum("movement_pattern"),
   equipmentRequired: text("equipment_required").array().notNull().default([]),
   loadType: loadTypeEnum("load_type").notNull(),
   portable: boolean("portable").notNull(),
@@ -132,6 +139,13 @@ export const exercises = pgTable("exercises", {
   repRangeDefault: text("rep_range_default"),
   inCurrentRoutine: boolean("in_current_routine").notNull().default(false),
   conditioningOnly: boolean("conditioning_only").notNull().default(false),
+  // Provenance + library pairing. `canonicalName`/`libraryId` are additive on
+  // curated exercises (a paired canonical term) and identify library rows;
+  // `untagged` marks a custom with no muscles/pattern, excluded from math.
+  source: exerciseSourceEnum("source").notNull().default("curated"),
+  canonicalName: text("canonical_name"),
+  libraryId: text("library_id"),
+  untagged: boolean("untagged").notNull().default(false),
   notes: text("notes"),
   params: jsonb("params"), // e.g. cardio { duration_min, incline, speed }
   createdAt: timestamp("created_at").notNull().defaultNow(),

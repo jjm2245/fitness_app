@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  api,
-  DayEditor,
-  type ProgramDayDetail,
-  type ExerciseOption,
-} from "@/components/DayEditor";
+import { api, DayEditor, type ProgramDayDetail } from "@/components/DayEditor";
 import styles from "@/components/DayEditor.module.css";
 
 interface ProgramSummary {
@@ -24,7 +19,6 @@ export default function ProgramEditorPage() {
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ProgramDetail | null>(null);
-  const [allExercises, setAllExercises] = useState<ExerciseOption[]>([]);
   const [newProgramName, setNewProgramName] = useState("");
   const [newDayName, setNewDayName] = useState("");
   const [programNameDraft, setProgramNameDraft] = useState("");
@@ -46,9 +40,7 @@ export default function ProgramEditorPage() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const exs = await api<Array<{ id: string; name: string }>>("/api/exercises");
-      setAllExercises(exs.map((e) => ({ id: e.id, name: e.name })));
+    void (async () => {
       await refresh();
     })();
   }, [refresh]);
@@ -142,7 +134,7 @@ export default function ProgramEditorPage() {
           </section>
 
           {detail.days.map((day) => (
-            <DayEditor key={day.id} day={day} exercises={allExercises} onChanged={() => refresh(selectedId!)} />
+            <DayEditor key={day.id} day={day} onChanged={() => refresh(selectedId!)} />
           ))}
 
           <form onSubmit={addDayToSelected} className={styles.inlineForm}>

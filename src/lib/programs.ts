@@ -35,6 +35,8 @@ export interface ProgramDayWithExercises extends ProgramDay {
       portable: boolean;
       conditioningOnly: boolean;
       params: unknown;
+      source: string;
+      untagged: boolean;
     }
   >;
 }
@@ -145,6 +147,8 @@ export async function getProgramWithDays(id: number): Promise<ProgramWithDays | 
           portable: exercises.portable,
           conditioningOnly: exercises.conditioningOnly,
           params: exercises.params,
+          source: exercises.source,
+          untagged: exercises.untagged,
         })
         .from(programExercises)
         .innerJoin(exercises, eq(programExercises.exerciseId, exercises.id))

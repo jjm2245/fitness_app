@@ -42,13 +42,16 @@ describe("seed loader", () => {
 
   it("loads the 33 curated + 4 split-variant exercises with equipment tags intact", async () => {
     const all = await db.select().from(exercises);
-    // 33 hand-tagged PF nodes + 4 split-out "either/or" variants (Part 2).
-    expect(all.length).toBe(37);
-    const smithSquat = all.find((e) => e.id === "smith_squat");
+    // 33 hand-tagged PF nodes + 4 split-out "either/or" variants (Part 2), all
+    // source='curated'. Library exercises (source='library') are ingested
+    // separately (`npm run db:seed:library`) and not counted here.
+    const curated = all.filter((e) => e.source === "curated");
+    expect(curated.length).toBe(37);
+    const smithSquat = curated.find((e) => e.id === "smith_squat");
     expect(smithSquat?.equipmentRequired).toEqual(["smith_machine"]);
     expect(smithSquat?.affectedStructures).toContain("lumbar_spine");
     // A split variant exists as its own node with its own tags.
-    const dbGoblet = all.find((e) => e.id === "db_goblet_squat");
+    const dbGoblet = curated.find((e) => e.id === "db_goblet_squat");
     expect(dbGoblet?.loadType).toBe("free_weight");
     expect(dbGoblet?.portable).toBe(true);
   });

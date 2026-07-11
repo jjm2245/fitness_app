@@ -14,7 +14,10 @@ export interface MuscleEmphasis {
 
 export interface ExerciseTags {
   id: string;
-  movementPattern: string;
+  // Null when an exercise has no movement pattern (e.g. an untagged item, or a
+  // library entry without our taxonomy). A null pattern never matches in
+  // substitution — the engine stays general and simply can't place it.
+  movementPattern: string | null;
   muscles: MuscleEmphasis[];
   equipmentRequired: string[];
   affectedStructures: string[];

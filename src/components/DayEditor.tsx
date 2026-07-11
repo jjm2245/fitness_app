@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import styles from "./DayEditor.module.css";
+import { ExerciseSearch, ProvenanceBadge } from "./ExerciseSearch";
 
 // Shared day/exercise editor used by both the program editor (/program) and the
 // reusable-block editor (/blocks). A "block" is structurally a program_day, so
@@ -20,6 +21,8 @@ export interface ProgramExerciseDetail {
   loadType: string;
   portable: boolean;
   conditioningOnly: boolean;
+  source: string;
+  untagged: boolean;
 }
 
 export interface ProgramDayDetail {
@@ -44,12 +47,8 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-function AddExerciseForm({ dayId, exercises, onAdded }: { dayId: number; exercises: ExerciseOption[]; onAdded: () => void }) {
-  const [exerciseId, setExerciseId] = useState(exercises[0]?.id ?? "");
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!exerciseId) return;
+function AddExerciseForm({ dayId, onAdded }: { dayId: number; onAdded: () => void }) {
+  async function add(exerciseId: string) {
     await api(`/api/program-days/${dayId}/exercises`, {
       method: "POST",
       body: JSON.stringify({ exerciseId }),
@@ -58,16 +57,9 @@ function AddExerciseForm({ dayId, exercises, onAdded }: { dayId: number; exercis
   }
 
   return (
-    <form onSubmit={handleAdd} className={styles.inlineForm} style={{ marginTop: 8 }}>
-      <select value={exerciseId} onChange={(e) => setExerciseId(e.target.value)}>
-        {exercises.map((ex) => (
-          <option key={ex.id} value={ex.id}>
-            {ex.name}
-          </option>
-        ))}
-      </select>
-      <button type="submit">Add exercise</button>
-    </form>
+    <div className={styles.inlineForm} style={{ marginTop: 8 }}>
+      <ExerciseSearch onPick={(r) => add(r.id)} placeholder="Add exercise — search curated / library, or create custom…" />
+    </div>
   );
 }
 
@@ -103,7 +95,9 @@ function ProgramExerciseRow({ ex, onChanged }: { ex: ProgramExerciseDetail; onCh
 
   return (
     <li className={styles.exRow}>
-      <strong className={styles.exName}>{ex.exerciseName}</strong>
+      <strong className={styles.exName}>
+        {ex.exerciseName} <ProvenanceBadge source={ex.source} untagged={ex.untagged} />
+      </strong>
       <button type="button" onClick={() => move("up")} aria-label="Move up" className={styles.iconBtn}>
         ↑
       </button>
@@ -132,12 +126,10 @@ function ProgramExerciseRow({ ex, onChanged }: { ex: ProgramExerciseDetail; onCh
 
 export function DayEditor({
   day,
-  exercises,
   onChanged,
   dayNoun = "day",
 }: {
   day: ProgramDayDetail;
-  exercises: ExerciseOption[];
   onChanged: () => void;
   dayNoun?: string;
 }) {
@@ -183,7 +175,7 @@ export function DayEditor({
         ))}
       </ul>
 
-      <AddExerciseForm dayId={day.id} exercises={exercises} onAdded={onChanged} />
+      <AddExerciseForm dayId={day.id} onAdded={onChanged} />
     </section>
   );
 }

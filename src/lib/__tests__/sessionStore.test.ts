@@ -250,15 +250,15 @@ describe("session composition (local-only attach)", () => {
     await attachToComposition(
       date,
       [
-        { exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false },
-        { exerciseId: "hanging_leg_raise", exerciseName: "Leg raise", loadType: "bodyweight", portable: true, conditioningOnly: false },
+        { exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false, provenance: "curated", untagged: false },
+        { exerciseId: "hanging_leg_raise", exerciseName: "Leg raise", loadType: "bodyweight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false },
       ],
       "block:Abs"
     );
     // Attaching an overlapping set again shouldn't duplicate.
     await attachToComposition(
       date,
-      [{ exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false }],
+      [{ exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false, provenance: "curated", untagged: false }],
       "block:Abs"
     );
     let comp = await getSessionComposition(date);

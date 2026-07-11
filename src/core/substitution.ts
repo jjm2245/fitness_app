@@ -33,8 +33,13 @@ export interface SubstitutionQuery {
 export function findSubstitutionCandidates(query: SubstitutionQuery): ExerciseTags[] {
   const { original, pool, availableEquipment, activeInjuryStructures } = query;
 
+  // A null movement pattern is unmatchable (an untagged/library item can't be
+  // placed by pattern) — never treat two nulls as a match.
+  if (original.movementPattern === null) return [];
+
   return pool.filter((candidate) => {
     if (candidate.id === original.id) return false;
+    if (candidate.movementPattern === null) return false;
     if (candidate.movementPattern !== original.movementPattern) return false;
     if (!overlapsMuscles(candidate, original)) return false;
     if (!equipmentSubsetOf(candidate.equipmentRequired, availableEquipment)) return false;
