@@ -123,6 +123,29 @@ function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
 
+// The machine label only makes sense for context-bound loads (spec §9). Never
+// shown for dumbbell/bodyweight/free weight.
+const MACHINE_LOAD_TYPES = new Set(["machine_selectorized", "cable", "smith", "plate_loaded"]);
+function usesMachineTag(loadType: string): boolean {
+  return MACHINE_LOAD_TYPES.has(loadType);
+}
+
+// Which cardio fields are relevant depends on the machine. Inferred from the
+// exercise name (curated cardio + library cardio have descriptive names); an
+// unknown type falls back to duration + distance. Drives the visible inputs so
+// irrelevant ones are hidden (spec Part 5).
+type CardioField = "duration" | "speed" | "incline" | "level" | "distance";
+function cardioFields(name: string): CardioField[] {
+  const n = name.toLowerCase();
+  if (n.includes("treadmill") || n.includes("incline walk") || n.includes("run")) {
+    return ["duration", "speed", "incline"];
+  }
+  if (n.includes("stair") || n.includes("step")) return ["duration", "level"];
+  if (n.includes("bike") || n.includes("cycl") || n.includes("spin")) return ["duration", "level", "distance"];
+  if (n.includes("row")) return ["duration", "distance", "level"];
+  return ["duration", "distance"];
+}
+
 type EffortTag = "more_in_me" | "near_failure" | "to_failure";
 const EFFORT_OPTIONS: { value: EffortTag; label: string }[] = [
   { value: "more_in_me", label: "More in me" },
@@ -241,7 +264,8 @@ function StrengthCard({
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapCandidates, setSwapCandidates] = useState<SubstitutionCandidate[] | null>(null);
 
-  const resolvedMachineId = activeExercise.portable ? null : machineId.trim() || null;
+  const showMachine = usesMachineTag(activeExercise.loadType);
+  const resolvedMachineId = !showMachine ? null : machineId.trim() || null;
   const loggedSets = sessionSets.filter((s) => s.exerciseId === activeExercise.id);
 
   useEffect(() => {
@@ -372,15 +396,16 @@ function StrengthCard({
         </div>
       )}
 
-      {!activeExercise.portable && (
+      {showMachine && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <label>Machine{" "}
+          <label title="A personal label you make up — not a number on the machine. Only add one if there are two of the same machine, or you're at a different gym.">
+            Machine{" "}
             <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-              <option value="">(none selected)</option>
+              <option value="">(none — one machine here)</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
           </label>
-          <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder="new machine id" style={{ width: 130 }} />
+          <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
           <button type="button" onClick={addMachine}>+ Add</button>
         </div>
       )}
@@ -455,6 +480,7 @@ function CardioCard({
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
 
+  const fields = cardioFields(ex.exerciseName);
   const entries = sessionCardio.filter((c) => c.exerciseId === ex.exerciseId);
 
   useEffect(() => {
@@ -484,15 +510,16 @@ function CardioCard({
       return setError("Enter at least a duration or distance.");
     }
     setError(null);
+    // Only persist the fields relevant to this cardio type; the rest are null.
     await logCardio({
       date: todayIso(),
       exerciseId: ex.exerciseId,
       exerciseName: ex.exerciseName,
-      durationMin: toNum(durationMin),
-      incline: toNum(incline),
-      speed: toNum(speed),
-      distance: toNum(distance),
-      level: toNum(level),
+      durationMin: fields.includes("duration") ? toNum(durationMin) : null,
+      incline: fields.includes("incline") ? toNum(incline) : null,
+      speed: fields.includes("speed") ? toNum(speed) : null,
+      distance: fields.includes("distance") ? toNum(distance) : null,
+      level: fields.includes("level") ? toNum(level) : null,
       notes: null,
     });
     onSessionChanged();
@@ -514,11 +541,21 @@ function CardioCard({
       <p className={styles.prev}>{previous ?? "…"}</p>
 
       <form onSubmit={handleLog} className={styles.entryForm}>
-        <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="min" title="Duration (min)" />
-        <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} placeholder="incline" title="Incline" />
-        <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} placeholder="speed" title="Speed" />
-        <input type="number" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="distance" title="Distance" />
-        <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="level" title="Level" />
+        {fields.includes("duration") && (
+          <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="min" title="Duration (min)" />
+        )}
+        {fields.includes("speed") && (
+          <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} placeholder="speed" title="Speed" />
+        )}
+        {fields.includes("incline") && (
+          <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} placeholder="incline" title="Incline" />
+        )}
+        {fields.includes("level") && (
+          <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="level" title="Level" />
+        )}
+        {fields.includes("distance") && (
+          <input type="number" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="distance" title="Distance" />
+        )}
         <button type="submit" className={styles.primary}>Log cardio</button>
       </form>
       {error && <p className={styles.error}>{error}</p>}
