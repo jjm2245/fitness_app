@@ -127,16 +127,47 @@ function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
 
+type EffortTag = "more_in_me" | "near_failure" | "to_failure";
+const EFFORT_OPTIONS: { value: EffortTag; label: string }[] = [
+  { value: "more_in_me", label: "More in me" },
+  { value: "near_failure", label: "Near failure" },
+  { value: "to_failure", label: "To failure" },
+];
+const EFFORT_LABEL: Record<EffortTag, string> = {
+  more_in_me: "more in me",
+  near_failure: "near failure",
+  to_failure: "to failure",
+};
+
+// One-tap effort picker (replaces asking for an RIR number). Highlights the
+// chosen tag.
+function EffortPicker({ value, onChange }: { value: EffortTag | null; onChange: (v: EffortTag) => void }) {
+  return (
+    <span className={styles.effortPicker}>
+      {EFFORT_OPTIONS.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={value === o.value ? styles.effortActive : styles.effortBtn}
+        >
+          {o.label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
-  const [rir, setRir] = useState(set.rir ?? 0);
+  const [effort, setEffort] = useState<EffortTag | null>(set.effort);
   const pending = set.syncState !== "synced";
 
   async function save() {
     if (reps < 1 || load < 0) return;
-    await editSet(set.localId!, { load, reps, rir });
+    await editSet(set.localId!, { load, reps, effort });
     setEditing(false);
     onChanged();
   }
@@ -147,12 +178,11 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
 
   if (editing) {
     return (
-      <li style={{ display: "flex", gap: 4, alignItems: "center", margin: "3px 0", fontSize: 14 }}>
+      <li style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "3px 0", fontSize: 14 }}>
         <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 56 }} />
         <span>×</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 44 }} />
-        <span>@</span>
-        <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} style={{ width: 40 }} />
+        <EffortPicker value={effort} onChange={setEffort} />
         <button type="button" onClick={save}>Save</button>
         <button type="button" onClick={() => setEditing(false)}>Cancel</button>
       </li>
@@ -164,7 +194,8 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
         {pending ? "○" : "✓"}
       </span>
       <span>
-        {set.setType === "warmup" ? "Warm-up" : "Working"}: {set.load} lb × {set.reps} @ RIR {set.rir ?? "—"}
+        {set.setType === "warmup" ? "Warm-up" : "Working"}: {set.load} lb × {set.reps}
+        {set.effort ? ` · ${EFFORT_LABEL[set.effort]}` : ""}
       </span>
       <button type="button" onClick={() => setEditing(true)} className={styles.secondaryBtn}>Edit</button>
       <button type="button" onClick={remove} className={styles.secondaryBtn}>Delete</button>
@@ -203,9 +234,10 @@ function StrengthCard({
   });
   const [newMachineName, setNewMachineName] = useState("");
   const [setType, setSetType] = useState<"warmup" | "working">("working");
-  const [load, setLoad] = useState(45);
+  // Bodyweight lifts default to no added weight; loaded lifts to a nominal 45.
+  const [load, setLoad] = useState(ex.loadType === "bodyweight" ? 0 : 45);
   const [reps, setReps] = useState(8);
-  const [rir, setRir] = useState(Number(ex.target?.rirTarget ?? 2));
+  const [effort, setEffort] = useState<EffortTag | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
@@ -264,7 +296,8 @@ function StrengthCard({
       setType,
       load,
       reps,
-      rir,
+      effort,
+      rir: null,
     });
     if (resolvedMachineId) localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
     onSessionChanged();
@@ -359,13 +392,16 @@ function StrengthCard({
           <option value="working">Working</option>
           <option value="warmup">Warm-up</option>
         </select>
-        <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} title="Load" />
-        <span>lb ×</span>
+        <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
+        <span>{ex.loadType === "bodyweight" ? "added lb ×" : "lb ×"}</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} title="Reps" />
-        <span>reps @ RIR</span>
-        <input type="number" value={rir} onChange={(e) => setRir(Number(e.target.value))} title="RIR" />
+        <span>reps</span>
         <button type="submit" className={styles.primary}>Add set</button>
       </form>
+      <div className={styles.effortRow}>
+        <span className={styles.effortLabel}>Effort:</span>
+        <EffortPicker value={effort} onChange={setEffort} />
+      </div>
       {error && <p className={styles.error}>{error}</p>}
 
       {loggedSets.length > 0 && (

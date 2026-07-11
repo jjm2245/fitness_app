@@ -12,11 +12,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const body = await request.json().catch(() => null);
 
-  const updates: { load?: string; reps?: number; rir?: string | null; setType?: "warmup" | "working" } = {};
+  const updates: {
+    load?: string;
+    reps?: number;
+    rir?: string | null;
+    effort?: "more_in_me" | "near_failure" | "to_failure" | null;
+    setType?: "warmup" | "working";
+  } = {};
   if (typeof body?.load === "number") updates.load = body.load.toString();
   if (typeof body?.reps === "number") updates.reps = body.reps;
   if (body?.rir === null) updates.rir = null;
   else if (typeof body?.rir === "number") updates.rir = body.rir.toString();
+  if (body?.effort === null || body?.effort === "more_in_me" || body?.effort === "near_failure" || body?.effort === "to_failure") {
+    updates.effort = body.effort;
+  }
   if (body?.setType === "warmup" || body?.setType === "working") updates.setType = body.setType;
 
   if (Object.keys(updates).length === 0) {

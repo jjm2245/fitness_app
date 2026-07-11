@@ -30,7 +30,8 @@ const baseInput = {
   setType: "working" as const,
   load: 100,
   reps: 8,
-  rir: 2,
+  effort: "near_failure" as const,
+  rir: null,
 };
 
 let nextServerId = 1000;

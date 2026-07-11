@@ -12,6 +12,7 @@ interface SetLogPayload {
   setType: "warmup" | "working";
   load: number;
   reps: number;
+  effort?: "more_in_me" | "near_failure" | "to_failure" | null;
   rir?: number | null;
   romNote?: string | null;
   notes?: string | null;
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
         setType: body.setType,
         load: body.load.toString(),
         reps: body.reps,
+        effort: body.effort ?? null,
         rir: body.rir != null ? body.rir.toString() : null,
         romNote: body.romNote ?? null,
         notes: body.notes ?? null,

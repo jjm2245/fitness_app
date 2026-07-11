@@ -63,6 +63,11 @@ export const muscleRoleEnum = pgEnum("muscle_role", ["primary", "secondary"]);
 
 export const setTypeEnum = pgEnum("set_type", ["warmup", "working"]);
 
+// Proximity-to-failure as a one-tap tag (replaces asking for an RIR number).
+// The adapter layer maps this to a normalized numeric the deterministic core
+// consumes — the core never sees this label. See DECISIONS.md + coreAdapters.
+export const effortEnum = pgEnum("effort", ["more_in_me", "near_failure", "to_failure"]);
+
 // ---------------------------------------------------------------------------
 // Profile (singleton — single-user app, one row)
 // ---------------------------------------------------------------------------
@@ -256,6 +261,10 @@ export const setLogs = pgTable("set_logs", {
   setType: setTypeEnum("set_type").notNull(),
   load: numeric("load").notNull(),
   reps: integer("reps").notNull(),
+  // Primary effort signal is the tag; `rir` stays as an optional exact number
+  // if the user wants to be precise. The adapter prefers an exact rir when
+  // present, else derives one from `effort`.
+  effort: effortEnum("effort"),
   rir: numeric("rir"),
   romNote: text("rom_note"),
   notes: text("notes"),

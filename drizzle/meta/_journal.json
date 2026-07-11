@@ -50,6 +50,13 @@
       "when": 1783710729196,
       "tag": "0006_nervous_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783716474792,
+      "tag": "0007_curved_vector",
+      "breakpoints": true
     }
   ]
 }

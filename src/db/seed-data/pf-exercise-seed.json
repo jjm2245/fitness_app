@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "smith_squat", "name": "Smith machine / free-weight squat", "day": "legs_shoulders",
+      "id": "smith_squat", "name": "Smith machine squat", "day": "legs_shoulders",
       "movement_pattern": "squat",
       "primary_muscles": [{"muscle": "quadriceps", "emphasis": 1.0}],
       "secondary_muscles": [{"muscle": "glutes", "emphasis": 0.5}, {"muscle": "hamstrings", "emphasis": 0.3}, {"muscle": "adductors", "emphasis": 0.3}, {"muscle": "spinal_erectors", "emphasis": 0.3}],
@@ -129,7 +129,7 @@
       ]
     },
     {
-      "id": "lateral_raise", "name": "Lateral raise (cable single-arm or DB both)", "day": "legs_shoulders",
+      "id": "lateral_raise", "name": "Dumbbell lateral raise", "day": "legs_shoulders",
       "movement_pattern": "lateral_raise",
       "primary_muscles": [{"muscle": "lateral_deltoid", "emphasis": 1.0}],
       "secondary_muscles": [{"muscle": "upper_traps", "emphasis": 0.3}],
@@ -366,7 +366,7 @@
       ]
     },
     {
-      "id": "deadlift", "name": "Free-weight / Smith deadlift", "day": "back_biceps",
+      "id": "deadlift", "name": "Dumbbell Romanian deadlift", "day": "back_biceps",
       "movement_pattern": "hinge",
       "primary_muscles": [{"muscle": "hamstrings", "emphasis": 1.0}, {"muscle": "glutes", "emphasis": 1.0}],
       "secondary_muscles": [{"muscle": "spinal_erectors", "emphasis": 0.5}, {"muscle": "lats", "emphasis": 0.3}, {"muscle": "forearms", "emphasis": 0.3}, {"muscle": "upper_traps", "emphasis": 0.3}],
@@ -422,7 +422,7 @@
       ]
     },
     {
-      "id": "weighted_toe_touch", "name": "Lying weighted toe touch (20 lb)", "day": "abs",
+      "id": "weighted_toe_touch", "name": "Lying weighted toe touch", "day": "abs",
       "movement_pattern": "trunk_flexion",
       "primary_muscles": [{"muscle": "rectus_abdominis", "emphasis": 1.0}],
       "secondary_muscles": [],
@@ -442,7 +442,7 @@
       "substitutions": [{"name": "Machine ab crunch", "equipment": ["ab_crunch_machine"], "load_type": "machine_selectorized", "when": "machine available", "in_routine": true}]
     },
     {
-      "id": "russian_twist_heel_touch", "name": "Russian twist (20 lb) or heel touches", "day": "abs",
+      "id": "russian_twist_heel_touch", "name": "Russian twist", "day": "abs",
       "movement_pattern": "trunk_rotation",
       "primary_muscles": [{"muscle": "obliques", "emphasis": 1.0}],
       "secondary_muscles": [],

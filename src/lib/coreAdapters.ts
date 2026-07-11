@@ -5,6 +5,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { exercises, exerciseMuscles, setLogs, workoutLogs, injuryFlags } from "@/db/schema";
 import type { ExerciseTags, MuscleEmphasis, SetLogInput } from "@/core/types";
+import { normalizedRir } from "@/lib/effort";
+
+// The core consumes a numeric RIR. The UI now captures effort as a one-tap tag;
+// `normalizedRir` (src/lib/effort.ts) is the ONE place that tag becomes a number,
+// so the deterministic core stays general and never sees the label.
 
 export async function loadExerciseTags(exerciseId: string): Promise<ExerciseTags | null> {
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId));
@@ -66,6 +71,7 @@ export async function loadSetLogInputsForExercise(exerciseId: string): Promise<S
       load: setLogs.load,
       reps: setLogs.reps,
       rir: setLogs.rir,
+      effort: setLogs.effort,
       date: workoutLogs.date,
     })
     .from(setLogs)
@@ -79,7 +85,7 @@ export async function loadSetLogInputsForExercise(exerciseId: string): Promise<S
     setType: r.setType,
     load: Number(r.load),
     reps: r.reps,
-    rir: r.rir === null ? null : Number(r.rir),
+    rir: normalizedRir(r.effort, r.rir),
   }));
 }
 
@@ -93,6 +99,7 @@ export async function loadAllSetLogInputs(exerciseIds: string[]): Promise<SetLog
       load: setLogs.load,
       reps: setLogs.reps,
       rir: setLogs.rir,
+      effort: setLogs.effort,
       date: workoutLogs.date,
     })
     .from(setLogs)
@@ -106,6 +113,6 @@ export async function loadAllSetLogInputs(exerciseIds: string[]): Promise<SetLog
     setType: r.setType,
     load: Number(r.load),
     reps: r.reps,
-    rir: r.rir === null ? null : Number(r.rir),
+    rir: normalizedRir(r.effort, r.rir),
   }));
 }

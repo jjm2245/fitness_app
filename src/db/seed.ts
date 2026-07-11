@@ -70,10 +70,61 @@ function assertKnownVocabulary(seed: SeedFile) {
   }
 }
 
+// Split-out variants for the "either/or" seed nodes (one node = one real
+// exercise). The original ids are kept (renamed to one concrete variant, above
+// in the JSON) so existing set_logs/program rows never break; these add the
+// second variant. Tags mirror the parent, adjusted for equipment/load_type.
+const SPLIT_VARIANTS: SeedExercise[] = [
+  {
+    id: "db_goblet_squat", name: "Dumbbell goblet squat", day: "legs_shoulders",
+    movement_pattern: "squat",
+    primary_muscles: [{ muscle: "quadriceps", emphasis: 1.0 }],
+    secondary_muscles: [
+      { muscle: "glutes", emphasis: 0.5 }, { muscle: "hamstrings", emphasis: 0.3 },
+      { muscle: "adductors", emphasis: 0.3 },
+    ],
+    equipment_required: ["dumbbell"], load_type: "free_weight",
+    portable: true, affected_structures: [], unilateral: false, stretch_emphasis: true,
+    in_current_routine: false,
+  },
+  {
+    id: "smith_rdl", name: "Smith Romanian deadlift", day: "back_biceps",
+    movement_pattern: "hinge",
+    primary_muscles: [{ muscle: "hamstrings", emphasis: 1.0 }, { muscle: "glutes", emphasis: 1.0 }],
+    secondary_muscles: [
+      { muscle: "spinal_erectors", emphasis: 0.5 }, { muscle: "lats", emphasis: 0.3 },
+      { muscle: "forearms", emphasis: 0.3 }, { muscle: "upper_traps", emphasis: 0.3 },
+    ],
+    equipment_required: ["smith_machine"], load_type: "smith",
+    portable: false, affected_structures: ["lumbar_spine"], unilateral: false, stretch_emphasis: true,
+    in_current_routine: false,
+  },
+  {
+    id: "heel_touches", name: "Heel touches", day: "abs",
+    movement_pattern: "trunk_rotation",
+    primary_muscles: [{ muscle: "obliques", emphasis: 1.0 }],
+    secondary_muscles: [],
+    equipment_required: ["bodyweight"], load_type: "bodyweight",
+    portable: true, affected_structures: [], unilateral: false, stretch_emphasis: false,
+    in_current_routine: false,
+  },
+  {
+    id: "cable_lateral_raise", name: "Cable lateral raise", day: "legs_shoulders",
+    movement_pattern: "lateral_raise",
+    primary_muscles: [{ muscle: "lateral_deltoid", emphasis: 1.0 }],
+    secondary_muscles: [{ muscle: "upper_traps", emphasis: 0.3 }],
+    equipment_required: ["cable"], load_type: "cable",
+    portable: false, affected_structures: [], unilateral: false, stretch_emphasis: false,
+    in_current_routine: false,
+  },
+];
+
 async function loadSeed() {
   const seedPath = join(__dirname, "seed-data", "pf-exercise-seed.json");
   const raw = readFileSync(seedPath, "utf-8");
   const seed: SeedFile = JSON.parse(raw);
+  // Split variants join the curated exercise graph through the same upsert path.
+  seed.exercises.push(...SPLIT_VARIANTS);
   assertKnownVocabulary(seed);
 
   console.log(`Seeding ${seed.muscles.length} muscles, ${seed.exercises.length} exercises...`);

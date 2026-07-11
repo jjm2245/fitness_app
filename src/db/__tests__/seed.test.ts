@@ -40,11 +40,16 @@ describe("seed loader", () => {
     expect(backFriendly).toBeDefined();
   });
 
-  it("loads all 33 seed exercises with equipment tags intact", async () => {
+  it("loads the 33 curated + 4 split-variant exercises with equipment tags intact", async () => {
     const all = await db.select().from(exercises);
-    expect(all.length).toBe(33);
+    // 33 hand-tagged PF nodes + 4 split-out "either/or" variants (Part 2).
+    expect(all.length).toBe(37);
     const smithSquat = all.find((e) => e.id === "smith_squat");
     expect(smithSquat?.equipmentRequired).toEqual(["smith_machine"]);
     expect(smithSquat?.affectedStructures).toContain("lumbar_spine");
+    // A split variant exists as its own node with its own tags.
+    const dbGoblet = all.find((e) => e.id === "db_goblet_squat");
+    expect(dbGoblet?.loadType).toBe("free_weight");
+    expect(dbGoblet?.portable).toBe(true);
   });
 });

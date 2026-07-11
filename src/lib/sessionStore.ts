@@ -10,6 +10,8 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 export type SetSyncState = "pending_create" | "synced" | "pending_update" | "pending_delete";
 
+export type EffortTag = "more_in_me" | "near_failure" | "to_failure";
+
 export interface SessionSet {
   localId?: number;
   date: string; // ISO date (session identity)
@@ -20,7 +22,8 @@ export interface SessionSet {
   setType: "warmup" | "working";
   load: number;
   reps: number;
-  rir: number | null;
+  effort: EffortTag | null; // primary proximity-to-failure signal (one-tap tag)
+  rir: number | null; // optional exact number
   serverId: number | null; // set_logs.id once synced
   syncState: SetSyncState;
 }
@@ -141,6 +144,7 @@ export interface LogSetInput {
   setType: "warmup" | "working";
   load: number;
   reps: number;
+  effort: EffortTag | null;
   rir: number | null;
 }
 
@@ -177,7 +181,7 @@ export async function getSessionSets(date: string): Promise<SessionSet[]> {
  */
 export async function editSet(
   localId: number,
-  patch: { load?: number; reps?: number; rir?: number | null; setType?: "warmup" | "working" }
+  patch: { load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working" }
 ): Promise<void> {
   const db = await getDb();
   const row = await db.get("sets", localId);
@@ -360,6 +364,7 @@ export async function sync(): Promise<SyncResult> {
             setType: row.setType,
             load: row.load,
             reps: row.reps,
+            effort: row.effort,
             rir: row.rir,
           }),
         });
@@ -371,7 +376,7 @@ export async function sync(): Promise<SyncResult> {
         const res = await fetch(`/api/set-logs/${row.serverId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ load: row.load, reps: row.reps, rir: row.rir, setType: row.setType }),
+          body: JSON.stringify({ load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType }),
         });
         if (!res.ok) throw new Error(String(res.status));
         await db.put("sets", { ...row, syncState: "synced" });

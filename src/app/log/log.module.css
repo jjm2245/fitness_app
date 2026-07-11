@@ -151,6 +151,36 @@
   margin: 2px 0;
 }
 
+.effortRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+.effortLabel {
+  font-size: 13px;
+  color: var(--muted);
+}
+.effortPicker {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.effortBtn {
+  font-size: 13px;
+  min-height: 36px;
+  padding: 5px 10px;
+}
+.effortActive {
+  font-size: 13px;
+  min-height: 36px;
+  padding: 5px 10px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
 .finishBar {
   position: fixed;
   bottom: 0;
