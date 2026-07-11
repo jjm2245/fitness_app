@@ -56,6 +56,34 @@
   margin: 0;
 }
 
+.picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.pickerHint {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.pickerGroup {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 10px 0 4px;
+}
+.pickerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -650,7 +650,10 @@ export default function LogPage() {
   const [pending, setPending] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
   const [showFinish, setShowFinish] = useState(false);
-  const [blockToAdd, setBlockToAdd] = useState("");
+  const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedBlockIds, setSelectedBlockIds] = useState<Set<number>>(new Set());
+  const [selectedDayIds, setSelectedDayIds] = useState<Set<number>>(new Set());
 
   const date = todayIso();
 
@@ -703,6 +706,15 @@ export default function LogPage() {
       setMachines(machinesRes);
       setBlocks(blocksRes);
       await refreshSession();
+
+      // All programs + their days, for the multi-select session builder.
+      const summaries = await fetch("/api/programs").then((r) => (r.ok ? r.json() : []));
+      const full = await Promise.all(
+        (summaries as { id: number }[]).map((p) =>
+          fetch(`/api/programs/${p.id}`).then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null))
+        )
+      );
+      if (!cancelled) setAllPrograms(full.filter((p): p is ProgramDetail => p !== null));
     })();
     window.addEventListener("online", handleSync);
     return () => { cancelled = true; window.removeEventListener("online", handleSync); };
@@ -745,10 +757,15 @@ export default function LogPage() {
     return [...fromProgram, ...fromComposition];
   }, [currentDay, composition]);
 
-  async function addBlock() {
-    const block = blocks.find((b) => String(b.id) === blockToAdd);
-    if (!block) return;
-    const items: AttachExercise[] = block.exercises.map((e) => ({
+  function toggleId(set: Set<number>, id: number): Set<number> {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }
+
+  function itemsFrom(exs: ProgramExerciseDetail[]): AttachExercise[] {
+    return exs.map((e) => ({
       exerciseId: e.exerciseId,
       exerciseName: e.exerciseName,
       loadType: e.loadType,
@@ -757,8 +774,27 @@ export default function LogPage() {
       provenance: e.source,
       untagged: e.untagged,
     }));
-    await attachToComposition(date, items, `block:${block.name}`);
-    setBlockToAdd("");
+  }
+
+  // Attach every selected block and program-day at once (multi-select session
+  // assembly). Each attached exercise records its origin for the provenance
+  // label. Nothing is created — this only composes today's session locally.
+  async function attachSelected() {
+    for (const block of blocks) {
+      if (selectedBlockIds.has(block.id)) {
+        await attachToComposition(date, itemsFrom(block.exercises), `block:${block.name}`);
+      }
+    }
+    for (const prog of allPrograms) {
+      for (const day of prog.days) {
+        if (selectedDayIds.has(day.id)) {
+          await attachToComposition(date, itemsFrom(day.exercises), `${prog.splitType}·${day.name}`);
+        }
+      }
+    }
+    setSelectedBlockIds(new Set());
+    setSelectedDayIds(new Set());
+    setPickerOpen(false);
     await refreshSession();
   }
 
@@ -823,19 +859,59 @@ export default function LogPage() {
           </div>
 
           <div className={styles.addRow}>
-            <span>
-              Add block:
-              <select value={blockToAdd} onChange={(e) => setBlockToAdd(e.target.value)}>
-                <option value="">choose…</option>
-                {blocks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <button type="button" onClick={addBlock} disabled={!blockToAdd} className={styles.secondaryBtn}>Attach</button>
-            </span>
+            <button type="button" onClick={() => setPickerOpen((o) => !o)} className={styles.secondaryBtn}>
+              {pickerOpen ? "Close" : "+ Add blocks / days to session"}
+            </button>
             <span style={{ flex: "1 1 240px" }}>
-              Add exercise:
+              Or one exercise:
               <ExerciseSearch onPick={addAdhocExercise} placeholder="Search library / curated, or create custom…" />
             </span>
           </div>
+
+          {pickerOpen && (
+            <div className={styles.picker}>
+              <p className={styles.pickerHint}>Pick any number of blocks or program days to add to today&rsquo;s session.</p>
+              {blocks.length > 0 && (
+                <>
+                  <div className={styles.pickerGroup}>Blocks</div>
+                  {blocks.map((b) => (
+                    <label key={`b${b.id}`} className={styles.pickerRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedBlockIds.has(b.id)}
+                        onChange={() => setSelectedBlockIds((s) => toggleId(s, b.id))}
+                      />
+                      {b.name} <span className={styles.tag}>({b.exercises.length})</span>
+                    </label>
+                  ))}
+                </>
+              )}
+              {allPrograms.map((prog) => (
+                <div key={`p${prog.id}`}>
+                  <div className={styles.pickerGroup}>{prog.splitType}</div>
+                  {prog.days.map((d) => (
+                    <label key={`d${d.id}`} className={styles.pickerRow}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDayIds.has(d.id)}
+                        onChange={() => setSelectedDayIds((s) => toggleId(s, d.id))}
+                      />
+                      {d.name} <span className={styles.tag}>({d.exercises.length})</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={attachSelected}
+                disabled={selectedBlockIds.size === 0 && selectedDayIds.size === 0}
+                className={styles.primary}
+                style={{ marginTop: 8 }}
+              >
+                Attach selected ({selectedBlockIds.size + selectedDayIds.size})
+              </button>
+            </div>
+          )}
 
           <ul className={styles.list}>
             {loggables.map((ex) =>
