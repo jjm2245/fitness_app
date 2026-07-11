@@ -33,10 +33,11 @@ pg_ctl -D .pgdata stop
 
 ```bash
 npm install
-cp .env.example .env  # then fill in DATABASE_URL / APP_PASSCODE / SESSION_SECRET
-npm run db:migrate    # apply the schema
-npm run db:seed       # loads the exercise graph; creates an initial program only if none exists yet
-npm run dev            # http://localhost:3000, gated behind APP_PASSCODE
+cp .env.example .env    # then fill in DATABASE_URL / APP_PASSCODE / SESSION_SECRET
+npm run db:migrate      # apply the schema
+npm run db:seed         # curated exercise graph + starter program/blocks (only if none exist)
+npm run db:seed:library # ingest the free-exercise-db library (Unlicense; idempotent)
+npm run dev              # http://localhost:3000, gated behind APP_PASSCODE
 ```
 
 ## Production deploy

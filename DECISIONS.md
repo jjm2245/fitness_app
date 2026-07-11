@@ -527,3 +527,116 @@ Running `next build` (verification) while a `next dev` preview server was
 alive clobbered the shared `.next/` and 500'd the dev server. Not a code
 issue — fixed by stopping the preview before building. Worth remembering:
 don't `next build` against a live dev server sharing the same `.next`.
+
+## Round-2 refinements from real use (6 parts)
+
+Discipline held: no LLM/vision, the deterministic core stays general (it reads
+only normalized data — the effort tag, library, provenance, and machine labels
+are all data + UI), offline-first preserved, migrations local-first with prod
+held for review. Each part is its own commit for rollback.
+
+### Part 1 — responsive editors
+`/program` and `/blocks` overflowed on mobile. Extracted the shared DayEditor's
+inline styles into a CSS Module (flex-wrap, capped widths, exercise name on its
+own row). Verified clean at 375px.
+
+### Part 2 — exercise-model corrections
+- Split "either/or" seed nodes so one node = one real exercise. Existing ids
+  kept (renamed to one concrete variant) so no set_logs/program rows break; the
+  second variant added as a new node: smith_squat +db_goblet_squat; deadlift
+  (now "Dumbbell Romanian deadlift") +smith_rdl; russian_twist_heel_touch (now
+  "Russian twist") +heel_touches; lateral_raise (now "Dumbbell lateral raise")
+  +cable_lateral_raise. Split variants join via the same seed upsert path.
+- Stripped baked-in weights from names; added weight is the optional per-set
+  `load`, defaulting to 0 for bodyweight lifts.
+- **Effort tag replaces the RIR number** (more in me / near failure / to
+  failure). New `set_logs.effort` enum; exact `rir` kept optional.
+
+  **Exactly how the effort tag feeds the core:** the core still consumes a
+  numeric RIR and never sees the label. The single translation point is
+  `normalizedRir()` in `src/lib/effort.ts`, called by `coreAdapters` when it
+  loads set logs for the engine. Mapping: `to_failure → 0`, `near_failure → 1`,
+  `more_in_me → 3` (an explicit exact `rir`, if present, wins over the tag).
+  This preserves the engine's "at target effort" semantics: with a typical
+  target RIR ~2, `near_failure`/`to_failure` (0–1) count as at-or-below target
+  and `more_in_me` (3) does not — so a stall is never flagged when you left
+  reps in the tank. `src/core/*` is unchanged; a unit test locks the mapping.
+
+### Part 3 — exercise library, pairing, custom, provenance
+- **Dataset: free-exercise-db** (github.com/yuhonas/free-exercise-db) —
+  **Unlicense / public domain** (no attribution required; cleaner than wger's
+  copyleft). Vendored to `src/db/seed-data/free-exercise-db.json`, 873 entries,
+  ingested via `npm run db:seed:library` (idempotent) as source="library".
+  Library muscles map to our finer slugs (so volume works); equipment maps to
+  load_type. **Library rows carry NO movement_pattern** (the dataset lacks our
+  taxonomy), so they never match in substitution — honest limitation. To keep
+  the core general, `ExerciseTags.movementPattern` is now `string | null` and
+  substitution treats null as unmatchable (a null-guard, not a library special
+  case).
+- **Applied seed→library pairings (the 16 high-confidence, per your review):**
+  additive — each curated exercise keeps its name/pattern/muscle tags and gains
+  `canonical_name` + `library_id`. Verified nothing was overwritten.
+
+  | curated id | → canonical (library) |
+  |---|---|
+  | machine_leg_extension | Leg Extensions |
+  | hip_adductor_machine | Thigh Adductor |
+  | hip_abductor_machine | Thigh Abductor |
+  | reverse_pec_dec | Reverse Machine Flyes |
+  | cable_tricep_pushdown | Triceps Pushdown - V-Bar Attachment |
+  | cable_overhead_tricep_ext | Cable Rope Overhead Triceps Extension |
+  | machine_preacher_curl | Machine Preacher Curls |
+  | cable_hammer_curl | Cable Hammer Curls - Rope Attachment |
+  | bodyweight_pullup | Pullups |
+  | back_extension | Hyperextensions (Back Extensions) |
+  | hanging_leg_raise | Hanging Leg Raise |
+  | machine_ab_crunch | Ab Crunch Machine |
+  | shoulder_press | Dumbbell Shoulder Press |
+  | smith_squat | Smith Machine Squat |
+  | deadlift | Romanian Deadlift |
+  | russian_twist_heel_touch | Russian Twist |
+
+  The medium-confidence 7 and all others were left as your custom name (no
+  canonical attached), per your "high-confidence only" choice.
+- **Search-add** everywhere via a shared debounced `ExerciseSearch` (new
+  `/api/exercises/search`, curated ranked first) — replaces the old
+  all-exercises `<select>`, unusable at 900+ rows.
+- **Custom free-typed exercise** (`/api/exercises/custom`): source="custom",
+  `untagged=true`, null pattern, no muscles — loggable immediately, naturally
+  excluded from volume/substitution, and labeled as such in the UI.
+- **Ad-hoc adds attach to the SESSION only** (client-side composition store) —
+  no throwaway program/block is ever created.
+- **Provenance badges** (curated / library / custom / untagged) on cards and
+  editor rows; ad-hoc cards render visually separate (dashed).
+- Schema migration 0008: exercises.source / canonical_name / library_id /
+  untagged; movement_pattern made nullable.
+
+### Part 4 — machine tag UX
+Machine field shows only for machine/cable/Smith/plate load types (explicit
+`MACHINE_LOAD_TYPES` set — never dumbbell/bodyweight/free weight); last machine
+stays pre-selected; copy reframed as a personal label you invent ("leg ext by
+the mirror"), not a number on the machine.
+
+### Part 5 — cardio contextual fields
+Visible cardio inputs are driven by the exercise type inferred from its name
+(pure `cardioFields` helper): treadmill → duration/speed/incline; stair →
+duration/level; bike → duration/level/distance; unknown → duration/distance.
+Hidden fields persist as null.
+
+### Part 6 — session composition multi-select
+Replaced the single-block dropdown with a multi-select builder: tick any number
+of blocks and/or program days and attach them all at once. Block *creation*
+stays on `/blocks`; standalone library/custom exercises still add via inline
+search — so a session can be built entirely from ad-hoc picks with no program.
+Each attached exercise records its origin (block/program·day) shown as a tag
+alongside its provenance badge.
+
+### Self-check
+- `src/core/*` re-grepped: no library/UI/routine literals (only explanatory
+  comments mention "library"; the code handles a nullable pattern generically).
+- 89 tests pass (incl. new effort-mapping test); clean typecheck, lint, and
+  production build throughout.
+- Migrations 0007 (effort) + 0008 (library/provenance) applied to LOCAL only.
+  **Production Neon migration + library ingest are held for your review** —
+  when you approve, prod needs: `db:migrate`, then `db:seed:library` (the
+  library ingest), then a git push for Vercel to redeploy.
