@@ -1,0 +1,177 @@
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px 96px;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  opacity: 0.75;
+  margin: 8px 0 16px;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionLabel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+  margin: 16px 0 4px;
+}
+
+.row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.row:hover {
+  border-color: var(--accent, #6ea8fe);
+}
+
+.rowTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rowTitle {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.rowWhen {
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.rowSub {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-top: 3px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #444);
+  opacity: 0.85;
+}
+
+.badgeProgress {
+  border-color: var(--accent, #6ea8fe);
+  color: var(--accent, #6ea8fe);
+}
+
+.badgePending {
+  border-color: #d9a441;
+  color: #d9a441;
+}
+
+.empty {
+  opacity: 0.6;
+  font-size: 14px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.startBtn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: var(--accent, #6ea8fe);
+  color: #06111f;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.secondaryBtn {
+  background: transparent;
+  border: 1px solid var(--border, #444);
+  border-radius: 8px;
+  padding: 4px 10px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.links {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  margin-top: 20px;
+}
+
+.picker {
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.pickerHint {
+  font-size: 13px;
+  opacity: 0.7;
+  margin: 0 0 8px;
+}
+
+.dayChoice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dayChoiceBtn {
+  border: 1px solid var(--border, #444);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.dayChoiceBtn:hover {
+  border-color: var(--accent, #6ea8fe);
+}

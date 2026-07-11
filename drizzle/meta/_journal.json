@@ -64,6 +64,20 @@
       "when": 1783729974106,
       "tag": "0008_green_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783783478013,
+      "tag": "0009_blue_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783783478014,
+      "tag": "0010_daffy_session_backfill",
+      "breakpoints": true
     }
   ]
 }

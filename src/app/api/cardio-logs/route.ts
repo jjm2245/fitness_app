@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { workoutLogs, cardioLogs } from "@/db/schema";
 
 interface CardioPayload {
+  clientSessionId?: string | null;
   date: string;
   exerciseId: string;
   durationMin?: number | null;
@@ -23,9 +24,16 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await db.transaction(async (tx) => {
-    let [workoutLog] = await tx.select().from(workoutLogs).where(eq(workoutLogs.date, body.date));
+    // Upsert the workout_log by client session id (falling back to date for
+    // legacy callers), matching set-logs.
+    let [workoutLog] = body.clientSessionId
+      ? await tx.select().from(workoutLogs).where(eq(workoutLogs.clientSessionId, body.clientSessionId))
+      : await tx.select().from(workoutLogs).where(eq(workoutLogs.date, body.date));
     if (!workoutLog) {
-      [workoutLog] = await tx.insert(workoutLogs).values({ date: body.date }).returning();
+      [workoutLog] = await tx
+        .insert(workoutLogs)
+        .values({ date: body.date, clientSessionId: body.clientSessionId ?? null })
+        .returning();
     }
     const [row] = await tx
       .insert(cardioLogs)

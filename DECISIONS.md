@@ -640,3 +640,66 @@ alongside its provenance badge.
   **Production Neon migration + library ingest are held for your review** —
   when you approve, prod needs: `db:migrate`, then `db:seed:library` (the
   library ingest), then a git push for Vercel to redeploy.
+
+## Sessions list + client-session-id (Part A)
+
+Reframed the app's home base: the **sessions list** (`/sessions`) is where
+sessions live; the log screen is where you *do* one. Mental model — "log = do a
+session, list = where sessions live."
+
+### A session is a client-generated id, not a calendar date
+Previously a "session" was implicitly a calendar day (everything keyed by
+`date`), so you couldn't have two sessions in a day and "today's log" was the
+only session you could touch. Now a session is a **`crypto.randomUUID()`**
+minted on the client the moment you start one. The client owns identity so a
+session created offline maps to exactly one `workout_logs` row on sync.
+- Schema: `workout_logs.client_session_id text unique` (migration 0009), plus a
+  backfill (0010) giving every pre-existing row a `gen_random_uuid()` so the
+  whole model keys uniformly on it — no special-casing legacy date-keyed rows.
+- All three write endpoints (`set-logs`, `cardio-logs`, `sessions/finish`)
+  **upsert the workout_log by `client_session_id`** (falling back to `date`
+  only for a legacy caller that sends none). `finish` also persists
+  `programDay` so the list can label a session with zero logged sets.
+
+### The local store was re-keyed date → sessionId (destructive v3 bump)
+`sessionStore` IndexedDB went to version 3: the old date-keyed stores are
+dropped and recreated keyed by `sessionId`, with a new `sessions` object store
+(`LocalSession`: id, date, origin, finishedAt, finishSynced). The one-time bump
+clears *unsynced* local data only — finished sessions are safe on the server and
+reappear via `GET /api/sessions`. Session-management fns: `createSession`,
+`listLocalSessionSummaries` (list with logged-volume counts in one pass),
+`getSession`, `finishSession(id)` (re-stampable), `deleteLocalSession`.
+
+### The list is local ⊕ server, merged by id — renders fully offline
+`/sessions` merges the durable local store with `GET /api/sessions` (finished
+server sessions + derived `day · N exercises` description), keyed by session id;
+local wins (freshest, may be in progress), server-only rows are appended.
+In-progress sessions sort first (resume), then finished newest-first. No network
+round-trip is required to see your sessions.
+
+### A session is self-contained; opening an old one hydrates from the server
+Each card on the log screen comes from the session's **composition** (targets
+and cardio params now travel with the composition item), so the screen needs no
+`/api/program` round-trip and works offline. Starting from a program day copies
+that day's exercises into the session's composition at creation; ad-hoc starts
+empty. Opening a session that exists only on the server (finished elsewhere, or
+after a local-store reset) calls `GET /api/sessions/[id]` and
+`hydrateFromServer` rebuilds the local rows as **synced** (with server ids), so
+later edits/deletes route by server id exactly like locally-created rows — the
+"old synced edits need connectivity, then work offline" requirement. Hydration
+never clobbers a session that already has local (possibly unsynced) state.
+
+### Finishing returns to the list
+`Finish session` stamps `finishedAt`, syncs, and navigates back to `/sessions`,
+where the just-finished session is visibly added. `/log` (no id) redirects to
+the list; the home page links there.
+
+### Verified
+- 90 tests pass (new: server-hydration round-trip + no-clobber); clean
+  typecheck, lint, production build.
+- Browser: start-from-day → log a set (synced, upserted by client_session_id) →
+  finish → back on list with the row; wiped the local IndexedDB and reopened the
+  session — hydrated from the server with its synced set intact.
+- Migrations 0009 + 0010 applied to **LOCAL only**; prod is held for your
+  review (`db:migrate` when approved). Parts B–D of this batch are **not**
+  started — paused here for review as requested.

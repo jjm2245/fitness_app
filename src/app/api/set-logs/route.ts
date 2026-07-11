@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { workoutLogs, setLogs, machines } from "@/db/schema";
 
 interface SetLogPayload {
+  clientSessionId?: string | null;
   date: string; // ISO date, e.g. "2026-07-04"
   programDay?: string | null;
   exerciseId: string;
@@ -26,15 +27,16 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await db.transaction(async (tx) => {
-    let [workoutLog] = await tx
-      .select()
-      .from(workoutLogs)
-      .where(eq(workoutLogs.date, body.date));
+    // A workout_log maps to a client session; upsert by that id (falling back
+    // to date for legacy callers without one).
+    let [workoutLog] = body.clientSessionId
+      ? await tx.select().from(workoutLogs).where(eq(workoutLogs.clientSessionId, body.clientSessionId))
+      : await tx.select().from(workoutLogs).where(eq(workoutLogs.date, body.date));
 
     if (!workoutLog) {
       [workoutLog] = await tx
         .insert(workoutLogs)
-        .values({ date: body.date, programDay: body.programDay ?? null })
+        .values({ date: body.date, programDay: body.programDay ?? null, clientSessionId: body.clientSessionId ?? null })
         .returning();
     }
 

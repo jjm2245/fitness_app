@@ -254,6 +254,12 @@ export const workoutLogs = pgTable("workout_logs", {
   programDay: text("program_day"),
   programId: integer("program_id").references(() => programs.id),
   notes: text("notes"),
+  // Client-generated session id — the real unit of a session now (a session is
+  // a thing you start, not a calendar day, so two sessions can share a date).
+  // The client owns identity so a session created offline maps to exactly one
+  // workout_log on sync (upsert by this, not by date). Unique; nullable for
+  // rows created before this model.
+  clientSessionId: text("client_session_id").unique(),
   // Stamped when the user taps "Finish session" (spec §7a lifecycle). Nullable:
   // a session in progress has no finish time. Not a one-way door — re-finishing
   // re-stamps it. withTimezone since it's compared/displayed as a real instant.

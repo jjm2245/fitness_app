@@ -6,7 +6,8 @@ export default function Home() {
       <h1>Fitness Agent</h1>
       <p>Deterministic core + logging UX. No LLM coaching yet.</p>
       <p>
-        <Link href="/log">Log a session</Link>
+        <Link href="/sessions">Sessions</Link> · <Link href="/program">Program</Link> ·{" "}
+        <Link href="/blocks">Blocks</Link>
       </p>
     </main>
   );
