@@ -29,6 +29,7 @@ type SeedExercise = {
   id: string;
   name: string;
   day?: string;
+  source?: "curated" | "custom";
   movement_pattern: string;
   primary_muscles: SeedMuscleRef[];
   secondary_muscles: SeedMuscleRef[];
@@ -119,12 +120,78 @@ const SPLIT_VARIANTS: SeedExercise[] = [
   },
 ];
 
+// Net-new exercises the user does consistently (approved mapping, round-3).
+// Fully tagged so they count toward volume and act as substitution candidates
+// immediately — a bare name would be inert. The four with a clean library match
+// are paired + merged in seedLibrary.ts (their names here are the canonical
+// display names, so nothing to reconcile); Bayesian curl has no library match
+// and stays custom, but still fully tagged. Face pull mirrors reverse_pec_dec's
+// pattern/muscles so it surfaces as a substitution candidate for it.
+const NEW_EXERCISES: SeedExercise[] = [
+  {
+    id: "barbell_squat", name: "Barbell Squat", day: "legs_shoulders",
+    movement_pattern: "squat",
+    primary_muscles: [{ muscle: "quadriceps", emphasis: 1.0 }],
+    secondary_muscles: [
+      { muscle: "glutes", emphasis: 0.5 }, { muscle: "hamstrings", emphasis: 0.3 },
+      { muscle: "adductors", emphasis: 0.3 }, { muscle: "spinal_erectors", emphasis: 0.3 },
+      { muscle: "calves", emphasis: 0.3 },
+    ],
+    equipment_required: ["barbell"], load_type: "free_weight",
+    portable: true, affected_structures: ["lumbar_spine"], unilateral: false, stretch_emphasis: false,
+    in_current_routine: false,
+  },
+  {
+    id: "hack_squat", name: "Hack Squat", day: "legs_shoulders",
+    movement_pattern: "squat",
+    primary_muscles: [{ muscle: "quadriceps", emphasis: 1.0 }],
+    secondary_muscles: [
+      { muscle: "glutes", emphasis: 0.5 }, { muscle: "hamstrings", emphasis: 0.3 },
+      { muscle: "calves", emphasis: 0.3 },
+    ],
+    equipment_required: ["machine"], load_type: "machine_selectorized",
+    portable: false, affected_structures: [], unilateral: false, stretch_emphasis: false,
+    in_current_routine: false,
+  },
+  {
+    id: "face_pull", name: "Face Pull", day: "legs_shoulders",
+    movement_pattern: "rear_delt_fly",
+    primary_muscles: [{ muscle: "posterior_deltoid", emphasis: 1.0 }],
+    secondary_muscles: [{ muscle: "rhomboids", emphasis: 0.5 }, { muscle: "mid_traps", emphasis: 0.5 }],
+    equipment_required: ["cable"], load_type: "cable",
+    portable: false, affected_structures: [], unilateral: false, stretch_emphasis: false,
+    in_current_routine: false,
+  },
+  {
+    id: "stiff_legged_barbell_deadlift", name: "Stiff-Legged Barbell Deadlift", day: "back_biceps",
+    movement_pattern: "hinge",
+    primary_muscles: [{ muscle: "hamstrings", emphasis: 1.0 }, { muscle: "glutes", emphasis: 1.0 }],
+    secondary_muscles: [
+      { muscle: "spinal_erectors", emphasis: 0.5 }, { muscle: "lats", emphasis: 0.3 },
+      { muscle: "forearms", emphasis: 0.3 }, { muscle: "upper_traps", emphasis: 0.3 },
+    ],
+    equipment_required: ["barbell"], load_type: "free_weight",
+    portable: true, affected_structures: ["lumbar_spine"], unilateral: false, stretch_emphasis: true,
+    in_current_routine: false,
+  },
+  {
+    id: "bayesian_curl", name: "Bayesian Curl", day: "back_biceps", source: "custom",
+    movement_pattern: "elbow_flexion",
+    primary_muscles: [{ muscle: "biceps", emphasis: 1.0 }],
+    secondary_muscles: [{ muscle: "forearms", emphasis: 0.3 }],
+    equipment_required: ["cable"], load_type: "cable",
+    portable: false, affected_structures: [], unilateral: false, stretch_emphasis: true,
+    in_current_routine: false,
+  },
+];
+
 async function loadSeed() {
   const seedPath = join(__dirname, "seed-data", "pf-exercise-seed.json");
   const raw = readFileSync(seedPath, "utf-8");
   const seed: SeedFile = JSON.parse(raw);
-  // Split variants join the curated exercise graph through the same upsert path.
-  seed.exercises.push(...SPLIT_VARIANTS);
+  // Split variants + net-new exercises join the curated graph through the same
+  // upsert path.
+  seed.exercises.push(...SPLIT_VARIANTS, ...NEW_EXERCISES);
   assertKnownVocabulary(seed);
 
   console.log(`Seeding ${seed.muscles.length} muscles, ${seed.exercises.length} exercises...`);
@@ -150,6 +217,7 @@ async function loadSeed() {
         repRangeDefault: ex.rep_range_default ?? null,
         inCurrentRoutine: ex.in_current_routine ?? false,
         conditioningOnly: ex.conditioning_only ?? false,
+        source: (ex.source ?? "curated") as "curated" | "custom",
         notes: ex.notes ?? null,
         params: ex.params ?? null,
         updatedAt: new Date(),
@@ -169,6 +237,7 @@ async function loadSeed() {
           repRangeDefault: ex.rep_range_default ?? null,
           inCurrentRoutine: ex.in_current_routine ?? false,
           conditioningOnly: ex.conditioning_only ?? false,
+          source: (ex.source ?? "curated") as "curated" | "custom",
           notes: ex.notes ?? null,
           params: ex.params ?? null,
           updatedAt: new Date(),

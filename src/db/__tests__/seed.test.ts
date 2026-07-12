@@ -40,13 +40,15 @@ describe("seed loader", () => {
     expect(backFriendly).toBeDefined();
   });
 
-  it("loads the 33 curated + 4 split-variant exercises with equipment tags intact", async () => {
+  it("loads the 33 curated + 4 split-variant + 4 net-new exercises with tags intact", async () => {
     const all = await db.select().from(exercises);
-    // 33 hand-tagged PF nodes + 4 split-out "either/or" variants (Part 2), all
-    // source='curated'. Library exercises (source='library') are ingested
-    // separately (`npm run db:seed:library`) and not counted here.
+    // 33 hand-tagged PF nodes + 4 split-out "either/or" variants (Part 2) + 4
+    // net-new exercises with a library pairing (Part D: barbell_squat,
+    // hack_squat, face_pull, stiff_legged_barbell_deadlift), all
+    // source='curated'. Bayesian curl is net-new but source='custom' (no library
+    // match). Library exercises are ingested separately and not counted here.
     const curated = all.filter((e) => e.source === "curated");
-    expect(curated.length).toBe(37);
+    expect(curated.length).toBe(41);
     const smithSquat = curated.find((e) => e.id === "smith_squat");
     expect(smithSquat?.equipmentRequired).toEqual(["smith_machine"]);
     expect(smithSquat?.affectedStructures).toContain("lumbar_spine");
@@ -54,5 +56,11 @@ describe("seed loader", () => {
     const dbGoblet = curated.find((e) => e.id === "db_goblet_squat");
     expect(dbGoblet?.loadType).toBe("free_weight");
     expect(dbGoblet?.portable).toBe(true);
+    // A net-new exercise is fully tagged (movement pattern set) so it counts.
+    const facePull = curated.find((e) => e.id === "face_pull");
+    expect(facePull?.movementPattern).toBe("rear_delt_fly");
+    const bayesian = all.find((e) => e.id === "bayesian_curl");
+    expect(bayesian?.source).toBe("custom");
+    expect(bayesian?.movementPattern).toBe("elbow_flexion");
   });
 });
