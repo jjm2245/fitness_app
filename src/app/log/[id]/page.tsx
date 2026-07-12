@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import styles from "../log.module.css";
 import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/components/ExerciseSearch";
+import { prettyDayName } from "@/lib/labels";
 import {
   logSet,
   editSet,
@@ -783,7 +784,7 @@ export default function LogSessionPage() {
     for (const prog of allPrograms) {
       for (const day of prog.days) {
         if (selectedDayIds.has(day.id)) {
-          await attachToComposition(sessionId, itemsFrom(day.exercises), `${prog.splitType}·${day.name}`);
+          await attachToComposition(sessionId, itemsFrom(day.exercises), prettyDayName(day.name));
         }
       }
     }

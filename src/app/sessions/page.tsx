@@ -13,6 +13,7 @@ import {
   type LocalSessionSummary,
   type AttachExercise,
 } from "@/lib/sessionStore";
+import { prettyDayName } from "@/lib/labels";
 
 // The sessions list is the app's home base: this is where sessions live. A
 // session is a thing you start (Start a new session), do on /log/[id], and
@@ -193,7 +194,7 @@ export default function SessionsPage() {
     if (starting) return;
     setStarting(true);
     try {
-      const origin = day ? `${program?.splitType ?? "Program"}·${day.name}` : "Ad-hoc";
+      const origin = day ? prettyDayName(day.name) : "Ad-hoc";
       const session = await createSession({ date: todayIso(), origin, programId: program?.id ?? null });
       if (day) await attachToComposition(session.id, toAttach(day), origin);
       router.push(`/log/${session.id}`);
