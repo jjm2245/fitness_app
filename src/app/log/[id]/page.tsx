@@ -370,12 +370,12 @@ function StrengthCard({
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
-        <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
+        <ProvenanceBadge untagged={ex.untagged} />
         {collapsed && loggedSets.length > 0 && (
           <span className={styles.collapsedSummary}>{loggedSets.length} {loggedSets.length === 1 ? "set" : "sets"}</span>
         )}
         {ex.origin && <span className={styles.tag}>[{ex.origin}]</span>}
-        {ex.untagged && <span className={styles.tag}>· not counted in volume until tagged</span>}
+        {ex.untagged && <span className={styles.tag}>· untagged — tag a movement pattern to make it substitutable</span>}
         {activeExercise.id !== ex.exerciseId && (
           <span className={styles.tag}>
             (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} className={styles.secondaryBtn}>reset</button>)
@@ -556,7 +556,7 @@ function CardioCard({
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
           <strong>{ex.exerciseName}</strong>
         </label>
-        <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
+        <ProvenanceBadge untagged={ex.untagged} />
         <span className={styles.tag}>cardio{ex.origin ? ` · ${ex.origin}` : ""}</span>
         {collapsed && entries.length > 0 && (
           <span className={styles.collapsedSummary}>{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>

@@ -75,8 +75,61 @@
   border-color: #6b5330;
   background: #2a2114;
 }
+.tagged {
+  color: #8fd0a6;
+  border-color: #2f5c41;
+  background: #16261d;
+}
 .untagged {
   color: #e6a3a3;
   border-color: #6b3333;
   background: #2a1616;
+}
+
+.patternPrompt {
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2, #16181c);
+}
+.patternTitle {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.patternHint {
+  font-size: 12px;
+  color: var(--muted, #9aa0a6);
+  margin: 0 0 8px;
+}
+.patternSelect {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.patternActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.assignBtn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: var(--accent, #6ea8fe);
+  color: #06111f;
+  font-weight: 600;
+  cursor: pointer;
+}
+.assignBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.skipBtn {
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }

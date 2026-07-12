@@ -96,7 +96,7 @@ function ProgramExerciseRow({ ex, onChanged }: { ex: ProgramExerciseDetail; onCh
   return (
     <li className={styles.exRow}>
       <strong className={styles.exName}>
-        {ex.exerciseName} <ProvenanceBadge source={ex.source} untagged={ex.untagged} />
+        {ex.exerciseName} <ProvenanceBadge untagged={ex.untagged} />
       </strong>
       <button type="button" onClick={() => move("up")} aria-label="Move up" className={styles.iconBtn}>
         ↑

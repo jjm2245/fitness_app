@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq, inArray, and } from "drizzle-orm";
+import { eq, inArray, and, sql } from "drizzle-orm";
 import { db } from "./client";
 import { exercises, exerciseMuscles, setLogs, cardioLogs, programExercises, loadTypeEnum } from "./schema";
 
@@ -164,7 +164,10 @@ async function run() {
         source: "library",
         libraryId: e.id,
         canonicalName: e.name,
-        untagged: false,
+        // Library rows carry no movement pattern, so they read as "untagged"
+        // (not substitutable) until the movement-pattern-on-add flow graduates
+        // one. This keeps `untagged` a reliable proxy for "no movement pattern".
+        untagged: true,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -177,6 +180,8 @@ async function run() {
           source: "library",
           libraryId: e.id,
           canonicalName: e.name,
+          // Don't clobber a pattern a user has since assigned via the add flow.
+          untagged: sql`case when ${exercises.movementPattern} is null then true else false end`,
           updatedAt: new Date(),
         },
       });

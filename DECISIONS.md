@@ -701,5 +701,73 @@ the list; the home page links there.
   finish → back on list with the row; wiped the local IndexedDB and reopened the
   session — hydrated from the server with its synced set intact.
 - Migrations 0009 + 0010 applied to **LOCAL only**; prod is held for your
-  review (`db:migrate` when approved). Parts B–D of this batch are **not**
-  started — paused here for review as requested.
+  review (`db:migrate` when approved).
+
+## Exercise-model unification: merge, tagged/untagged, collapsible (Parts B–D)
+
+### Part D — the approved seed→library mapping is a true merge
+The user validated an exact seed→library mapping (round-3). Each pairing is
+applied as a **merge**, not the earlier additive/hide half-fix: the curated
+exercise becomes the single entry, taking the canonical library name as its
+display (a few keep a more precise override — "Captain's Chair Straight-Leg
+Raise", "Toe Touches", "Full-Extension Double Crunch — Hands Behind Head") and
+keeping all its curated tags (movement pattern, muscle emphasis, safety flags,
+substitutions). The library twin is **never ingested** (its name is in the merge
+set) and any prior twin is deleted — guarded so a twin referenced by a log or
+program row is left in place rather than orphaning history. So search shows one
+entry per exercise. Lives in `seedLibrary.ts` (`MERGES` + `CUSTOM_RENAMES`),
+runs after `db:seed`; idempotent.
+- Corrections vs the first pass: shoulder_press → Machine Shoulder (Military)
+  Press (machine, not dumbbell), deadlift → Stiff-Legged Dumbbell Deadlift,
+  machine_chest_press → Machine Bench Press, incline_bench_press → Leverage
+  Incline Chest Press, cable_overhead_tricep_ext → Triceps Overhead Extension
+  with Rope. back_extension unpaired + renamed "Seated Back Extension Machine"
+  (the old "Hyperextensions" pairing was a different movement).
+- Net-new, fully tagged (authored in `seed.ts`): Barbell Squat, Hack Squat,
+  Face Pull (muscles/pattern mirror reverse_pec_dec so it substitutes for it),
+  Stiff-Legged Barbell Deadlift — curated + paired; Bayesian Curl — custom (no
+  library match), still fully tagged. Rotary torso stays custom.
+- **Watch-list** (knowingly imperfect canonical names the user is accepting for
+  now — future custom candidates, do not "fix"): cable lateral raise → Standing
+  Low-Pulley Deltoid Raise (used at hip height); machine_chest_press → Machine
+  Bench Press (done seated, not flat); cable_close_grip_row → Seated Cable Rows
+  (double-D close grip not captured); lateral_raise → Side Lateral Raise and
+  weighted_calf_raise → Standing Calf Raises (implement unspecified);
+  full_extension_crunch → Cocoons (imperfect — precise name kept as display).
+
+### Part B — one axis that matters: tagged vs untagged
+The engine only ever cares whether an exercise has a **movement pattern**: with
+one it can be a substitution candidate; without, it can't. Provenance
+(curated/library/custom) is no longer surfaced — the badge now reads **tagged /
+untagged**, and `untagged` is maintained as a reliable proxy for "no movement
+pattern" (library rows, which carry no pattern, are now `untagged: true`; the
+merge/graduation paths clear it). `untagged` was always display-only — the core
+reads `movementPattern` + `exercise_muscles`, never this flag — so this is a
+labelling change, not an engine change (self-check: `src/core/*` clean).
+
+**Movement-pattern-on-add:** picking (or creating) an untagged, non-cardio
+exercise in any add surface opens a movement-pattern chooser, auto-suggested
+from the name (`suggestMovementPattern`, ordered specific-before-generic rules).
+"Tag & add" PATCHes `/api/exercises/[id]` (sets the pattern, clears `untagged`)
+so the exercise graduates to substitutable; "Skip" adds it still-untagged
+(free-form custom stays a valid fallback). Centralised in `ExerciseSearch`, so
+the program editor, block editor, and session picker all get it for free.
+
+### Part C — collapsible log cards
+Each card collapses to just its name (+ tagged/untagged badge and a "N sets"
+chip); completing an exercise auto-collapses it, and completed cards render
+collapsed. The manual toggle is remembered against the completion state it was
+set under, so it wins until completion flips — no effect, so no cascading
+renders.
+
+### Verified
+- 90 tests pass (seed count 37 → 41 curated + net-new/custom assertions); clean
+  typecheck, lint, production build; `src/core/*` re-grepped clean.
+- Browser: merged canonical names show in the log; reverse_pec_dec substitution
+  now returns Face Pull; tagged/untagged badges correct; picking an untagged
+  library exercise → pattern chooser (auto-suggested "squat") → Tag & add →
+  graduated in DB (`movement_pattern` set, `untagged` cleared) and added as a
+  tagged card; collapse/auto-collapse confirmed.
+- Applied to **LOCAL only** via `db:seed` + `db:seed:library` (data, not a
+  schema migration). Prod held: after review, prod needs `db:migrate` (0009,
+  0010) then re-running `db:seed` + `db:seed:library`, then a push for Vercel.
