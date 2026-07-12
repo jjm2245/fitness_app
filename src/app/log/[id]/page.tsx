@@ -258,6 +258,14 @@ function StrengthCard({
   const [checking, setChecking] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapCandidates, setSwapCandidates] = useState<SubstitutionCandidate[] | null>(null);
+  // Collapsible card (Part C): name stays visible when collapsed; completing an
+  // exercise auto-collapses it. A manual toggle is remembered against the
+  // completion state it was made under, so it wins until completion flips —
+  // then we fall back to the auto behavior (complete ⇒ collapsed), even for a
+  // card you'd manually expanded. Derived, not an effect (no cascading renders).
+  const [manual, setManual] = useState<{ done: boolean; collapsed: boolean } | null>(null);
+  const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
+  const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
   const showMachine = usesMachineTag(activeExercise.loadType);
   const resolvedMachineId = !showMachine ? null : machineId.trim() || null;
@@ -355,11 +363,17 @@ function StrengthCard({
   return (
     <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
       <div className={styles.exHeader}>
+        <button type="button" onClick={toggleCollapsed} className={styles.collapseBtn} aria-label={collapsed ? "Expand" : "Collapse"} title={collapsed ? "Expand" : "Collapse"}>
+          {collapsed ? "▸" : "▾"}
+        </button>
         <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
         <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
+        {collapsed && loggedSets.length > 0 && (
+          <span className={styles.collapsedSummary}>{loggedSets.length} {loggedSets.length === 1 ? "set" : "sets"}</span>
+        )}
         {ex.origin && <span className={styles.tag}>[{ex.origin}]</span>}
         {ex.untagged && <span className={styles.tag}>· not counted in volume until tagged</span>}
         {activeExercise.id !== ex.exerciseId && (
@@ -367,17 +381,19 @@ function StrengthCard({
             (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} className={styles.secondaryBtn}>reset</button>)
           </span>
         )}
-        {ex.target && (
+        {!collapsed && ex.target && (
           <span className={styles.chip}>
             target: {ex.target.targetSets} × {ex.target.repRange ?? "?"} @ RIR {ex.target.rirTarget ?? "?"}
           </span>
         )}
-        <button type="button" onClick={openSwap} className={styles.secondaryBtn}>Swap</button>
-        {onRemoveFromSession && (
+        {!collapsed && <button type="button" onClick={openSwap} className={styles.secondaryBtn}>Swap</button>}
+        {!collapsed && onRemoveFromSession && (
           <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
         )}
       </div>
 
+      {!collapsed && (
+      <>
       <p className={styles.prev}>{previous ?? "…"}</p>
 
       {swapOpen && (
@@ -448,6 +464,8 @@ function StrengthCard({
           )}
         </div>
       )}
+      </>
+      )}
     </li>
   );
 }
@@ -479,6 +497,9 @@ function CardioCard({
   const [level, setLevel] = useState<string>(String(num(p.level) ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
+  const [manual, setManual] = useState<{ done: boolean; collapsed: boolean } | null>(null);
+  const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
+  const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
   const fields = cardioFields(ex.exerciseName);
   const entries = sessionCardio.filter((c) => c.exerciseId === ex.exerciseId);
@@ -528,16 +549,25 @@ function CardioCard({
   return (
     <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
       <div className={styles.exHeader}>
+        <button type="button" onClick={toggleCollapsed} className={styles.collapseBtn} aria-label={collapsed ? "Expand" : "Collapse"} title={collapsed ? "Expand" : "Collapse"}>
+          {collapsed ? "▸" : "▾"}
+        </button>
         <label className={styles.exName}>
           <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
           <strong>{ex.exerciseName}</strong>
         </label>
         <ProvenanceBadge source={ex.provenance} untagged={ex.untagged} />
         <span className={styles.tag}>cardio{ex.origin ? ` · ${ex.origin}` : ""}</span>
-        {onRemoveFromSession && (
+        {collapsed && entries.length > 0 && (
+          <span className={styles.collapsedSummary}>{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
+        )}
+        {!collapsed && onRemoveFromSession && (
           <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
         )}
       </div>
+
+      {!collapsed && (
+      <>
       <p className={styles.prev}>{previous ?? "…"}</p>
 
       <form onSubmit={handleLog} className={styles.entryForm}>
@@ -580,6 +610,8 @@ function CardioCard({
             </li>
           ))}
         </ul>
+      )}
+      </>
       )}
     </li>
   );
