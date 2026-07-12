@@ -115,6 +115,15 @@
   text-align: center;
 }
 
+.syncErr {
+  color: #e6a3a3;
+  font-weight: 600;
+}
+.reloginLink {
+  color: #ffd27a;
+  text-decoration: underline;
+}
+
 .startBtn {
   border: none;
   border-radius: 10px;

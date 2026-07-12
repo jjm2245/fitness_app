@@ -134,6 +134,15 @@
   padding: 1px 8px;
 }
 
+.syncErr {
+  color: #e6a3a3;
+  font-weight: 600;
+}
+.reloginLink {
+  color: #ffd27a;
+  text-decoration: underline;
+}
+
 .chip {
   font-size: 12px;
   color: var(--muted);

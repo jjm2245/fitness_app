@@ -771,3 +771,37 @@ renders.
 - Applied to **LOCAL only** via `db:seed` + `db:seed:library` (data, not a
   schema migration). Prod held: after review, prod needs `db:migrate` (0009,
   0010) then re-running `db:seed` + `db:seed:library`, then a push for Vercel.
+
+## Session model v2 — Part 1 bugs
+
+### 1a — silent sync failure on expired session (data-integrity)
+Root cause: `proxy.ts` gated `/api/*` and **redirected** unauthenticated
+requests to `/login`. An outbox `POST /api/set-logs` with an expired cookie
+followed the 307 → `GET /login` → **200 HTML**; `res.ok` was true, then
+`res.json()` threw on HTML → caught silently → "not synced" forever despite
+wifi (data logged locally but never reaching the server). Fixes:
+- Proxy now returns **401 JSON** for `/api/*` (pages still redirect).
+- `sync()` classifies outcomes via a single `send()` choke point — `auth`
+  (401) / `network` (fetch threw) / `server` (other non-ok). It **aborts the
+  whole drain on the first 401** (every later request would 401 too) and
+  returns `authError`/`networkError`/`serverError` so the UI can say what's
+  wrong instead of a blank "not synced". Local writes are never dropped.
+- Log + sessions screens surface the reason; on `auth` they show a re-login
+  link (`/login?next=…`, honored by the login page) and **auto re-drain** on
+  tab refocus (`visibilitychange`) and `online`.
+- Tests: 401 keeps data pending + re-drains after re-login; a mid-drain 401
+  aborts without losing the remaining queued rows.
+
+### 1b — finish summary omitted cross-program / ad-hoc exercises
+The summary listed only exercises with logged sets. It now enumerates every
+exercise with **any** activity — sets, cardio, or just a "done" check —
+regardless of source (program day / other program / ad-hoc), ordered by the
+session's composition. A done-but-unlogged item shows "done, no sets logged".
+
+### 1c — Cable bicep curl vs Bayesian curl are two exercises
+Already split by Part D at the graph level (`cable_bicep_curl` → "Standing
+Biceps Cable Curl", library-referenced; `bayesian_curl` → custom, elbow_flexion
+/ biceps / stretch_emphasis). Verified in the UI: both appear as separately
+selectable entries when composing (day card + ad-hoc search hit). The earlier
+"appears as one" was the pre-Part-D combined seed node; IDs are stable so logged
+history isn't orphaned.

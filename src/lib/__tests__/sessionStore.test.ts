@@ -75,6 +75,16 @@ function mockOffline() {
   );
 }
 
+// The proxy returns a real 401 for /api/* once the session cookie expires
+// (rather than redirecting to an HTML login page that res.json() would choke
+// on). This mock stands in for that state.
+function mockAuthExpired() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ error: "auth" }) }) as Response)
+  );
+}
+
 let day = 0;
 function freshDate() {
   day += 1;
@@ -129,6 +139,50 @@ describe("offline logging", () => {
     sets = await getSessionSets(id);
     expect(sets[0].syncState).toBe("synced");
     expect(await pendingCount(id)).toBe(0);
+  });
+});
+
+describe("sync auth failure — data integrity (priority bug 1a)", () => {
+  it("an expired session surfaces authError, keeps data pending (never lost), and re-drains after re-login", async () => {
+    const { id, date } = await newSession();
+
+    // Log while the session is valid, then the cookie expires before sync.
+    mockAuthExpired();
+    await logSet({ ...baseInput, sessionId: id, date });
+    const r1 = await sync();
+    expect(r1.authError).toBe(true); // classified, not a silent "failed"
+    expect(r1.created).toBe(0);
+    // The set is still there, still queued — the local write is never dropped.
+    const afterFail = await getSessionSets(id);
+    expect(afterFail).toHaveLength(1);
+    expect(afterFail[0].syncState).toBe("pending_create");
+    expect(await pendingCount(id)).toBe(1);
+
+    // Re-login restores auth; the next drain flushes the outbox.
+    mockOnline();
+    const r2 = await sync();
+    expect(r2.authError).toBe(false);
+    expect(r2.created).toBe(1);
+    expect((await getSessionSets(id))[0].syncState).toBe("synced");
+    expect(await pendingCount(id)).toBe(0);
+  });
+
+  it("aborts the whole drain on the first 401 (every later request would 401 too)", async () => {
+    const { id, date } = await newSession();
+    mockOnline();
+    await logSet({ ...baseInput, sessionId: id, date, load: 100 });
+    await logSet({ ...baseInput, sessionId: id, date, load: 105 });
+    await sync(); // both synced
+
+    // Two fresh pending creates, then auth expires.
+    await logSet({ ...baseInput, sessionId: id, date, load: 110 });
+    await logSet({ ...baseInput, sessionId: id, date, load: 115 });
+    mockAuthExpired();
+    const r = await sync();
+    expect(r.authError).toBe(true);
+    expect(r.created).toBe(0);
+    // Neither of the two new sets was lost.
+    expect(await pendingCount(id)).toBe(2);
   });
 });
 

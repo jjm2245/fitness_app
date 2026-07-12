@@ -618,39 +618,66 @@ function CardioCard({
 }
 
 function FinishSummary({
-  session, sessionSets, sessionCardio, strengthCount, pending, onConfirm, onClose,
+  session, composition, completed, sessionSets, sessionCardio, pending, onConfirm, onClose,
 }: {
   session: LocalSession;
+  composition: CompositionItem[];
+  completed: Set<string>;
   sessionSets: SessionSet[];
   sessionCardio: SessionCardio[];
-  strengthCount: number;
   pending: number;
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const byExercise = new Map<string, { name: string; count: number }>();
-  for (const s of sessionSets) {
-    const cur = byExercise.get(s.exerciseId) ?? { name: s.exerciseName, count: 0 };
-    cur.count += 1;
-    byExercise.set(s.exerciseId, cur);
-  }
+  // One row per exercise that saw ANY activity in the session — sets, cardio, or
+  // just a "done" check — regardless of whether it came from the program day,
+  // another program, or an ad-hoc pick (bug 1b: cross-program/ad-hoc entries
+  // were missing). Ordered by the session's composition order.
+  const nameOf = (id: string, fallback?: string) =>
+    composition.find((c) => c.exerciseId === id)?.exerciseName ?? fallback ?? id;
+  const orderOf = (id: string) => {
+    const i = composition.findIndex((c) => c.exerciseId === id);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+
+  const rows = new Map<string, { name: string; sets: number; cardio: number; done: boolean }>();
+  const bump = (id: string, name: string) => {
+    let r = rows.get(id);
+    if (!r) rows.set(id, (r = { name, sets: 0, cardio: 0, done: false }));
+    return r;
+  };
+  for (const s of sessionSets) bump(s.exerciseId, s.exerciseName).sets += 1;
+  for (const c of sessionCardio) bump(c.exerciseId, c.exerciseName).cardio += 1;
+  for (const id of completed) bump(id, nameOf(id)).done = true;
+
+  const list = Array.from(rows.entries())
+    .map(([id, r]) => ({ id, ...r }))
+    .sort((a, b) => orderOf(a.id) - orderOf(b.id));
   const setCount = sessionSets.length;
+  const exerciseCount = list.length;
+
+  function describe(r: { sets: number; cardio: number; done: boolean }): string {
+    const bits: string[] = [];
+    if (r.sets > 0) bits.push(`${r.sets} ${r.sets === 1 ? "set" : "sets"}`);
+    if (r.cardio > 0) bits.push("cardio");
+    if (bits.length === 0 && r.done) bits.push("done, no sets logged");
+    return bits.join(" · ");
+  }
 
   return (
     <div className={styles.modalBackdrop}>
       <div className={styles.modal}>
         <h2 style={{ marginTop: 0 }}>Finish session — {session.origin}</h2>
         <p>
-          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{byExercise.size}</strong> of {strengthCount}{" "}
-          {strengthCount === 1 ? "exercise" : "exercises"}
+          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{exerciseCount}</strong>{" "}
+          {exerciseCount === 1 ? "exercise" : "exercises"}
           {sessionCardio.length > 0 && <> · <strong>{sessionCardio.length}</strong> cardio {sessionCardio.length === 1 ? "entry" : "entries"}</>}.
         </p>
-        {byExercise.size === 0 && sessionCardio.length === 0 ? (
+        {list.length === 0 ? (
           <p style={{ opacity: 0.7 }}>Nothing logged yet — you can still finish, or keep logging.</p>
         ) : (
           <ul style={{ paddingLeft: 18 }}>
-            {Array.from(byExercise.values()).map((e) => <li key={e.name}>{e.name} — {e.count} {e.count === 1 ? "set" : "sets"}</li>)}
-            {sessionCardio.map((c) => <li key={c.localId}>{c.exerciseName} — cardio</li>)}
+            {list.map((r) => <li key={r.id}>{r.name} — {describe(r)}</li>)}
           </ul>
         )}
         <p style={{ fontSize: 13, opacity: 0.7 }}>
@@ -683,6 +710,7 @@ export default function LogSessionPage() {
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
+  const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [showFinish, setShowFinish] = useState(false);
   const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -714,6 +742,7 @@ export default function LogSessionPage() {
 
   const handleSync = useCallback(async () => {
     const r = await sync();
+    setSyncError(r.authError ? "auth" : r.networkError ? "network" : r.serverError ? "server" : null);
     setSyncStatus(`Synced: +${r.created} ~${r.updated} −${r.deleted}${r.finished ? ` finish×${r.finished}` : ""}${r.failed ? `, ${r.failed} still pending` : ""}`);
     await refreshSession();
   }, [refreshSession]);
@@ -763,8 +792,17 @@ export default function LogSessionPage() {
       );
       if (!cancelled) setAllPrograms(full.filter((p): p is ProgramDetail => p !== null));
     })();
+    // Re-drain when connectivity returns and when the tab regains focus — the
+    // latter covers coming back from a re-login, so a pending outbox flushes
+    // without a manual tap.
+    const onFocus = () => { if (document.visibilityState === "visible") handleSync(); };
     window.addEventListener("online", handleSync);
-    return () => { cancelled = true; window.removeEventListener("online", handleSync); };
+    window.addEventListener("visibilitychange", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", handleSync);
+      window.removeEventListener("visibilitychange", onFocus);
+    };
   }, [sessionId, handleSync, refreshSession]);
 
   // The session is self-contained: every card comes from its composition.
@@ -866,7 +904,6 @@ export default function LogSessionPage() {
     );
   }
 
-  const strengthCount = loggables.filter((e) => !e.conditioningOnly).length;
   const totalLogged = sessionSets.length + sessionCardio.length;
   const date = session.date;
 
@@ -876,8 +913,18 @@ export default function LogSessionPage() {
         <Link href="/sessions" className={styles.secondaryBtn}>← Sessions</Link>
         <span>{pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}</span>
         <button onClick={handleSync} className={styles.secondaryBtn}>Sync now</button>
+        {syncError === "auth" ? (
+          <span className={styles.syncErr}>
+            Session expired —{" "}
+            <a href={`/login?next=${encodeURIComponent(`/log/${sessionId}`)}`} className={styles.reloginLink}>re-login to sync</a>
+          </span>
+        ) : syncError === "network" ? (
+          <span className={styles.syncErr}>Offline — {pending} change(s) will sync when you reconnect</span>
+        ) : syncError === "server" ? (
+          <span className={styles.syncErr}>Sync error — will retry</span>
+        ) : null}
         {session.finishedAt && <span>· finished {new Date(session.finishedAt).toLocaleTimeString()}</span>}
-        {syncStatus && <span>· {syncStatus}</span>}
+        {syncStatus && !syncError && <span>· {syncStatus}</span>}
       </div>
 
       <h1>{session.origin} <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 16 }}>· {date}</span></h1>
@@ -987,9 +1034,10 @@ export default function LogSessionPage() {
       {showFinish && (
         <FinishSummary
           session={session}
+          composition={composition}
+          completed={completed}
           sessionSets={sessionSets}
           sessionCardio={sessionCardio}
-          strengthCount={strengthCount}
           pending={pending}
           onConfirm={confirmFinish}
           onClose={() => setShowFinish(false)}

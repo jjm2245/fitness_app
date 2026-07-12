@@ -534,6 +534,34 @@ export interface SyncResult {
   deleted: number;
   finished: number;
   failed: number;
+  // Why the outbox didn't fully drain, so the UI can say something true instead
+  // of a silent "not synced". `authError` means the session cookie expired
+  // (re-login needed); the drain aborts on it since every request would 401.
+  authError: boolean;
+  networkError: boolean;
+  serverError: boolean;
+}
+
+type SyncErrKind = "auth" | "network" | "server";
+type SyncErr = { kind: SyncErrKind };
+function isSyncErr(e: unknown): e is SyncErr {
+  return typeof e === "object" && e !== null && "kind" in e;
+}
+
+// Single choke point that turns HTTP/network outcomes into typed sync errors.
+// A 401 (proxy, expired session) is auth; a thrown fetch is network; any other
+// non-ok (except an allowed 404 on delete) is server.
+async function send(url: string, init: RequestInit, allow404 = false): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    throw { kind: "network" } as SyncErr;
+  }
+  if (res.status === 401) throw { kind: "auth" } as SyncErr;
+  if (res.status === 404 && allow404) return res;
+  if (!res.ok) throw { kind: "server" } as SyncErr;
+  return res;
 }
 
 export async function pendingCount(sessionId?: string): Promise<number> {
@@ -551,14 +579,32 @@ export async function pendingCount(sessionId?: string): Promise<number> {
 
 export async function sync(): Promise<SyncResult> {
   const db = await getDb();
-  const result: SyncResult = { created: 0, updated: 0, deleted: 0, finished: 0, failed: 0 };
+  const result: SyncResult = {
+    created: 0, updated: 0, deleted: 0, finished: 0, failed: 0,
+    authError: false, networkError: false, serverError: false,
+  };
+
+  // Record a failure; return true when the caller should abort the whole drain
+  // (auth — every subsequent request would 401 too, so stop and prompt login).
+  const record = (e: unknown): boolean => {
+    if (isSyncErr(e) && e.kind === "auth") {
+      result.authError = true;
+      return true;
+    }
+    result.failed += 1;
+    if (isSyncErr(e) && e.kind === "network") result.networkError = true;
+    else result.serverError = true;
+    return false;
+  };
+
+  const jsonHeaders = { "Content-Type": "application/json" };
 
   for (const row of await db.getAll("sets")) {
     try {
       if (row.syncState === "pending_create") {
-        const res = await fetch("/api/set-logs", {
+        const res = await send("/api/set-logs", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonHeaders,
           body: JSON.stringify({
             clientSessionId: row.sessionId,
             date: row.date,
@@ -572,38 +618,35 @@ export async function sync(): Promise<SyncResult> {
             rir: row.rir,
           }),
         });
-        if (!res.ok) throw new Error(String(res.status));
         const created = await res.json();
         await db.put("sets", { ...row, serverId: created.id, syncState: "synced" });
         result.created += 1;
       } else if (row.syncState === "pending_update" && row.serverId != null) {
-        const res = await fetch(`/api/set-logs/${row.serverId}`, {
+        await send(`/api/set-logs/${row.serverId}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonHeaders,
           body: JSON.stringify({ load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType }),
         });
-        if (!res.ok) throw new Error(String(res.status));
         await db.put("sets", { ...row, syncState: "synced" });
         result.updated += 1;
       } else if (row.syncState === "pending_delete") {
         if (row.serverId != null) {
-          const res = await fetch(`/api/set-logs/${row.serverId}`, { method: "DELETE" });
-          if (!res.ok && res.status !== 404) throw new Error(String(res.status));
+          await send(`/api/set-logs/${row.serverId}`, { method: "DELETE" }, true);
         }
         if (row.localId != null) await db.delete("sets", row.localId);
         result.deleted += 1;
       }
-    } catch {
-      result.failed += 1;
+    } catch (e) {
+      if (record(e)) return result;
     }
   }
 
   for (const row of await db.getAll("cardio")) {
     try {
       if (row.syncState === "pending_create") {
-        const res = await fetch("/api/cardio-logs", {
+        const res = await send("/api/cardio-logs", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonHeaders,
           body: JSON.stringify({
             clientSessionId: row.sessionId,
             date: row.date,
@@ -616,29 +659,27 @@ export async function sync(): Promise<SyncResult> {
             notes: row.notes,
           }),
         });
-        if (!res.ok) throw new Error(String(res.status));
         const created = await res.json();
         await db.put("cardio", { ...row, serverId: created.id, syncState: "synced" });
         result.created += 1;
       } else if (row.syncState === "pending_delete") {
         if (row.serverId != null) {
-          const res = await fetch(`/api/cardio-logs/${row.serverId}`, { method: "DELETE" });
-          if (!res.ok && res.status !== 404) throw new Error(String(res.status));
+          await send(`/api/cardio-logs/${row.serverId}`, { method: "DELETE" }, true);
         }
         if (row.localId != null) await db.delete("cardio", row.localId);
         result.deleted += 1;
       }
-    } catch {
-      result.failed += 1;
+    } catch (e) {
+      if (record(e)) return result;
     }
   }
 
   for (const s of await db.getAll("sessions")) {
     if (!s.finishedAt || s.finishSynced) continue;
     try {
-      const res = await fetch("/api/sessions/finish", {
+      await send("/api/sessions/finish", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
         body: JSON.stringify({
           clientSessionId: s.id,
           date: s.date,
@@ -646,11 +687,10 @@ export async function sync(): Promise<SyncResult> {
           finishedAt: s.finishedAt,
         }),
       });
-      if (!res.ok) throw new Error(String(res.status));
       await db.put("sessions", { ...s, finishSynced: true });
       result.finished += 1;
-    } catch {
-      result.failed += 1;
+    } catch (e) {
+      if (record(e)) return result;
     }
   }
 

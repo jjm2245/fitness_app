@@ -92,9 +92,15 @@ export default function SessionsPage() {
   const [server, setServer] = useState<ServerSession[]>([]);
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [pending, setPending] = useState(0);
+  const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [starting, setStarting] = useState(false);
+
+  const drain = useCallback(async () => {
+    const r = await sync().catch(() => null);
+    if (r) setSyncError(r.authError ? "auth" : r.networkError ? "network" : r.serverError ? "server" : null);
+  }, []);
 
   const refresh = useCallback(async () => {
     const summaries = await listLocalSessionSummaries();
@@ -113,7 +119,7 @@ export default function SessionsPage() {
   useEffect(() => {
     (async () => {
       // Push up anything pending, then read a fresh merged view.
-      await sync().catch(() => {});
+      await drain();
       await refresh();
       try {
         const res = await fetch("/api/program");
@@ -122,10 +128,15 @@ export default function SessionsPage() {
         /* offline — new sessions can still be started ad-hoc */
       }
     })();
-    const onOnline = () => sync().then(refresh).catch(() => {});
+    const onOnline = () => drain().then(refresh).catch(() => {});
+    const onFocus = () => { if (document.visibilityState === "visible") drain().then(refresh).catch(() => {}); };
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [refresh]);
+    window.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [refresh, drain]);
 
   // Merge local + server by session id. Local wins (freshest, may be in
   // progress); server-only sessions are appended so nothing is hidden.
@@ -214,6 +225,13 @@ export default function SessionsPage() {
 
       <div className={styles.statusBar}>
         <span>{pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}</span>
+        {syncError === "auth" && (
+          <span className={styles.syncErr}>
+            · Session expired — <a href="/login?next=/sessions" className={styles.reloginLink}>re-login to sync</a>
+          </span>
+        )}
+        {syncError === "network" && pending > 0 && <span className={styles.syncErr}>· offline, will retry</span>}
+        {syncError === "server" && <span className={styles.syncErr}>· sync error, will retry</span>}
       </div>
 
       {pickerOpen && (
