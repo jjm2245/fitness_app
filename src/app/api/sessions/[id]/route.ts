@@ -122,3 +122,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     cardio,
   });
 }
+
+// DELETE /api/sessions/[id] — remove a whole session, keyed by client_session_id.
+// set_logs / cardio_logs / session_exercises cascade off workout_logs, so one
+// delete cleans everything. Idempotent: a 404 (already gone / never synced) is
+// fine, so the client's offline delete queue can retry safely.
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [log] = await db.select({ id: workoutLogs.id }).from(workoutLogs).where(eq(workoutLogs.clientSessionId, id));
+  if (!log) return NextResponse.json({ ok: true, alreadyGone: true });
+  await db.delete(workoutLogs).where(eq(workoutLogs.id, log.id));
+  return NextResponse.json({ ok: true });
+}

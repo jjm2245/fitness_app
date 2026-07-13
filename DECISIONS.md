@@ -864,3 +864,46 @@ drain chains after the previous), so the second sees an emptied outbox. Tested.
   linked set rows → ordered finish summary → back on list ("4 exercises") →
   wiped local store and reopened: occurrences + sets rebuilt in order.
 - Migration 0011 + IndexedDB v4 are **LOCAL only**; prod held for review.
+
+## Session model v2 — Part 3: delete + editor management
+
+### 3a — delete a session (offline-safe)
+`DELETE /api/sessions/[id]` removes the workout_log (set_logs / cardio_logs /
+session_exercises cascade off it), idempotent (a 404 / already-gone is success).
+Client `deleteSession` removes the local rows immediately and queues a
+server-side delete in **localStorage** (a tiny id list — no IndexedDB version
+bump), drained by `sync()`. So a delete works fully offline: local goes now, the
+server delete flushes on reconnect. A confirm dialog guards it on `/sessions`.
+
+### 3b — custom-exercise management (`/exercises`)
+Lists everything that isn't a raw library row and badges the three naming kinds
+the user wanted to tell apart: **library name** (name == canonicalName),
+**your name → library** (a precise display name on a library reference), and
+**custom** (no library link). You can **rename** (`PATCH /api/exercises/[id]`
+now takes `name`), **adopt the library's own name** (one click), or **collapse
+a redundant custom into a library entry**. Collapse is the stable-id-discipline
+path: `POST /api/exercises/[id]/collapse` **re-points every reference**
+(set_logs, cardio_logs, session_exercises, program_exercises, both
+exercise_substitutions FKs, form_checks) from the custom id to the library id
+in a transaction, *then* deletes the custom — so no logged history is orphaned
+(verified: a logged set moved to the library exercise, zero orphans).
+
+### 3c — per-exercise machine management
+New `exercise_machines(exercise_id, machine_id)` join (migration 0012): machine
+labels are context-bound to a physical machine used for one exercise, so they're
+curated per exercise. The association builds **automatically** on first logged
+use (set-logs inserts it) and can also be curated directly on `/exercises`:
+`GET/POST /api/exercises/[id]/machines` (list with logged-set counts / add),
+`DELETE …/machines/[machineId]` (remove the association only — the machine and
+its history stay), `PATCH /api/machines/[id]` (edit the note). Removing from the
+curated list never orphans history. The log screen's machine dropdown now reads
+this per-exercise list; **"No machine"** stays the empty selection (the
+portable/free lane the progression core treats as un-rebaselined).
+
+### Verified
+- 95 tests pass (adds an offline session-delete test); clean tsc/lint/build;
+  `src/core/*` untouched.
+- Browser + DB: offline delete drains on reconnect; collapse re-points a logged
+  set to the library entry with no orphans; machine add/edit-note/remove and
+  auto-associate-on-log all work.
+- Migrations 0011 + 0012, IndexedDB v4 — **LOCAL only**; prod held for review.

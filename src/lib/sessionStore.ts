@@ -256,6 +256,30 @@ export async function deleteLocalSession(id: string): Promise<void> {
   for (const f of await db.getAllFromIndex("completed", "by-session", id)) await db.delete("completed", f.instanceId);
 }
 
+// Offline-safe session delete (Part 3a). The local rows go immediately; a
+// server-side delete is queued in localStorage (a tiny id list, no IndexedDB
+// version bump) and drained by sync() — DELETE is idempotent, so a queued
+// delete for a never-synced session is a harmless no-op on the server.
+const DELETE_QUEUE_KEY = "fitness-app:pending-session-deletes";
+function readDeleteQueue(): string[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(DELETE_QUEUE_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function writeDeleteQueue(ids: string[]): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(DELETE_QUEUE_KEY, JSON.stringify([...new Set(ids)]));
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  await deleteLocalSession(id);
+  writeDeleteQueue([...readDeleteQueue(), id]);
+}
+
 // Shape returned by GET /api/sessions/[id] — a whole server-side session.
 export interface ServerSession {
   id: string;
@@ -664,6 +688,10 @@ export async function pendingCount(sessionId?: string): Promise<number> {
 
   const sessions = sessionId ? [await db.get("sessions", sessionId)] : await db.getAll("sessions");
   for (const s of sessions) if (s && s.finishedAt && !s.finishSynced) n += 1;
+
+  // Queued server-side deletes are pending changes too.
+  const dq = readDeleteQueue();
+  n += sessionId ? (dq.includes(sessionId) ? 1 : 0) : dq.length;
   return n;
 }
 
@@ -825,6 +853,18 @@ async function runSync(): Promise<SyncResult> {
       });
       await db.put("sessions", { ...s, finishSynced: true });
       result.finished += 1;
+    } catch (e) {
+      if (record(e)) return result;
+    }
+  }
+
+  // Drain queued session deletes (Part 3a). DELETE is idempotent, so a never-
+  // synced session's queued delete just no-ops server-side.
+  for (const delId of readDeleteQueue()) {
+    try {
+      await send(`/api/sessions/${encodeURIComponent(delId)}`, { method: "DELETE" }, true);
+      writeDeleteQueue(readDeleteQueue().filter((x) => x !== delId));
+      result.deleted += 1;
     } catch (e) {
       if (record(e)) return result;
     }

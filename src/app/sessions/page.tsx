@@ -7,6 +7,7 @@ import styles from "./sessions.module.css";
 import {
   createSession,
   listLocalSessionSummaries,
+  deleteSession,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -67,6 +68,8 @@ export default function SessionsPage() {
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [confirm, setConfirm] = useState<{ id: string; label: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const drain = useCallback(async () => {
     const r = await sync().catch(() => null);
@@ -151,6 +154,20 @@ export default function SessionsPage() {
     router.push(`/log/${id}`);
   }
 
+  async function doDelete() {
+    if (!confirm || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteSession(confirm.id);
+      setConfirm(null);
+      await refresh();
+      await drain(); // server delete drains when online; queued offline
+      await refresh();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Start an empty session and go straight to logging — you build the ordered
   // list incrementally there (the program is a quick-add palette, not a
   // pre-loaded day). The session name aggregates from what you add.
@@ -196,7 +213,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>In progress</div>
               <ul className={styles.list}>
                 {inProgress.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} />
                 ))}
               </ul>
             </>
@@ -206,7 +223,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>Finished</div>
               <ul className={styles.list}>
                 {finished.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} />
                 ))}
               </ul>
             </>
@@ -217,14 +234,30 @@ export default function SessionsPage() {
       <div className={styles.links}>
         <Link href="/program">Program</Link>
         <Link href="/blocks">Blocks</Link>
+        <Link href="/exercises">Exercises</Link>
       </div>
+
+      {confirm && (
+        <div className={styles.modalBackdrop}>
+          <div className={styles.modal}>
+            <h2 style={{ marginTop: 0 }}>Delete session?</h2>
+            <p><strong>{confirm.label.trim() || "Ad-hoc"}</strong> and everything logged in it will be removed. This can&rsquo;t be undone.</p>
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.dangerBtn} onClick={doDelete} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete session"}
+              </button>
+              <button type="button" className={styles.secondaryBtn} onClick={() => setConfirm(null)} disabled={deleting}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
-function SessionRow({ row, onOpen }: { row: Row; onOpen: (id: string) => void }) {
+function SessionRow({ row, onOpen, onDelete }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void }) {
   return (
-    <li>
+    <li className={styles.rowWrap}>
       <button className={styles.row} onClick={() => onOpen(row.id)}>
         <div className={styles.rowTop}>
           <span className={styles.rowTitle}>{row.label.trim() || "Ad-hoc"}</span>
@@ -235,6 +268,15 @@ function SessionRow({ row, onOpen }: { row: Row; onOpen: (id: string) => void })
           {row.inProgress && <span className={`${styles.badge} ${styles.badgeProgress}`}>resume</span>}
           {row.pendingSync && <span className={`${styles.badge} ${styles.badgePending}`}>not synced</span>}
         </div>
+      </button>
+      <button
+        type="button"
+        className={styles.rowDelete}
+        title="Delete session"
+        aria-label="Delete session"
+        onClick={() => onDelete(row.id, row.label)}
+      >
+        ✕
       </button>
     </li>
   );

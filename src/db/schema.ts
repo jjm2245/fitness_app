@@ -198,6 +198,24 @@ export const machines = pgTable("machines", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Which machines apply to which exercise (Part 3c). A machine label is
+// context-bound to a physical machine, which is used for one exercise ("leg ext
+// by the mirror" is a leg-extension machine), so machines are curated per
+// exercise. The association is built automatically on first logged use and can
+// also be curated directly (add/remove) outside logging.
+export const exerciseMachines = pgTable(
+  "exercise_machines",
+  {
+    exerciseId: text("exercise_id")
+      .notNull()
+      .references(() => exercises.id, { onDelete: "cascade" }),
+    machineId: text("machine_id")
+      .notNull()
+      .references(() => machines.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.exerciseId, t.machineId] })]
+);
+
 // ---------------------------------------------------------------------------
 // Program
 // ---------------------------------------------------------------------------

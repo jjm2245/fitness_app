@@ -233,10 +233,8 @@ function StrengthCard({
   sessionId,
   date,
   controls,
-  machines,
   sessionSets,
   completed,
-  onMachineAdded,
   onSessionChanged,
   onToggleComplete,
 }: {
@@ -244,10 +242,8 @@ function StrengthCard({
   sessionId: string;
   date: string;
   controls: CardControls;
-  machines: MachineOption[];
   sessionSets: SessionSet[];
   completed: boolean;
-  onMachineAdded: () => void;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
 }) {
@@ -257,6 +253,12 @@ function StrengthCard({
     loadType: ex.loadType,
     portable: ex.portable,
   });
+  // Machines curated for THIS exercise (Part 3c), not the global list.
+  const [machines, setMachines] = useState<MachineOption[]>([]);
+  const refreshMachines = useCallback(async () => {
+    const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`);
+    if (res.ok) setMachines(await res.json());
+  }, [activeExercise.id]);
   const [machineId, setMachineId] = useState(() => {
     if (ex.portable || typeof window === "undefined") return "";
     return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "";
@@ -280,6 +282,15 @@ function StrengthCard({
   const resolvedMachineId = !showMachine ? null : machineId.trim() || null;
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
+
+  // Load this exercise's curated machine list when the machine tag is relevant.
+  useEffect(() => {
+    if (!usesMachineTag(activeExercise.loadType)) return;
+    (async () => {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`);
+      if (res.ok) setMachines(await res.json());
+    })();
+  }, [activeExercise.id, activeExercise.loadType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,14 +371,15 @@ function StrengthCard({
     setMachineId(name);
     setNewMachineName("");
     try {
-      const res = await fetch("/api/machines", {
+      // Curate it under this exercise (Part 3c), so it's in the list next time.
+      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: name }),
+        body: JSON.stringify({ label: name }),
       });
-      if (res.ok) onMachineAdded();
+      if (res.ok) refreshMachines();
     } catch {
-      /* offline — set-logs auto-registers on sync */
+      /* offline — set-logs auto-registers + associates on sync */
     }
   }
 
@@ -760,7 +772,6 @@ export default function LogSessionPage() {
 
   const [session, setSession] = useState<LocalSession | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "notfound">("loading");
-  const [machines, setMachines] = useState<MachineOption[]>([]);
   const [blocks, setBlocks] = useState<BlockDetail[]>([]);
   const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
@@ -785,11 +796,6 @@ export default function LogSessionPage() {
     setPending(p);
     if (s) setSession(s);
   }, [sessionId]);
-
-  const refreshMachines = useCallback(async () => {
-    const res = await fetch("/api/machines");
-    if (res.ok) setMachines(await res.json());
-  }, []);
 
   const onSessionChanged = useCallback(async () => {
     await refreshSession();
@@ -830,12 +836,8 @@ export default function LogSessionPage() {
       setLoadState("ready");
       await refreshSession();
 
-      const [machinesRes, blocksRes] = await Promise.all([
-        fetch("/api/machines").then((r) => (r.ok ? (r.json() as Promise<MachineOption[]>) : [])),
-        fetch("/api/blocks").then((r) => (r.ok ? (r.json() as Promise<BlockDetail[]>) : [])),
-      ]);
+      const blocksRes = await fetch("/api/blocks").then((r) => (r.ok ? (r.json() as Promise<BlockDetail[]>) : []));
       if (cancelled) return;
-      setMachines(machinesRes);
       setBlocks(blocksRes);
 
       const summaries = await fetch("/api/programs").then((r) => (r.ok ? r.json() : []));
@@ -1004,10 +1006,8 @@ export default function LogSessionPage() {
                 sessionId={sessionId}
                 date={date}
                 controls={controls}
-                machines={machines}
                 sessionSets={sessionSets}
                 completed={completed.has(ex.instanceId)}
-                onMachineAdded={refreshMachines}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
               />

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs, machines, sessionExercises } from "@/db/schema";
+import { workoutLogs, setLogs, machines, sessionExercises, exerciseMachines } from "@/db/schema";
 
 interface SetLogPayload {
   clientSessionId?: string | null;
@@ -46,6 +46,12 @@ export async function POST(request: NextRequest) {
     // before logging is possible. Users can enrich brand/pulley-ratio/etc. later.
     if (body.machineId) {
       await tx.insert(machines).values({ id: body.machineId }).onConflictDoNothing();
+      // Curate the machine under this exercise (Part 3c) — builds the per-
+      // exercise machine list automatically from real use.
+      await tx
+        .insert(exerciseMachines)
+        .values({ exerciseId: body.exerciseId, machineId: body.machineId })
+        .onConflictDoNothing();
     }
 
     // Link the set to its performed occurrence (v2). Occurrences sync before

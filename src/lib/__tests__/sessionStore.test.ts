@@ -14,6 +14,7 @@ import {
   logCardio,
   getSessionCardio,
   deleteCardio,
+  deleteSession,
   addOccurrence,
   listOccurrences,
   moveOccurrence,
@@ -41,6 +42,17 @@ const baseInput = {
   effort: "near_failure" as const,
   rir: null,
 };
+
+// Minimal localStorage for the offline session-delete queue (node test env).
+const lsStore = new Map<string, string>();
+(globalThis as unknown as { localStorage: Storage }).localStorage = {
+  getItem: (k: string) => lsStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void lsStore.set(k, v),
+  removeItem: (k: string) => void lsStore.delete(k),
+  clear: () => lsStore.clear(),
+  key: () => null,
+  length: 0,
+} as Storage;
 
 let nextServerId = 1000;
 
@@ -117,6 +129,7 @@ async function newSession() {
 
 beforeEach(async () => {
   await _resetDbForTests();
+  lsStore.clear();
 });
 
 afterEach(() => {
@@ -388,6 +401,31 @@ describe("occurrences — ordered, repeats, reorder, aggregated name (v2)", () =
     expect(firstSets[0].setIndex).toBe(1);
     expect(secondSets).toHaveLength(1);
     expect(secondSets[0].setIndex).toBe(1);
+  });
+});
+
+describe("delete a session (offline-safe, Part 3a)", () => {
+  it("removes local rows immediately, queues the server delete, and drains it on reconnect", async () => {
+    const { id, date, inst } = await newSession();
+    mockOnline();
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
+    await sync();
+    expect(await getSession(id)).not.toBeNull();
+
+    // Delete while offline: local rows go now, server delete is queued.
+    mockOffline();
+    await deleteSession(id);
+    expect(await getSession(id)).toBeNull();
+    expect(await getSessionSets(id)).toHaveLength(0);
+    const off = await sync();
+    expect(off.networkError).toBe(true);
+    expect(await pendingCount(id)).toBe(1); // queued delete still pending
+
+    // Back online: the queued delete drains.
+    mockOnline();
+    const on = await sync();
+    expect(on.deleted).toBeGreaterThanOrEqual(1);
+    expect(await pendingCount(id)).toBe(0);
   });
 });
 
