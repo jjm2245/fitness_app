@@ -703,13 +703,21 @@ function AddPalette({
   onAddAdhoc: (r: ExerciseSearchResult) => void;
 }) {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  // Dedupe by label: the seed exposes e.g. "Abs"/"Cardio" as both a program day
+  // and a reusable block — show each once (program day wins, added first).
   const groups: { key: string; label: string; source: string; exercises: ProgramExerciseDetail[] }[] = [];
+  const seenLabels = new Set<string>();
   for (const prog of programs) {
     for (const d of prog.days) {
-      groups.push({ key: `d${d.id}`, label: prettyDayName(d.name), source: prettyDayName(d.name), exercises: d.exercises });
+      const label = prettyDayName(d.name);
+      if (seenLabels.has(label)) continue;
+      seenLabels.add(label);
+      groups.push({ key: `d${d.id}`, label, source: label, exercises: d.exercises });
     }
   }
   for (const b of blocks) {
+    if (seenLabels.has(b.name)) continue;
+    seenLabels.add(b.name);
     groups.push({ key: `b${b.id}`, label: b.name, source: b.name, exercises: b.exercises });
   }
 

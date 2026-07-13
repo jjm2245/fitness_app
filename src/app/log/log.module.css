@@ -152,10 +152,14 @@
   background: var(--surface-2, #16181c);
 }
 .paletteSearch {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  /* Block, not flex-column: the ExerciseSearch wrap has flex: 1 1 220px, whose
+     basis would become a ~220px vertical gap in a column flex parent. */
+  display: block;
   margin-bottom: 10px;
+}
+.paletteSearch > span {
+  display: block;
+  margin-bottom: 4px;
 }
 .paletteGroups {
   display: flex;
