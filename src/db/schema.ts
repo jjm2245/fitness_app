@@ -267,11 +267,35 @@ export const workoutLogs = pgTable("workout_logs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// The ordered list of exercises actually performed in a session (spec §7a,
+// session-model v2). One row per *occurrence* — the same exercise can appear
+// multiple times at different positions (tricep → chest → abs → tricep). The
+// client owns identity via client_instance_id so an occurrence added offline
+// maps to exactly one row on sync (upsert by it). order_index is the performed
+// order — real signal (what was first, whether abs were second or last).
+export const sessionExercises = pgTable("session_exercises", {
+  id: serial("id").primaryKey(),
+  workoutLogId: integer("workout_log_id")
+    .notNull()
+    .references(() => workoutLogs.id, { onDelete: "cascade" }),
+  exerciseId: text("exercise_id")
+    .notNull()
+    .references(() => exercises.id),
+  clientInstanceId: text("client_instance_id").unique(),
+  orderIndex: integer("order_index").notNull().default(0),
+  source: text("source"), // where it was added from: program day / block / ad-hoc
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const setLogs = pgTable("set_logs", {
   id: serial("id").primaryKey(),
   workoutLogId: integer("workout_log_id")
     .notNull()
     .references(() => workoutLogs.id, { onDelete: "cascade" }),
+  // Which performed occurrence this set belongs to (v2). Nullable: legacy sets
+  // and any set logged before its occurrence synced. Set null on occurrence
+  // delete rather than cascading away the logged set.
+  sessionExerciseId: integer("session_exercise_id").references(() => sessionExercises.id, { onDelete: "set null" }),
   exerciseId: text("exercise_id")
     .notNull()
     .references(() => exercises.id),
@@ -301,6 +325,7 @@ export const cardioLogs = pgTable("cardio_logs", {
   workoutLogId: integer("workout_log_id")
     .notNull()
     .references(() => workoutLogs.id, { onDelete: "cascade" }),
+  sessionExerciseId: integer("session_exercise_id").references(() => sessionExercises.id, { onDelete: "set null" }),
   exerciseId: text("exercise_id")
     .notNull()
     .references(() => exercises.id),

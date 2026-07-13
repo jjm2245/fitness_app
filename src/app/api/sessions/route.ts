@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { desc, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs, cardioLogs } from "@/db/schema";
+import { workoutLogs, setLogs, cardioLogs, sessionExercises } from "@/db/schema";
 
 // GET /api/sessions — the finished sessions that live on the server, newest
 // first. This is the *synced* half of the sessions list; the client merges it
@@ -24,7 +24,17 @@ export async function GET() {
 
   if (logs.length === 0) return NextResponse.json([]);
 
-  // Distinct exercises per session, across both strength and cardio logs.
+  // Performed-occurrence count per session (v2 — the ordered list length, so
+  // repeats count). Falls back to distinct logged exercises for legacy sessions
+  // with no session_exercises rows.
+  const occCounts = await db
+    .select({
+      workoutLogId: sessionExercises.workoutLogId,
+      n: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(sessionExercises)
+    .groupBy(sessionExercises.workoutLogId);
+
   const setCounts = await db
     .select({
       workoutLogId: setLogs.workoutLogId,
@@ -41,9 +51,13 @@ export async function GET() {
     .from(cardioLogs)
     .groupBy(cardioLogs.workoutLogId);
 
+  const occByLog = new Map<number, number>();
+  for (const r of occCounts) occByLog.set(r.workoutLogId, r.n);
+  const loggedByLog = new Map<number, number>();
+  for (const r of setCounts) loggedByLog.set(r.workoutLogId, (loggedByLog.get(r.workoutLogId) ?? 0) + r.n);
+  for (const r of cardioCounts) loggedByLog.set(r.workoutLogId, (loggedByLog.get(r.workoutLogId) ?? 0) + r.n);
   const counts = new Map<number, number>();
-  for (const r of setCounts) counts.set(r.workoutLogId, (counts.get(r.workoutLogId) ?? 0) + r.n);
-  for (const r of cardioCounts) counts.set(r.workoutLogId, (counts.get(r.workoutLogId) ?? 0) + r.n);
+  for (const l of logs) counts.set(l.id, occByLog.get(l.id) ?? loggedByLog.get(l.id) ?? 0);
 
   const rows = logs.map((l) => {
     const exerciseCount = counts.get(l.id) ?? 0;

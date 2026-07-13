@@ -143,6 +143,85 @@
   text-decoration: underline;
 }
 
+/* Quick-add palette (v2) */
+.palette {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 10px 0 16px;
+  background: var(--surface-2, #16181c);
+}
+.paletteSearch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.paletteGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.paletteGroup {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.paletteGroupHeader {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 0;
+  text-align: left;
+  width: 100%;
+}
+.paletteChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.chipBtn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+.chipBtn:hover {
+  border-color: var(--accent, #6ea8fe);
+  color: var(--accent, #6ea8fe);
+}
+
+/* Reorder / remove controls on a card */
+.reorder {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.iconBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+}
+.iconBtn:hover:not(:disabled) {
+  color: inherit;
+  border-color: var(--accent, #6ea8fe);
+}
+.iconBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .chip {
   font-size: 12px;
   color: var(--muted);

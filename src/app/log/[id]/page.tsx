@@ -11,23 +11,24 @@ import {
   editSet,
   deleteSet,
   getSessionSets,
-  getCompletedExercises,
-  setExerciseCompleted,
+  getCompletedInstances,
+  setOccurrenceCompleted,
   getSession,
   hydrateFromServer,
   finishSession,
   sync,
   pendingCount,
-  attachToComposition,
-  getSessionComposition,
-  removeFromComposition,
+  addOccurrence,
+  listOccurrences,
+  moveOccurrence,
+  removeOccurrence,
   logCardio,
   getSessionCardio,
   deleteCardio,
   type LocalSession,
   type SessionSet,
   type SessionCardio,
-  type CompositionItem,
+  type Occurrence,
   type AttachExercise,
 } from "@/lib/sessionStore";
 
@@ -46,31 +47,26 @@ interface ProgramExerciseDetail {
   source: string;
   untagged: boolean;
 }
-
 interface ProgramDayDetail {
   id: number;
   name: string;
   orderIndex: number;
   exercises: ProgramExerciseDetail[];
 }
-
 interface ProgramDetail {
   id: number;
   splitType: string;
   days: ProgramDayDetail[];
 }
-
 interface MachineOption {
   id: string;
   notes: string | null;
 }
-
 interface BlockDetail {
   id: number;
   name: string;
   exercises: ProgramExerciseDetail[];
 }
-
 interface SubstitutionCandidate {
   id: string;
   name: string;
@@ -93,11 +89,11 @@ type ProgressionResult =
       intervention?: { id: string; message: string };
     };
 
-// Unified shape for anything loggable in a session. Every card comes from the
-// session's composition now (the session is self-contained); `target` is
-// present when the item carried a program-day prescription.
-interface LoggableExercise {
-  key: string;
+// A card = one performed occurrence (v2). Ordered; repeats produce multiple
+// cards for the same exercise, each with its own instanceId + sets.
+interface LoggableOccurrence {
+  instanceId: string;
+  orderIndex: number;
   exerciseId: string;
   exerciseName: string;
   loadType: string;
@@ -105,8 +101,8 @@ interface LoggableExercise {
   conditioningOnly: boolean;
   target: { targetSets: number; repRange: string | null; rirTarget: string | null } | null;
   params: Record<string, unknown> | null;
-  origin: string | null; // where it came from in the session
-  provenance: string; // curated | library | custom
+  source: string;
+  provenance: string;
   untagged: boolean;
 }
 
@@ -214,28 +210,46 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
   );
 }
 
+interface CardControls {
+  position: number;
+  total: number;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+}
+
+function ReorderControls({ position, total, onMoveUp, onMoveDown, onRemove }: CardControls) {
+  return (
+    <span className={styles.reorder}>
+      <button type="button" className={styles.iconBtn} onClick={onMoveUp} disabled={position === 0} title="Move up" aria-label="Move up">↑</button>
+      <button type="button" className={styles.iconBtn} onClick={onMoveDown} disabled={position === total - 1} title="Move down" aria-label="Move down">↓</button>
+      <button type="button" className={styles.iconBtn} onClick={onRemove} title="Remove from session" aria-label="Remove">✕</button>
+    </span>
+  );
+}
+
 function StrengthCard({
   ex,
   sessionId,
   date,
+  controls,
   machines,
   sessionSets,
   completed,
   onMachineAdded,
   onSessionChanged,
   onToggleComplete,
-  onRemoveFromSession,
 }: {
-  ex: LoggableExercise;
+  ex: LoggableOccurrence;
   sessionId: string;
   date: string;
+  controls: CardControls;
   machines: MachineOption[];
   sessionSets: SessionSet[];
   completed: boolean;
   onMachineAdded: () => void;
   onSessionChanged: () => void;
-  onToggleComplete: (exerciseId: string, completed: boolean) => void;
-  onRemoveFromSession: ((exerciseId: string) => void) | null;
+  onToggleComplete: (instanceId: string, completed: boolean) => void;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -258,18 +272,14 @@ function StrengthCard({
   const [checking, setChecking] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapCandidates, setSwapCandidates] = useState<SubstitutionCandidate[] | null>(null);
-  // Collapsible card (Part C): name stays visible when collapsed; completing an
-  // exercise auto-collapses it. A manual toggle is remembered against the
-  // completion state it was made under, so it wins until completion flips —
-  // then we fall back to the auto behavior (complete ⇒ collapsed), even for a
-  // card you'd manually expanded. Derived, not an effect (no cascading renders).
   const [manual, setManual] = useState<{ done: boolean; collapsed: boolean } | null>(null);
   const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
   const showMachine = usesMachineTag(activeExercise.loadType);
   const resolvedMachineId = !showMachine ? null : machineId.trim() || null;
-  const loggedSets = sessionSets.filter((s) => s.exerciseId === activeExercise.id);
+  // Sets for THIS occurrence only (repeats keep separate set lists).
+  const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +323,7 @@ function StrengthCard({
     setError(null);
     await logSet({
       sessionId,
+      instanceId: ex.instanceId,
       date,
       exerciseId: activeExercise.id,
       exerciseName: activeExercise.name,
@@ -361,21 +372,20 @@ function StrengthCard({
   }
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
       <div className={styles.exHeader}>
         <button type="button" onClick={toggleCollapsed} className={styles.collapseBtn} aria-label={collapsed ? "Expand" : "Collapse"} title={collapsed ? "Expand" : "Collapse"}>
           {collapsed ? "▸" : "▾"}
         </button>
         <label className={styles.exName}>
-          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} title="Mark exercise done" />
+          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.instanceId, e.target.checked)} title="Mark exercise done" />
           <strong>{activeExercise.name}</strong>
         </label>
         <ProvenanceBadge untagged={ex.untagged} />
         {collapsed && loggedSets.length > 0 && (
           <span className={styles.collapsedSummary}>{loggedSets.length} {loggedSets.length === 1 ? "set" : "sets"}</span>
         )}
-        {ex.origin && <span className={styles.tag}>[{ex.origin}]</span>}
-        {ex.untagged && <span className={styles.tag}>· untagged — tag a movement pattern to make it substitutable</span>}
+        <span className={styles.tag}>[{ex.source}]</span>
         {activeExercise.id !== ex.exerciseId && (
           <span className={styles.tag}>
             (swapped from {ex.exerciseName} — <button type="button" onClick={resetSwap} className={styles.secondaryBtn}>reset</button>)
@@ -387,9 +397,7 @@ function StrengthCard({
           </span>
         )}
         {!collapsed && <button type="button" onClick={openSwap} className={styles.secondaryBtn}>Swap</button>}
-        {!collapsed && onRemoveFromSession && (
-          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
-        )}
+        <ReorderControls {...controls} />
       </div>
 
       {!collapsed && (
@@ -474,20 +482,20 @@ function CardioCard({
   ex,
   sessionId,
   date,
+  controls,
   sessionCardio,
   completed,
   onSessionChanged,
   onToggleComplete,
-  onRemoveFromSession,
 }: {
-  ex: LoggableExercise;
+  ex: LoggableOccurrence;
   sessionId: string;
   date: string;
+  controls: CardControls;
   sessionCardio: SessionCardio[];
   completed: boolean;
   onSessionChanged: () => void;
-  onToggleComplete: (exerciseId: string, completed: boolean) => void;
-  onRemoveFromSession: ((exerciseId: string) => void) | null;
+  onToggleComplete: (instanceId: string, completed: boolean) => void;
 }) {
   const p = ex.params ?? {};
   const [durationMin, setDurationMin] = useState<string>(String(num(p.duration_min) ?? ""));
@@ -502,7 +510,7 @@ function CardioCard({
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
   const fields = cardioFields(ex.exerciseName);
-  const entries = sessionCardio.filter((c) => c.exerciseId === ex.exerciseId);
+  const entries = sessionCardio.filter((c) => c.instanceId === ex.instanceId);
 
   useEffect(() => {
     let cancelled = false;
@@ -533,6 +541,7 @@ function CardioCard({
     setError(null);
     await logCardio({
       sessionId,
+      instanceId: ex.instanceId,
       date,
       exerciseId: ex.exerciseId,
       exerciseName: ex.exerciseName,
@@ -547,23 +556,21 @@ function CardioCard({
   }
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""} ${ex.origin ? styles.cardAdhoc : ""}`}>
+    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
       <div className={styles.exHeader}>
         <button type="button" onClick={toggleCollapsed} className={styles.collapseBtn} aria-label={collapsed ? "Expand" : "Collapse"} title={collapsed ? "Expand" : "Collapse"}>
           {collapsed ? "▸" : "▾"}
         </button>
         <label className={styles.exName}>
-          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.exerciseId, e.target.checked)} />
+          <input type="checkbox" checked={completed} onChange={(e) => onToggleComplete(ex.instanceId, e.target.checked)} />
           <strong>{ex.exerciseName}</strong>
         </label>
         <ProvenanceBadge untagged={ex.untagged} />
-        <span className={styles.tag}>cardio{ex.origin ? ` · ${ex.origin}` : ""}</span>
+        <span className={styles.tag}>cardio · [{ex.source}]</span>
         {collapsed && entries.length > 0 && (
           <span className={styles.collapsedSummary}>{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
         )}
-        {!collapsed && onRemoveFromSession && (
-          <button type="button" onClick={() => onRemoveFromSession(ex.exerciseId)} className={styles.secondaryBtn}>Remove</button>
-        )}
+        <ReorderControls {...controls} />
       </div>
 
       {!collapsed && (
@@ -618,10 +625,10 @@ function CardioCard({
 }
 
 function FinishSummary({
-  session, composition, completed, sessionSets, sessionCardio, pending, onConfirm, onClose,
+  session, occurrences, completed, sessionSets, sessionCardio, pending, onConfirm, onClose,
 }: {
   session: LocalSession;
-  composition: CompositionItem[];
+  occurrences: Occurrence[];
   completed: Set<string>;
   sessionSets: SessionSet[];
   sessionCardio: SessionCardio[];
@@ -629,56 +636,41 @@ function FinishSummary({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  // One row per exercise that saw ANY activity in the session — sets, cardio, or
-  // just a "done" check — regardless of whether it came from the program day,
-  // another program, or an ad-hoc pick (bug 1b: cross-program/ad-hoc entries
-  // were missing). Ordered by the session's composition order.
-  const nameOf = (id: string, fallback?: string) =>
-    composition.find((c) => c.exerciseId === id)?.exerciseName ?? fallback ?? id;
-  const orderOf = (id: string) => {
-    const i = composition.findIndex((c) => c.exerciseId === id);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-  };
+  // One row per performed occurrence, in order, with its own set/cardio/done —
+  // regardless of source (bug 1b stays fixed under the occurrence model).
+  const setsByInstance = new Map<string, number>();
+  for (const s of sessionSets) setsByInstance.set(s.instanceId, (setsByInstance.get(s.instanceId) ?? 0) + 1);
+  const cardioByInstance = new Map<string, number>();
+  for (const c of sessionCardio) cardioByInstance.set(c.instanceId, (cardioByInstance.get(c.instanceId) ?? 0) + 1);
 
-  const rows = new Map<string, { name: string; sets: number; cardio: number; done: boolean }>();
-  const bump = (id: string, name: string) => {
-    let r = rows.get(id);
-    if (!r) rows.set(id, (r = { name, sets: 0, cardio: 0, done: false }));
-    return r;
-  };
-  for (const s of sessionSets) bump(s.exerciseId, s.exerciseName).sets += 1;
-  for (const c of sessionCardio) bump(c.exerciseId, c.exerciseName).cardio += 1;
-  for (const id of completed) bump(id, nameOf(id)).done = true;
-
-  const list = Array.from(rows.entries())
-    .map(([id, r]) => ({ id, ...r }))
-    .sort((a, b) => orderOf(a.id) - orderOf(b.id));
-  const setCount = sessionSets.length;
-  const exerciseCount = list.length;
-
-  function describe(r: { sets: number; cardio: number; done: boolean }): string {
+  const list = occurrences.map((o) => {
+    const sets = setsByInstance.get(o.instanceId) ?? 0;
+    const cardio = cardioByInstance.get(o.instanceId) ?? 0;
+    const done = completed.has(o.instanceId);
     const bits: string[] = [];
-    if (r.sets > 0) bits.push(`${r.sets} ${r.sets === 1 ? "set" : "sets"}`);
-    if (r.cardio > 0) bits.push("cardio");
-    if (bits.length === 0 && r.done) bits.push("done, no sets logged");
-    return bits.join(" · ");
-  }
+    if (sets > 0) bits.push(`${sets} ${sets === 1 ? "set" : "sets"}`);
+    if (cardio > 0) bits.push("cardio");
+    if (bits.length === 0 && done) bits.push("done, no sets logged");
+    return { instanceId: o.instanceId, name: o.exerciseName, desc: bits.join(" · ") };
+  }).filter((r) => r.desc.length > 0);
+
+  const setCount = sessionSets.length;
 
   return (
     <div className={styles.modalBackdrop}>
       <div className={styles.modal}>
         <h2 style={{ marginTop: 0 }}>Finish session — {session.origin}</h2>
         <p>
-          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{exerciseCount}</strong>{" "}
-          {exerciseCount === 1 ? "exercise" : "exercises"}
+          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{list.length}</strong>{" "}
+          {list.length === 1 ? "exercise" : "exercises"}
           {sessionCardio.length > 0 && <> · <strong>{sessionCardio.length}</strong> cardio {sessionCardio.length === 1 ? "entry" : "entries"}</>}.
         </p>
         {list.length === 0 ? (
           <p style={{ opacity: 0.7 }}>Nothing logged yet — you can still finish, or keep logging.</p>
         ) : (
-          <ul style={{ paddingLeft: 18 }}>
-            {list.map((r) => <li key={r.id}>{r.name} — {describe(r)}</li>)}
-          </ul>
+          <ol style={{ paddingLeft: 18 }}>
+            {list.map((r) => <li key={r.instanceId}>{r.name} — {r.desc}</li>)}
+          </ol>
         )}
         <p style={{ fontSize: 13, opacity: 0.7 }}>
           {pending > 0 ? `${pending} change(s) not yet synced — they'll sync when you're back online.` : "All changes synced."}
@@ -695,6 +687,64 @@ function FinishSummary({
   );
 }
 
+// The quick-add palette: tap any exercise to append it to the performed list.
+// Program days and blocks are groups of one-tap chips; ad-hoc search + custom is
+// always available. Adding is instant (the card appears above) and the palette
+// stays open so you can add the next one mid-set.
+function AddPalette({
+  programs,
+  blocks,
+  onAdd,
+  onAddAdhoc,
+}: {
+  programs: ProgramDetail[];
+  blocks: BlockDetail[];
+  onAdd: (ex: ProgramExerciseDetail, source: string) => void;
+  onAddAdhoc: (r: ExerciseSearchResult) => void;
+}) {
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const groups: { key: string; label: string; source: string; exercises: ProgramExerciseDetail[] }[] = [];
+  for (const prog of programs) {
+    for (const d of prog.days) {
+      groups.push({ key: `d${d.id}`, label: prettyDayName(d.name), source: prettyDayName(d.name), exercises: d.exercises });
+    }
+  }
+  for (const b of blocks) {
+    groups.push({ key: `b${b.id}`, label: b.name, source: b.name, exercises: b.exercises });
+  }
+
+  return (
+    <div className={styles.palette}>
+      <div className={styles.paletteSearch}>
+        <span style={{ fontSize: 13, opacity: 0.75 }}>Add any exercise:</span>
+        <ExerciseSearch onPick={onAddAdhoc} placeholder="Search library / curated, or create custom…" />
+      </div>
+      <div className={styles.paletteGroups}>
+        {groups.map((g) => (
+          <div key={g.key} className={styles.paletteGroup}>
+            <button
+              type="button"
+              className={styles.paletteGroupHeader}
+              onClick={() => setOpenGroup((o) => (o === g.key ? null : g.key))}
+            >
+              {openGroup === g.key ? "▾" : "▸"} {g.label} <span style={{ opacity: 0.55 }}>({g.exercises.length})</span>
+            </button>
+            {openGroup === g.key && (
+              <div className={styles.paletteChips}>
+                {g.exercises.map((e) => (
+                  <button key={e.id} type="button" className={styles.chipBtn} onClick={() => onAdd(e, g.source)}>
+                    + {e.exerciseName}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function LogSessionPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -704,29 +754,28 @@ export default function LogSessionPage() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "notfound">("loading");
   const [machines, setMachines] = useState<MachineOption[]>([]);
   const [blocks, setBlocks] = useState<BlockDetail[]>([]);
+  const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
+  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
   const [sessionCardio, setSessionCardio] = useState<SessionCardio[]>([]);
-  const [composition, setComposition] = useState<CompositionItem[]>([]);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
   const [syncStatus, setSyncStatus] = useState("");
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [showFinish, setShowFinish] = useState(false);
-  const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [selectedBlockIds, setSelectedBlockIds] = useState<Set<number>>(new Set());
-  const [selectedDayIds, setSelectedDayIds] = useState<Set<number>>(new Set());
+  const [paletteOpen, setPaletteOpen] = useState(true);
 
   const refreshSession = useCallback(async () => {
-    const [sets, cardio, comp, done, p] = await Promise.all([
-      getSessionSets(sessionId), getSessionCardio(sessionId), getSessionComposition(sessionId),
-      getCompletedExercises(sessionId), pendingCount(sessionId),
+    const [occ, sets, cardio, done, p, s] = await Promise.all([
+      listOccurrences(sessionId), getSessionSets(sessionId), getSessionCardio(sessionId),
+      getCompletedInstances(sessionId), pendingCount(sessionId), getSession(sessionId),
     ]);
+    setOccurrences(occ);
     setSessionSets(sets);
     setSessionCardio(cardio);
-    setComposition(comp);
     setCompleted(done);
     setPending(p);
+    if (s) setSession(s);
   }, [sessionId]);
 
   const refreshMachines = useCallback(async () => {
@@ -747,14 +796,11 @@ export default function LogSessionPage() {
     await refreshSession();
   }, [refreshSession]);
 
-  const toggleComplete = useCallback(async (exerciseId: string, isComplete: boolean) => {
-    await setExerciseCompleted(sessionId, exerciseId, isComplete);
+  const toggleComplete = useCallback(async (instanceId: string, isComplete: boolean) => {
+    await setOccurrenceCompleted(sessionId, instanceId, isComplete);
     await refreshSession();
   }, [sessionId, refreshSession]);
 
-  // Load the session: local first; if it only exists on the server, hydrate the
-  // local store from it (needs connectivity, then works offline). Also pulls
-  // machines/blocks/programs for the in-session "add" affordances.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -792,9 +838,6 @@ export default function LogSessionPage() {
       );
       if (!cancelled) setAllPrograms(full.filter((p): p is ProgramDetail => p !== null));
     })();
-    // Re-drain when connectivity returns and when the tab regains focus — the
-    // latter covers coming back from a re-login, so a pending outbox flushes
-    // without a manual tap.
     const onFocus = () => { if (document.visibilityState === "visible") handleSync(); };
     window.addEventListener("online", handleSync);
     window.addEventListener("visibilitychange", onFocus);
@@ -805,69 +848,46 @@ export default function LogSessionPage() {
     };
   }, [sessionId, handleSync, refreshSession]);
 
-  // The session is self-contained: every card comes from its composition.
-  const loggables: LoggableExercise[] = useMemo(() => {
-    return composition.map((c) => ({
-      key: `co:${c.exerciseId}`,
-      exerciseId: c.exerciseId,
-      exerciseName: c.exerciseName,
-      loadType: c.loadType,
-      portable: c.portable,
-      conditioningOnly: c.conditioningOnly,
-      target: c.targetSets != null ? { targetSets: c.targetSets, repRange: c.repRange, rirTarget: c.rirTarget } : null,
-      params: c.params,
-      origin: c.source,
-      provenance: c.provenance,
-      untagged: c.untagged,
+  const loggables: LoggableOccurrence[] = useMemo(() => {
+    return occurrences.map((o) => ({
+      instanceId: o.instanceId,
+      orderIndex: o.orderIndex,
+      exerciseId: o.exerciseId,
+      exerciseName: o.exerciseName,
+      loadType: o.loadType,
+      portable: o.portable,
+      conditioningOnly: o.conditioningOnly,
+      target: o.targetSets != null ? { targetSets: o.targetSets, repRange: o.repRange, rirTarget: o.rirTarget } : null,
+      params: o.params,
+      source: o.source,
+      provenance: o.provenance,
+      untagged: o.untagged,
     }));
-  }, [composition]);
+  }, [occurrences]);
 
-  function toggleId(set: Set<number>, id: number): Set<number> {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
-  }
+  const attachFrom = (e: ProgramExerciseDetail): AttachExercise => ({
+    exerciseId: e.exerciseId,
+    exerciseName: e.exerciseName,
+    loadType: e.loadType,
+    portable: e.portable,
+    conditioningOnly: e.conditioningOnly,
+    provenance: e.source,
+    untagged: e.untagged,
+    targetSets: e.targetSets,
+    repRange: e.repRange,
+    rirTarget: e.rirTarget,
+    params: e.params,
+  });
 
-  function itemsFrom(exs: ProgramExerciseDetail[]): AttachExercise[] {
-    return exs.map((e) => ({
-      exerciseId: e.exerciseId,
-      exerciseName: e.exerciseName,
-      loadType: e.loadType,
-      portable: e.portable,
-      conditioningOnly: e.conditioningOnly,
-      provenance: e.source,
-      untagged: e.untagged,
-      targetSets: e.targetSets,
-      repRange: e.repRange,
-      rirTarget: e.rirTarget,
-      params: e.params,
-    }));
-  }
-
-  async function attachSelected() {
-    for (const block of blocks) {
-      if (selectedBlockIds.has(block.id)) {
-        await attachToComposition(sessionId, itemsFrom(block.exercises), `block:${block.name}`);
-      }
-    }
-    for (const prog of allPrograms) {
-      for (const day of prog.days) {
-        if (selectedDayIds.has(day.id)) {
-          await attachToComposition(sessionId, itemsFrom(day.exercises), prettyDayName(day.name));
-        }
-      }
-    }
-    setSelectedBlockIds(new Set());
-    setSelectedDayIds(new Set());
-    setPickerOpen(false);
+  async function addFromPalette(e: ProgramExerciseDetail, source: string) {
+    await addOccurrence(sessionId, attachFrom(e), source);
     await refreshSession();
   }
 
-  async function addAdhocExercise(r: ExerciseSearchResult) {
-    await attachToComposition(
+  async function addAdhoc(r: ExerciseSearchResult) {
+    await addOccurrence(
       sessionId,
-      [{
+      {
         exerciseId: r.id,
         exerciseName: r.name,
         loadType: r.loadType,
@@ -875,15 +895,20 @@ export default function LogSessionPage() {
         conditioningOnly: r.conditioningOnly,
         provenance: r.source,
         untagged: r.untagged,
-      }],
-      "adhoc"
+      },
+      "Ad-hoc"
     );
     await refreshSession();
   }
 
-  async function removeFromSession(exerciseId: string) {
-    await removeFromComposition(sessionId, exerciseId);
+  async function move(instanceId: string, dir: "up" | "down") {
+    await moveOccurrence(sessionId, instanceId, dir);
     await refreshSession();
+  }
+
+  async function remove(instanceId: string) {
+    await removeOccurrence(sessionId, instanceId);
+    await onSessionChanged();
   }
 
   async function confirmFinish() {
@@ -930,94 +955,57 @@ export default function LogSessionPage() {
       <h1>{session.origin} <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 16 }}>· {date}</span></h1>
 
       <div className={styles.addRow}>
-        <button type="button" onClick={() => setPickerOpen((o) => !o)} className={styles.secondaryBtn}>
-          {pickerOpen ? "Close" : "+ Add blocks / days to session"}
+        <button type="button" onClick={() => setPaletteOpen((o) => !o)} className={styles.primary}>
+          {paletteOpen ? "Hide add panel" : "+ Add exercise"}
         </button>
-        <span style={{ flex: "1 1 240px" }}>
-          Or one exercise:
-          <ExerciseSearch onPick={addAdhocExercise} placeholder="Search library / curated, or create custom…" />
-        </span>
+        <span style={{ fontSize: 13, opacity: 0.65 }}>Tap to add as you go — order is kept.</span>
       </div>
 
-      {pickerOpen && (
-        <div className={styles.picker}>
-          <p className={styles.pickerHint}>Pick any number of blocks or program days to add to this session.</p>
-          {blocks.length > 0 && (
-            <>
-              <div className={styles.pickerGroup}>Blocks</div>
-              {blocks.map((b) => (
-                <label key={`b${b.id}`} className={styles.pickerRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedBlockIds.has(b.id)}
-                    onChange={() => setSelectedBlockIds((s) => toggleId(s, b.id))}
-                  />
-                  {b.name} <span className={styles.tag}>({b.exercises.length})</span>
-                </label>
-              ))}
-            </>
-          )}
-          {allPrograms.map((prog) => (
-            <div key={`p${prog.id}`}>
-              <div className={styles.pickerGroup}>{prog.splitType}</div>
-              {prog.days.map((d) => (
-                <label key={`d${d.id}`} className={styles.pickerRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedDayIds.has(d.id)}
-                    onChange={() => setSelectedDayIds((s) => toggleId(s, d.id))}
-                  />
-                  {d.name} <span className={styles.tag}>({d.exercises.length})</span>
-                </label>
-              ))}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={attachSelected}
-            disabled={selectedBlockIds.size === 0 && selectedDayIds.size === 0}
-            className={styles.primary}
-            style={{ marginTop: 8 }}
-          >
-            Attach selected ({selectedBlockIds.size + selectedDayIds.size})
-          </button>
-        </div>
+      {paletteOpen && (
+        <AddPalette programs={allPrograms} blocks={blocks} onAdd={addFromPalette} onAddAdhoc={addAdhoc} />
       )}
 
       {loggables.length === 0 ? (
-        <p style={{ opacity: 0.65 }}>Empty session — add a block, a program day, or a single exercise above to start logging.</p>
+        <p style={{ opacity: 0.65 }}>Nothing added yet — add your first exercise above. Add more as you do them; the order is your session record.</p>
       ) : (
-        <ul className={styles.list}>
-          {loggables.map((ex) =>
-            ex.conditioningOnly ? (
+        <ol className={styles.list}>
+          {loggables.map((ex, i) => {
+            const controls: CardControls = {
+              position: i,
+              total: loggables.length,
+              onMoveUp: () => move(ex.instanceId, "up"),
+              onMoveDown: () => move(ex.instanceId, "down"),
+              onRemove: () => remove(ex.instanceId),
+            };
+            return ex.conditioningOnly ? (
               <CardioCard
-                key={ex.key}
+                key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
                 date={date}
+                controls={controls}
                 sessionCardio={sessionCardio}
-                completed={completed.has(ex.exerciseId)}
+                completed={completed.has(ex.instanceId)}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
-                onRemoveFromSession={removeFromSession}
               />
             ) : (
               <StrengthCard
-                key={ex.key}
+                key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
                 date={date}
+                controls={controls}
                 machines={machines}
                 sessionSets={sessionSets}
-                completed={completed.has(ex.exerciseId)}
+                completed={completed.has(ex.instanceId)}
                 onMachineAdded={refreshMachines}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
-                onRemoveFromSession={removeFromSession}
               />
-            )
-          )}
-        </ul>
+            );
+          })}
+        </ol>
       )}
 
       <div className={styles.finishBar}>
@@ -1034,7 +1022,7 @@ export default function LogSessionPage() {
       {showFinish && (
         <FinishSummary
           session={session}
-          composition={composition}
+          occurrences={occurrences}
           completed={completed}
           sessionSets={sessionSets}
           sessionCardio={sessionCardio}

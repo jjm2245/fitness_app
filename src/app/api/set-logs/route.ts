@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs, machines } from "@/db/schema";
+import { workoutLogs, setLogs, machines, sessionExercises } from "@/db/schema";
 
 interface SetLogPayload {
   clientSessionId?: string | null;
+  instanceId?: string | null; // the performed occurrence (v2)
   date: string; // ISO date, e.g. "2026-07-04"
   programDay?: string | null;
   exerciseId: string;
@@ -47,10 +48,22 @@ export async function POST(request: NextRequest) {
       await tx.insert(machines).values({ id: body.machineId }).onConflictDoNothing();
     }
 
+    // Link the set to its performed occurrence (v2). Occurrences sync before
+    // sets, so this normally resolves; null if the client sent no instance.
+    let sessionExerciseId: number | null = null;
+    if (body.instanceId) {
+      const [occ] = await tx
+        .select({ id: sessionExercises.id })
+        .from(sessionExercises)
+        .where(eq(sessionExercises.clientInstanceId, body.instanceId));
+      sessionExerciseId = occ?.id ?? null;
+    }
+
     const [setLog] = await tx
       .insert(setLogs)
       .values({
         workoutLogId: workoutLog.id,
+        sessionExerciseId,
         exerciseId: body.exerciseId,
         machineId: body.machineId ?? null,
         setIndex: body.setIndex,

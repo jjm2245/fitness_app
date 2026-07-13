@@ -805,3 +805,62 @@ Biceps Cable Curl", library-referenced; `bayesian_curl` → custom, elbow_flexio
 selectable entries when composing (day card + ad-hoc search hit). The earlier
 "appears as one" was the pre-Part-D combined seed node; IDs are stable so logged
 history isn't orphaned.
+
+## Session model v2 — Part 2: ordered, incremental composition
+
+A session is now an **ordered list of exercises actually performed**, built
+incrementally, rather than a pre-loaded program day.
+
+### Occurrences (client-owned, ordered, repeatable)
+New `session_exercises(id, workout_log_id, exercise_id, client_instance_id
+unique, order_index, source)` table (migration 0011) — one row per performed
+*occurrence*. The same exercise can appear multiple times at different
+positions (tricep → chest → abs → tricep), so the model is occurrence-keyed, not
+exercise-keyed. `set_logs`/`cardio_logs` gain a nullable `session_exercise_id`
+FK (ON DELETE SET NULL) so a set links to its specific occurrence and repeats
+keep separate set lists. The client owns each occurrence via
+`client_instance_id`, so one added offline maps to exactly one server row.
+
+The local store bumped to **IndexedDB v4**: `composition` → `occurrences`
+(keyed by instanceId, indexed by session + instance), sets/cardio carry
+`instanceId` (set index is per-occurrence), and `completed` is keyed by
+occurrence. Destructive bump — unsynced local data clears; finished sessions
+reappear from the server. `addOccurrence` appends, `moveOccurrence` reorders by
+swapping order_index, `removeOccurrence` drops an accidental add (soft-deleting
+its synced sets). Sync pushes the whole ordered list to
+`POST /api/session-exercises` (upsert by client_instance_id + prune removed)
+**before** sets, so set-logs resolve their occurrence link.
+
+### Incremental, one-tap-fast (not pre-loaded)
+Starting a session creates an **empty** one and goes straight to `/log`. The
+program(s) + blocks become a **quick-add palette** (collapsible groups of
+one-tap chips) plus ad-hoc search; a tap appends an occurrence instantly and the
+panel stays open, so you add the next while the previous is mid-set. Cards are an
+ordered list with up/down reorder + remove. Shortening a session = simply not
+adding those exercises. The **session name aggregates** every contributing
+source in first-seen order ("Chest + triceps" → add abs → "Chest + triceps +
+Abs"), recomputed on the client and persisted so the list + finish label read it.
+
+### Hydration + legacy
+`GET /api/sessions/[id]` returns the ordered occurrences (or, for a legacy
+session with none, one synthesized per distinct logged exercise) with each
+set/cardio's `session_exercise_id`; `hydrateFromServer` rebuilds occurrences in
+order and re-links sets by that id (falling back to the first occurrence of the
+exercise). `GET /api/sessions` counts occurrences for the list description,
+falling back to distinct-logged for legacy rows.
+
+### Concurrency fix (data integrity)
+Discovered via rapid logging: two overlapping `sync()` calls (two quick
+onSessionChanged) both read the same pending rows and double-POSTed — set-logs is
+a plain insert, so logged sets duplicated. `sync()` is now **serialized** (each
+drain chains after the previous), so the second sees an emptied outbox. Tested.
+
+### Verified
+- 94 tests pass (occurrences ordered/repeat/reorder/aggregated-name, per-
+  occurrence set attachment, hydration re-link, concurrent-sync no-dup); clean
+  tsc/lint/build; `src/core/*` untouched.
+- Browser: empty start → palette one-tap adds incl. a repeat → reorder → name
+  aggregates → per-occurrence sets → server persists ordered session_exercises +
+  linked set rows → ordered finish summary → back on list ("4 exercises") →
+  wiped local store and reopened: occurrences + sets rebuilt in order.
+- Migration 0011 + IndexedDB v4 are **LOCAL only**; prod held for review.

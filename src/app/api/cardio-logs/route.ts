@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, cardioLogs } from "@/db/schema";
+import { workoutLogs, cardioLogs, sessionExercises } from "@/db/schema";
 
 interface CardioPayload {
   clientSessionId?: string | null;
+  instanceId?: string | null;
   date: string;
   exerciseId: string;
   durationMin?: number | null;
@@ -35,10 +36,19 @@ export async function POST(request: NextRequest) {
         .values({ date: body.date, clientSessionId: body.clientSessionId ?? null })
         .returning();
     }
+    let sessionExerciseId: number | null = null;
+    if (body.instanceId) {
+      const [occ] = await tx
+        .select({ id: sessionExercises.id })
+        .from(sessionExercises)
+        .where(eq(sessionExercises.clientInstanceId, body.instanceId));
+      sessionExerciseId = occ?.id ?? null;
+    }
     const [row] = await tx
       .insert(cardioLogs)
       .values({
         workoutLogId: workoutLog.id,
+        sessionExerciseId,
         exerciseId: body.exerciseId,
         durationMin: num(body.durationMin),
         incline: num(body.incline),

@@ -14,10 +14,13 @@ import {
   logCardio,
   getSessionCardio,
   deleteCardio,
-  attachToComposition,
-  getSessionComposition,
-  removeFromComposition,
+  addOccurrence,
+  listOccurrences,
+  moveOccurrence,
+  removeOccurrence,
   listLocalSessionSummaries,
+  _resetDbForTests,
+  type AttachExercise,
   type ServerSession,
 } from "../sessionStore";
 
@@ -46,6 +49,9 @@ function mockOnline() {
     "fetch",
     vi.fn(async (url: string, opts?: RequestInit) => {
       const method = opts?.method ?? "GET";
+      if (url === "/api/session-exercises" && method === "POST") {
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      }
       if (url === "/api/set-logs" && method === "POST") {
         return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
       }
@@ -91,11 +97,27 @@ function freshDate() {
   return `2026-08-${String(day).padStart(2, "0")}`;
 }
 
+const attachInput: AttachExercise = {
+  exerciseId: "deadlift",
+  exerciseName: "Deadlift",
+  loadType: "free_weight",
+  portable: true,
+  conditioningOnly: false,
+  provenance: "curated",
+  untagged: false,
+};
+
+// A session with one performed occurrence; `inst` is where sets land.
 async function newSession() {
   const date = freshDate();
   const s = await createSession({ date, origin: "Test day", programId: null });
-  return { id: s.id, date };
+  const occ = await addOccurrence(s.id, attachInput, "Test day");
+  return { id: s.id, date, inst: occ.instanceId };
 }
+
+beforeEach(async () => {
+  await _resetDbForTests();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -105,8 +127,8 @@ describe("logging + sync", () => {
   beforeEach(mockOnline);
 
   it("logs a set as pending, then sync marks it synced with a server id", async () => {
-    const { id, date } = await newSession();
-    const row = await logSet({ ...baseInput, sessionId: id, date });
+    const { id, date, inst } = await newSession();
+    const row = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
     expect(row.syncState).toBe("pending_create");
 
     let sets = await getSessionSets(id);
@@ -124,14 +146,14 @@ describe("logging + sync", () => {
 
 describe("offline logging", () => {
   it("keeps a set logged and visible while offline, then syncs when back online", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOffline();
-    await logSet({ ...baseInput, sessionId: id, date });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
     await sync(); // fails silently
     let sets = await getSessionSets(id);
     expect(sets).toHaveLength(1);
     expect(sets[0].syncState).toBe("pending_create"); // still queued
-    expect(await pendingCount(id)).toBe(1);
+    expect(await pendingCount(id)).toBe(2); // the occurrence + the set
 
     mockOnline();
     const result = await sync();
@@ -144,11 +166,11 @@ describe("offline logging", () => {
 
 describe("sync auth failure — data integrity (priority bug 1a)", () => {
   it("an expired session surfaces authError, keeps data pending (never lost), and re-drains after re-login", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
 
     // Log while the session is valid, then the cookie expires before sync.
     mockAuthExpired();
-    await logSet({ ...baseInput, sessionId: id, date });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
     const r1 = await sync();
     expect(r1.authError).toBe(true); // classified, not a silent "failed"
     expect(r1.created).toBe(0);
@@ -156,7 +178,7 @@ describe("sync auth failure — data integrity (priority bug 1a)", () => {
     const afterFail = await getSessionSets(id);
     expect(afterFail).toHaveLength(1);
     expect(afterFail[0].syncState).toBe("pending_create");
-    expect(await pendingCount(id)).toBe(1);
+    expect(await pendingCount(id)).toBe(2); // occurrence + set, both still queued
 
     // Re-login restores auth; the next drain flushes the outbox.
     mockOnline();
@@ -168,15 +190,15 @@ describe("sync auth failure — data integrity (priority bug 1a)", () => {
   });
 
   it("aborts the whole drain on the first 401 (every later request would 401 too)", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOnline();
-    await logSet({ ...baseInput, sessionId: id, date, load: 100 });
-    await logSet({ ...baseInput, sessionId: id, date, load: 105 });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 105 });
     await sync(); // both synced
 
     // Two fresh pending creates, then auth expires.
-    await logSet({ ...baseInput, sessionId: id, date, load: 110 });
-    await logSet({ ...baseInput, sessionId: id, date, load: 115 });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 110 });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 115 });
     mockAuthExpired();
     const r = await sync();
     expect(r.authError).toBe(true);
@@ -186,12 +208,25 @@ describe("sync auth failure — data integrity (priority bug 1a)", () => {
   });
 });
 
+describe("concurrent syncs don't double-post (data integrity)", () => {
+  it("two overlapping sync() calls create the set exactly once", async () => {
+    const { id, date, inst } = await newSession();
+    mockOnline();
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
+
+    // Fire two drains at once (as two rapid onSessionChanged calls would).
+    const [a, b] = await Promise.all([sync(), sync()]);
+    expect(a.created + b.created).toBe(1); // not 2 — serialized, no duplicate
+    expect((await getSessionSets(id)).filter((s) => s.serverId != null)).toHaveLength(1);
+  });
+});
+
 describe("same-session edit after sync, offline (the key requirement)", () => {
   it("edits an already-synced set while offline and re-syncs the correction", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     // Log + sync online first (the set gets a serverId).
     mockOnline();
-    const row = await logSet({ ...baseInput, sessionId: id, date, load: 135 });
+    const row = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 135 });
     await sync();
     let sets = await getSessionSets(id);
     expect(sets[0].syncState).toBe("synced");
@@ -217,9 +252,9 @@ describe("same-session edit after sync, offline (the key requirement)", () => {
 
 describe("delete semantics", () => {
   it("hard-removes a never-synced set without any server call", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOffline();
-    const row = await logSet({ ...baseInput, sessionId: id, date });
+    const row = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
     await deleteSet(row.localId!);
     expect(await getSessionSets(id)).toHaveLength(0);
     // sync has nothing to do — no fetch should have mattered
@@ -228,9 +263,9 @@ describe("delete semantics", () => {
   });
 
   it("soft-deletes a synced set, hides it immediately, and DELETEs on next sync", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOnline();
-    const row = await logSet({ ...baseInput, sessionId: id, date });
+    const row = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
     await sync();
 
     mockOffline();
@@ -251,7 +286,7 @@ describe("finish session", () => {
     const finished = await finishSession(id);
     expect(finished?.finishedAt).not.toBeNull();
     expect(finished?.finishSynced).toBe(false);
-    expect(await pendingCount(id)).toBe(1); // unsynced finish counts as pending
+    expect(await pendingCount(id)).toBe(2); // the occurrence + the unsynced finish
 
     mockOnline();
     const result = await sync();
@@ -269,16 +304,16 @@ describe("finish session", () => {
 
 describe("cardio (separate store, synced/pending like sets)", () => {
   it("logs cardio offline, keeps it visible, and syncs when back online", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOffline();
     await logCardio({
-      sessionId: id, date, exerciseId: "treadmill_incline_walk", exerciseName: "Treadmill",
+      sessionId: id, instanceId: inst, date, exerciseId: "treadmill_incline_walk", exerciseName: "Treadmill",
       durationMin: 30, incline: 12, speed: 3, distance: null, level: null, notes: null,
     });
     let entries = await getSessionCardio(id);
     expect(entries).toHaveLength(1);
     expect(entries[0].syncState).toBe("pending_create");
-    expect(await pendingCount(id)).toBe(1); // cardio counts toward pending
+    expect(await pendingCount(id)).toBe(2); // the occurrence + the cardio entry
 
     mockOnline();
     const result = await sync();
@@ -290,10 +325,10 @@ describe("cardio (separate store, synced/pending like sets)", () => {
   });
 
   it("deletes a synced cardio entry via DELETE on next sync", async () => {
-    const { id, date } = await newSession();
+    const { id, date, inst } = await newSession();
     mockOnline();
     const row = await logCardio({
-      sessionId: id, date, exerciseId: "stair_machine", exerciseName: "Stairs",
+      sessionId: id, instanceId: inst, date, exerciseId: "stair_machine", exerciseName: "Stairs",
       durationMin: 10, incline: null, speed: null, distance: null, level: 5, notes: null,
     });
     await sync();
@@ -306,33 +341,53 @@ describe("cardio (separate store, synced/pending like sets)", () => {
   });
 });
 
-describe("session composition (local-only attach)", () => {
+describe("occurrences — ordered, repeats, reorder, aggregated name (v2)", () => {
   beforeEach(mockOnline);
 
-  it("attaches block exercises, dedupes, and removes", async () => {
-    const { id } = await newSession();
-    await attachToComposition(
-      id,
-      [
-        { exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false, provenance: "curated", untagged: false },
-        { exerciseId: "hanging_leg_raise", exerciseName: "Leg raise", loadType: "bodyweight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false },
-      ],
-      "block:Abs"
-    );
-    // Attaching an overlapping set again shouldn't duplicate.
-    await attachToComposition(
-      id,
-      [{ exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false, provenance: "curated", untagged: false }],
-      "block:Abs"
-    );
-    let comp = await getSessionComposition(id);
-    expect(comp).toHaveLength(2);
-    expect(comp.map((c) => c.exerciseId)).toContain("machine_ab_crunch");
+  const ab: AttachExercise = { exerciseId: "machine_ab_crunch", exerciseName: "Ab crunch", loadType: "machine_selectorized", portable: false, conditioningOnly: false, provenance: "curated", untagged: false };
+  const tri: AttachExercise = { exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false };
 
-    await removeFromComposition(id, "machine_ab_crunch");
-    comp = await getSessionComposition(id);
-    expect(comp).toHaveLength(1);
-    expect(comp[0].exerciseId).toBe("hanging_leg_raise");
+  it("appends occurrences in order, allows repeats, reorders, and aggregates the name", async () => {
+    const { id } = await newSession(); // one occurrence already (deadlift, source "Test day")
+    await addOccurrence(id, tri, "Chest + triceps");
+    await addOccurrence(id, ab, "Abs");
+    await addOccurrence(id, tri, "Chest + triceps"); // a repeat at a later position
+
+    let occ = await listOccurrences(id);
+    expect(occ.map((o) => o.exerciseId)).toEqual(["deadlift", "skull_crusher", "machine_ab_crunch", "skull_crusher"]);
+    // The two triceps occurrences are distinct instances.
+    expect(occ[1].instanceId).not.toBe(occ[3].instanceId);
+
+    // Session name reflects every contributing source in first-seen order.
+    expect((await getSession(id))?.origin).toBe("Test day + Chest + triceps + Abs");
+
+    // Reorder: move the abs occurrence up one.
+    await moveOccurrence(id, occ[2].instanceId, "up");
+    occ = await listOccurrences(id);
+    expect(occ.map((o) => o.exerciseId)).toEqual(["deadlift", "machine_ab_crunch", "skull_crusher", "skull_crusher"]);
+
+    // Removing an accidental occurrence drops just that instance.
+    await removeOccurrence(id, occ[1].instanceId);
+    occ = await listOccurrences(id);
+    expect(occ.map((o) => o.exerciseId)).toEqual(["deadlift", "skull_crusher", "skull_crusher"]);
+  });
+
+  it("keeps sets attached to the right occurrence across repeats", async () => {
+    const { id, date } = await newSession();
+    const first = (await listOccurrences(id))[0];
+    const second = await addOccurrence(id, { ...attachInput }, "Test day"); // same exercise, 2nd occurrence
+
+    await logSet({ ...baseInput, sessionId: id, instanceId: first.instanceId, date, load: 100 });
+    await logSet({ ...baseInput, sessionId: id, instanceId: second.instanceId, date, load: 200 });
+
+    const sets = await getSessionSets(id);
+    // Each occurrence numbers its own sets from 1.
+    const firstSets = sets.filter((s) => s.instanceId === first.instanceId);
+    const secondSets = sets.filter((s) => s.instanceId === second.instanceId);
+    expect(firstSets).toHaveLength(1);
+    expect(firstSets[0].setIndex).toBe(1);
+    expect(secondSets).toHaveLength(1);
+    expect(secondSets[0].setIndex).toBe(1);
   });
 });
 
@@ -347,10 +402,10 @@ describe("hydrate a server-only session (opening a past session)", () => {
       programDay: "Legs",
       finishedAt: "2026-09-01T18:00:00.000Z",
       exercises: [
-        { exerciseId: "back_squat", exerciseName: "Back Squat", loadType: "free_weight", portable: false, conditioningOnly: false, provenance: "curated", untagged: false, params: null },
+        { sessionExerciseId: 77, clientInstanceId: "inst-a", exerciseId: "back_squat", exerciseName: "Back Squat", loadType: "free_weight", portable: false, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 0, source: "Legs" },
       ],
       sets: [
-        { id: 5001, exerciseId: "back_squat", machineId: null, setIndex: 1, setType: "working", load: "225", reps: 5, effort: "near_failure", rir: null },
+        { id: 5001, sessionExerciseId: 77, exerciseId: "back_squat", machineId: null, setIndex: 1, setType: "working", load: "225", reps: 5, effort: "near_failure", rir: null },
       ],
       cardio: [],
     };
@@ -363,10 +418,12 @@ describe("hydrate a server-only session (opening a past session)", () => {
     expect(sets).toHaveLength(1);
     expect(sets[0].syncState).toBe("synced");
     expect(sets[0].serverId).toBe(5001);
+    expect(sets[0].instanceId).toBe("inst-a"); // linked to the occurrence
 
-    const comp = await getSessionComposition("srv-session-1");
-    expect(comp).toHaveLength(1);
-    expect(comp[0].exerciseName).toBe("Back Squat");
+    const occ = await listOccurrences("srv-session-1");
+    expect(occ).toHaveLength(1);
+    expect(occ[0].exerciseName).toBe("Back Squat");
+    expect(occ[0].synced).toBe(true);
 
     // A correction routes to PATCH by the server id, not a fresh create.
     await editSet(sets[0].localId!, { load: 235 });

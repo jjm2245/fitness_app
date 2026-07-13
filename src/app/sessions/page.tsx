@@ -7,13 +7,10 @@ import styles from "./sessions.module.css";
 import {
   createSession,
   listLocalSessionSummaries,
-  attachToComposition,
   sync,
   pendingCount,
   type LocalSessionSummary,
-  type AttachExercise,
 } from "@/lib/sessionStore";
-import { prettyDayName } from "@/lib/labels";
 
 // The sessions list is the app's home base: this is where sessions live. A
 // session is a thing you start (Start a new session), do on /log/[id], and
@@ -29,30 +26,6 @@ interface ServerSession {
   exerciseCount: number;
   description: string;
   synced: true;
-}
-
-interface ProgramExercise {
-  exerciseId: string;
-  exerciseName: string;
-  loadType: string;
-  portable: boolean;
-  conditioningOnly: boolean;
-  targetSets: number;
-  repRange: string | null;
-  rirTarget: string | null;
-  params: Record<string, unknown> | null;
-  source: string;
-  untagged: boolean;
-}
-interface ProgramDay {
-  id: number;
-  name: string;
-  exercises: ProgramExercise[];
-}
-interface ProgramDetail {
-  id: number;
-  splitType: string;
-  days: ProgramDay[];
 }
 
 interface Row {
@@ -90,11 +63,9 @@ export default function SessionsPage() {
   const router = useRouter();
   const [local, setLocal] = useState<LocalSessionSummary[]>([]);
   const [server, setServer] = useState<ServerSession[]>([]);
-  const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [pending, setPending] = useState(0);
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [starting, setStarting] = useState(false);
 
   const drain = useCallback(async () => {
@@ -121,12 +92,6 @@ export default function SessionsPage() {
       // Push up anything pending, then read a fresh merged view.
       await drain();
       await refresh();
-      try {
-        const res = await fetch("/api/program");
-        if (res.ok) setProgram(await res.json());
-      } catch {
-        /* offline — new sessions can still be started ad-hoc */
-      }
     })();
     const onOnline = () => drain().then(refresh).catch(() => {});
     const onFocus = () => { if (document.visibilityState === "visible") drain().then(refresh).catch(() => {}); };
@@ -186,28 +151,14 @@ export default function SessionsPage() {
     router.push(`/log/${id}`);
   }
 
-  const toAttach = (day: ProgramDay): AttachExercise[] =>
-    day.exercises.map((e) => ({
-      exerciseId: e.exerciseId,
-      exerciseName: e.exerciseName,
-      loadType: e.loadType,
-      portable: e.portable,
-      conditioningOnly: e.conditioningOnly,
-      provenance: e.source,
-      untagged: e.untagged,
-      targetSets: e.targetSets,
-      repRange: e.repRange,
-      rirTarget: e.rirTarget,
-      params: e.params,
-    }));
-
-  async function start(day: ProgramDay | null) {
+  // Start an empty session and go straight to logging — you build the ordered
+  // list incrementally there (the program is a quick-add palette, not a
+  // pre-loaded day). The session name aggregates from what you add.
+  async function start() {
     if (starting) return;
     setStarting(true);
     try {
-      const origin = day ? prettyDayName(day.name) : "Ad-hoc";
-      const session = await createSession({ date: todayIso(), origin, programId: program?.id ?? null });
-      if (day) await attachToComposition(session.id, toAttach(day), origin);
+      const session = await createSession({ date: todayIso(), origin: "New session", programId: null });
       router.push(`/log/${session.id}`);
     } finally {
       setStarting(false);
@@ -218,8 +169,8 @@ export default function SessionsPage() {
     <main className={styles.page}>
       <div className={styles.header}>
         <h1>Sessions</h1>
-        <button className={styles.startBtn} onClick={() => setPickerOpen((o) => !o)} disabled={starting}>
-          {pickerOpen ? "Close" : "Start a new session"}
+        <button className={styles.startBtn} onClick={start} disabled={starting}>
+          {starting ? "Starting…" : "Start a new session"}
         </button>
       </div>
 
@@ -233,22 +184,6 @@ export default function SessionsPage() {
         {syncError === "network" && pending > 0 && <span className={styles.syncErr}>· offline, will retry</span>}
         {syncError === "server" && <span className={styles.syncErr}>· sync error, will retry</span>}
       </div>
-
-      {pickerOpen && (
-        <div className={styles.picker}>
-          <p className={styles.pickerHint}>Start from a program day, or an empty ad-hoc session you build as you go.</p>
-          <div className={styles.dayChoice}>
-            {program?.days.map((d) => (
-              <button key={d.id} className={styles.dayChoiceBtn} onClick={() => start(d)} disabled={starting}>
-                {d.name} <span style={{ opacity: 0.6 }}>({d.exercises.length})</span>
-              </button>
-            ))}
-            <button className={styles.dayChoiceBtn} onClick={() => start(null)} disabled={starting}>
-              Ad-hoc session
-            </button>
-          </div>
-        </div>
-      )}
 
       {!loaded ? (
         <p className={styles.empty}>Loading…</p>

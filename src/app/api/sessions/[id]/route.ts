@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs, cardioLogs, exercises } from "@/db/schema";
+import { workoutLogs, setLogs, cardioLogs, exercises, sessionExercises } from "@/db/schema";
 
 // GET /api/sessions/[id] — one session in full, keyed by client_session_id.
 // Used to hydrate the local store when opening a session that lives only on the
-// server (e.g. finished on another device, or after a local store reset). It
-// returns everything needed to rebuild the log screen offline afterwards: the
-// distinct exercises (with the metadata the cards need) plus their logged sets
-// and cardio, each carrying its server id so later edits/deletes route by it.
+// server. Returns the ordered performed list (session_exercises), or — for a
+// legacy session with none — one synthesized occurrence per distinct logged
+// exercise. Sets/cardio carry their session_exercise link so the client can
+// re-attach each to the right occurrence.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -18,6 +18,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const sets = await db
     .select({
       id: setLogs.id,
+      sessionExerciseId: setLogs.sessionExerciseId,
       exerciseId: setLogs.exerciseId,
       machineId: setLogs.machineId,
       setIndex: setLogs.setIndex,
@@ -34,6 +35,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const cardio = await db
     .select({
       id: cardioLogs.id,
+      sessionExerciseId: cardioLogs.sessionExerciseId,
       exerciseId: cardioLogs.exerciseId,
       durationMin: cardioLogs.durationMin,
       incline: cardioLogs.incline,
@@ -46,27 +48,68 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .where(eq(cardioLogs.workoutLogId, log.id))
     .orderBy(cardioLogs.id);
 
-  // Metadata for every exercise that appears in this session, so the client can
-  // render a card without a second round-trip per exercise.
-  const exerciseIds = Array.from(new Set([...sets.map((s) => s.exerciseId), ...cardio.map((c) => c.exerciseId)]));
+  const occ = await db
+    .select({
+      id: sessionExercises.id,
+      clientInstanceId: sessionExercises.clientInstanceId,
+      exerciseId: sessionExercises.exerciseId,
+      orderIndex: sessionExercises.orderIndex,
+      source: sessionExercises.source,
+    })
+    .from(sessionExercises)
+    .where(eq(sessionExercises.workoutLogId, log.id))
+    .orderBy(sessionExercises.orderIndex);
+
+  // The ordered list is the real occurrences, or (legacy) one per distinct
+  // logged exercise, ordered by first appearance.
+  type OccRow = { sessionExerciseId: number | null; clientInstanceId: string | null; exerciseId: string; orderIndex: number; source: string | null };
+  let occRows: OccRow[];
+  if (occ.length > 0) {
+    occRows = occ.map((o) => ({
+      sessionExerciseId: o.id,
+      clientInstanceId: o.clientInstanceId,
+      exerciseId: o.exerciseId,
+      orderIndex: o.orderIndex,
+      source: o.source,
+    }));
+  } else {
+    const seen: string[] = [];
+    for (const s of sets) if (!seen.includes(s.exerciseId)) seen.push(s.exerciseId);
+    for (const c of cardio) if (!seen.includes(c.exerciseId)) seen.push(c.exerciseId);
+    occRows = seen.map((exerciseId, i) => ({
+      sessionExerciseId: null,
+      clientInstanceId: null,
+      exerciseId,
+      orderIndex: i,
+      source: log.programDay,
+    }));
+  }
+
+  // Metadata for every exercise that appears, so the client renders cards
+  // without a round-trip each.
+  const exerciseIds = Array.from(new Set(occRows.map((o) => o.exerciseId)));
   const exerciseMeta = exerciseIds.length
     ? await db.select().from(exercises).where(inArray(exercises.id, exerciseIds))
     : [];
-  const metaById = new Map(
-    exerciseMeta.map((e) => [
-      e.id,
-      {
-        exerciseId: e.id,
-        exerciseName: e.name,
-        loadType: e.loadType,
-        portable: e.portable,
-        conditioningOnly: e.conditioningOnly,
-        provenance: e.source,
-        untagged: e.untagged,
-        params: e.params,
-      },
-    ])
-  );
+  const metaById = new Map(exerciseMeta.map((e) => [e.id, e]));
+
+  const exercisesOut = occRows.map((o) => {
+    const m = metaById.get(o.exerciseId);
+    return {
+      sessionExerciseId: o.sessionExerciseId,
+      clientInstanceId: o.clientInstanceId,
+      exerciseId: o.exerciseId,
+      exerciseName: m?.name ?? o.exerciseId,
+      loadType: m?.loadType ?? "free_weight",
+      portable: m?.portable ?? true,
+      conditioningOnly: m?.conditioningOnly ?? false,
+      provenance: m?.source ?? "custom",
+      untagged: m?.untagged ?? true,
+      params: m?.params ?? null,
+      orderIndex: o.orderIndex,
+      source: o.source,
+    };
+  });
 
   return NextResponse.json({
     id: log.clientSessionId,
@@ -74,7 +117,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     date: log.date,
     programDay: log.programDay,
     finishedAt: log.finishedAt,
-    exercises: exerciseIds.map((id) => metaById.get(id)).filter(Boolean),
+    exercises: exercisesOut,
     sets,
     cardio,
   });

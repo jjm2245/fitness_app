@@ -27,6 +27,7 @@ export interface LocalSession {
 export interface SessionSet {
   localId?: number;
   sessionId: string;
+  instanceId: string; // the performed occurrence this set belongs to (v2)
   date: string; // the session's date (denormalized for the workout_log)
   exerciseId: string;
   exerciseName: string;
@@ -41,32 +42,38 @@ export interface SessionSet {
   syncState: SetSyncState;
 }
 
+// "Done" now marks a specific occurrence (instance), since the same exercise
+// can appear multiple times in one session.
 export interface CompletedFlag {
-  key: string; // `${sessionId}::${exerciseId}`
+  instanceId: string; // keyPath
   sessionId: string;
-  exerciseId: string;
   completed: boolean;
 }
 
-export interface CompositionItem {
-  key: string; // `${sessionId}::${exerciseId}`
+// One performed occurrence in the ordered session list (v2). The same exercise
+// can occur multiple times at different order_index (tricep → chest → tricep).
+// The client-owned instanceId is the identity that maps to exactly one
+// session_exercises row on sync.
+export interface Occurrence {
+  instanceId: string; // keyPath, client-generated
   sessionId: string;
   exerciseId: string;
   exerciseName: string;
   loadType: string;
   portable: boolean;
   conditioningOnly: boolean;
-  source: string; // origin in the session: "block:Cardio" | "PPL·legs" | "adhoc"
+  source: string; // where added from: "Legs + shoulders" | "block:Abs" | "Ad-hoc"
   provenance: string; // curated | library | custom
   untagged: boolean;
   orderIndex: number;
-  // Program-day targets travel with the item so the log screen is fully
+  // Program-day targets travel with the occurrence so the log screen is fully
   // self-contained per session (no /api/program round-trip). Null for
   // ad-hoc/block items with no prescribed target.
   targetSets: number | null;
   repRange: string | null;
   rirTarget: string | null;
   params: Record<string, unknown> | null;
+  synced: boolean; // occurrence row pushed to the server
 }
 
 export type CardioSyncState = SetSyncState;
@@ -74,6 +81,7 @@ export type CardioSyncState = SetSyncState;
 export interface SessionCardio {
   localId?: number;
   sessionId: string;
+  instanceId: string;
   date: string;
   exerciseId: string;
   exerciseName: string;
@@ -89,46 +97,60 @@ export interface SessionCardio {
 
 interface SessionDB extends DBSchema {
   sessions: { key: string; value: LocalSession };
-  sets: { key: number; value: SessionSet; indexes: { "by-session": string } };
+  occurrences: { key: string; value: Occurrence; indexes: { "by-session": string } };
+  sets: { key: number; value: SessionSet; indexes: { "by-session": string; "by-instance": string } };
   completed: { key: string; value: CompletedFlag; indexes: { "by-session": string } };
-  composition: { key: string; value: CompositionItem; indexes: { "by-session": string } };
-  cardio: { key: number; value: SessionCardio; indexes: { "by-session": string } };
+  cardio: { key: number; value: SessionCardio; indexes: { "by-session": string; "by-instance": string } };
 }
 
 let dbPromise: Promise<IDBPDatabase<SessionDB>> | null = null;
 
 function getDb() {
   if (!dbPromise) {
-    dbPromise = openDB<SessionDB>("fitness-app-session", 3, {
-      upgrade(db, oldVersion) {
-        // v3 re-keys the whole store from date → sessionId. The old date-keyed
-        // stores are dropped and recreated; any *unsynced* local session data
-        // is cleared by this one-time bump (finished sessions are safe on the
-        // server and reappear via GET /api/sessions). See DECISIONS.md.
-        // Legacy (date-keyed) store names, some no longer in the typed schema
-        // (e.g. "meta") — cast through the raw name list to drop them.
-        for (const name of ["sets", "completed", "meta", "composition", "cardio"]) {
+    dbPromise = openDB<SessionDB>("fitness-app-session", 4, {
+      upgrade(db) {
+        // v4 introduces the ordered-occurrence model (session-model v2): sets and
+        // cardio link to an occurrence (instanceId), the `composition` store is
+        // replaced by `occurrences`, and `completed` is keyed by occurrence.
+        // Destructive bump — unsynced local data is cleared; finished sessions
+        // are safe on the server and reappear via GET /api/sessions.
+        for (const name of ["sets", "completed", "meta", "composition", "occurrences", "cardio"]) {
           const stores = db.objectStoreNames as unknown as DOMStringList;
           if (stores.contains(name)) db.deleteObjectStore(name as never);
         }
-        db.createObjectStore("sessions", { keyPath: "id" });
+        if (!(db.objectStoreNames as unknown as DOMStringList).contains("sessions")) {
+          db.createObjectStore("sessions", { keyPath: "id" });
+        }
+        const occ = db.createObjectStore("occurrences", { keyPath: "instanceId" });
+        occ.createIndex("by-session", "sessionId");
         const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
         sets.createIndex("by-session", "sessionId");
-        const completed = db.createObjectStore("completed", { keyPath: "key" });
+        sets.createIndex("by-instance", "instanceId");
+        const completed = db.createObjectStore("completed", { keyPath: "instanceId" });
         completed.createIndex("by-session", "sessionId");
-        const composition = db.createObjectStore("composition", { keyPath: "key" });
-        composition.createIndex("by-session", "sessionId");
         const cardio = db.createObjectStore("cardio", { keyPath: "localId", autoIncrement: true });
         cardio.createIndex("by-session", "sessionId");
-        void oldVersion;
+        cardio.createIndex("by-instance", "instanceId");
       },
     });
   }
   return dbPromise;
 }
 
-function compKey(sessionId: string, exerciseId: string) {
-  return `${sessionId}::${exerciseId}`;
+/** Test-only: close + delete the IndexedDB so each test starts from a clean
+ * store (occurrences now sync, so leftover unsynced rows would otherwise leak
+ * across tests via the shared fake-indexeddb). Not used in app code. */
+export async function _resetDbForTests(): Promise<void> {
+  if (dbPromise) {
+    (await dbPromise).close();
+    dbPromise = null;
+  }
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase("fitness-app-session");
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 // --- Sessions --------------------------------------------------------------
@@ -172,50 +194,42 @@ export async function listLocalSessions(): Promise<LocalSession[]> {
 }
 
 export interface LocalSessionSummary extends LocalSession {
-  exerciseCount: number; // distinct exercises with logged sets or cardio
+  exerciseCount: number; // performed occurrences (v2 — repeats count separately)
   setCount: number;
   cardioCount: number;
 }
 
 /**
- * Local sessions with logged-volume counts, newest first. One pass over the
- * sets/cardio stores rather than a query per session, so the list renders from
- * a couple of reads. Exercise count mirrors the server's (distinct logged
- * exercises), so a session reads the same before and after sync.
+ * Local sessions with performed counts, newest first. One pass over the
+ * occurrences/sets/cardio stores rather than a query per session. Exercise
+ * count is the number of performed occurrences (the ordered list length), so a
+ * session reads the same before and after sync.
  */
 export async function listLocalSessionSummaries(): Promise<LocalSessionSummary[]> {
   const db = await getDb();
-  const [sessions, sets, cardio] = await Promise.all([
+  const [sessions, occurrences, sets, cardio] = await Promise.all([
     db.getAll("sessions"),
+    db.getAll("occurrences"),
     db.getAll("sets"),
     db.getAll("cardio"),
   ]);
 
-  const perSession = new Map<string, { ex: Set<string>; setCount: number; cardioCount: number }>();
+  const perSession = new Map<string, { occ: number; setCount: number; cardioCount: number }>();
   const bucket = (id: string) => {
     let b = perSession.get(id);
-    if (!b) perSession.set(id, (b = { ex: new Set(), setCount: 0, cardioCount: 0 }));
+    if (!b) perSession.set(id, (b = { occ: 0, setCount: 0, cardioCount: 0 }));
     return b;
   };
-  for (const s of sets) {
-    if (s.syncState === "pending_delete") continue;
-    const b = bucket(s.sessionId);
-    b.ex.add(s.exerciseId);
-    b.setCount += 1;
-  }
-  for (const c of cardio) {
-    if (c.syncState === "pending_delete") continue;
-    const b = bucket(c.sessionId);
-    b.ex.add(c.exerciseId);
-    b.cardioCount += 1;
-  }
+  for (const o of occurrences) bucket(o.sessionId).occ += 1;
+  for (const s of sets) if (s.syncState !== "pending_delete") bucket(s.sessionId).setCount += 1;
+  for (const c of cardio) if (c.syncState !== "pending_delete") bucket(c.sessionId).cardioCount += 1;
 
   return sessions
     .map((s) => {
       const b = perSession.get(s.id);
       return {
         ...s,
-        exerciseCount: b ? b.ex.size : 0,
+        exerciseCount: b ? b.occ : 0,
         setCount: b ? b.setCount : 0,
         cardioCount: b ? b.cardioCount : 0,
       };
@@ -238,8 +252,8 @@ export async function deleteLocalSession(id: string): Promise<void> {
   await db.delete("sessions", id);
   for (const s of await db.getAllFromIndex("sets", "by-session", id)) if (s.localId != null) await db.delete("sets", s.localId);
   for (const c of await db.getAllFromIndex("cardio", "by-session", id)) if (c.localId != null) await db.delete("cardio", c.localId);
-  for (const co of await db.getAllFromIndex("composition", "by-session", id)) await db.delete("composition", co.key);
-  for (const f of await db.getAllFromIndex("completed", "by-session", id)) await db.delete("completed", f.key);
+  for (const o of await db.getAllFromIndex("occurrences", "by-session", id)) await db.delete("occurrences", o.instanceId);
+  for (const f of await db.getAllFromIndex("completed", "by-session", id)) await db.delete("completed", f.instanceId);
 }
 
 // Shape returned by GET /api/sessions/[id] — a whole server-side session.
@@ -249,7 +263,11 @@ export interface ServerSession {
   date: string;
   programDay: string | null;
   finishedAt: string | null;
+  // Ordered performed occurrences (session_exercises). For a legacy session with
+  // no rows, the API synthesizes one occurrence per distinct logged exercise.
   exercises: Array<{
+    sessionExerciseId: number | null;
+    clientInstanceId: string | null;
     exerciseId: string;
     exerciseName: string;
     loadType: string;
@@ -258,9 +276,12 @@ export interface ServerSession {
     provenance: string;
     untagged: boolean;
     params: Record<string, unknown> | null;
+    orderIndex: number;
+    source: string | null;
   }>;
   sets: Array<{
     id: number;
+    sessionExerciseId: number | null;
     exerciseId: string;
     machineId: string | null;
     setIndex: number;
@@ -272,6 +293,7 @@ export interface ServerSession {
   }>;
   cardio: Array<{
     id: number;
+    sessionExerciseId: number | null;
     exerciseId: string;
     durationMin: string | null;
     incline: string | null;
@@ -284,17 +306,16 @@ export interface ServerSession {
 
 // Rebuild a session's local rows from the server. Only runs when the session
 // isn't already local — a session with unsynced local edits is never clobbered.
-// Everything written lands as "synced" (with server ids) so later edits/deletes
-// route by server id exactly like locally-created rows. This is what makes
-// opening an old, synced-only session editable (it needs connectivity to fetch,
-// then works offline). Returns the hydrated LocalSession, or the existing one.
+// Everything written lands as "synced" (occurrences) / with server ids (sets),
+// so later edits/deletes route by server id exactly like locally-created rows.
+// Sets link to occurrences by session_exercise id; a set with none (legacy)
+// falls back to the first occurrence of its exercise.
 export async function hydrateFromServer(server: ServerSession): Promise<LocalSession> {
   const db = await getDb();
   const existing = await db.get("sessions", server.id);
   if (existing) return existing;
 
-  const meta = new Map(server.exercises.map((e) => [e.exerciseId, e]));
-  const nameOf = (id: string) => meta.get(id)?.exerciseName ?? id;
+  const nameOf = (id: string) => server.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? id;
 
   const session: LocalSession = {
     id: server.id,
@@ -307,31 +328,47 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
   };
   await db.put("sessions", session);
 
-  // Composition: one item per distinct exercise, so each renders as a card.
-  let order = 0;
-  for (const e of server.exercises) {
-    await db.put("composition", {
-      key: compKey(server.id, e.exerciseId),
+  // One occurrence per server row, preserving order. Map server occurrence id →
+  // local instanceId so sets/cardio can be linked; also remember the first
+  // occurrence per exercise for legacy sets with no link.
+  const instByServerId = new Map<number, string>();
+  const firstInstByExercise = new Map<string, string>();
+  const sorted = [...server.exercises].sort((a, b) => a.orderIndex - b.orderIndex);
+  for (let i = 0; i < sorted.length; i++) {
+    const e = sorted[i];
+    const instanceId = e.clientInstanceId ?? newId();
+    if (e.sessionExerciseId != null) instByServerId.set(e.sessionExerciseId, instanceId);
+    if (!firstInstByExercise.has(e.exerciseId)) firstInstByExercise.set(e.exerciseId, instanceId);
+    const occ: Occurrence = {
+      instanceId,
       sessionId: server.id,
-      source: session.origin,
-      orderIndex: order++,
       exerciseId: e.exerciseId,
       exerciseName: e.exerciseName,
       loadType: e.loadType,
       portable: e.portable,
       conditioningOnly: e.conditioningOnly,
+      source: e.source ?? session.origin,
       provenance: e.provenance,
       untagged: e.untagged,
+      orderIndex: i,
       targetSets: null,
       repRange: null,
       rirTarget: null,
       params: e.params,
-    });
+      synced: true,
+    };
+    await db.put("occurrences", occ);
   }
 
+  const instanceFor = (exerciseId: string, sessionExerciseId: number | null): string =>
+    (sessionExerciseId != null ? instByServerId.get(sessionExerciseId) : undefined) ??
+    firstInstByExercise.get(exerciseId) ??
+    newId();
+
   for (const s of server.sets) {
-    const row: SessionSet = {
+    await db.add("sets", {
       sessionId: server.id,
+      instanceId: instanceFor(s.exerciseId, s.sessionExerciseId),
       date: server.date,
       exerciseId: s.exerciseId,
       exerciseName: nameOf(s.exerciseId),
@@ -344,13 +381,13 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       rir: s.rir != null ? Number(s.rir) : null,
       serverId: s.id,
       syncState: "synced",
-    };
-    await db.add("sets", row);
+    });
   }
 
   for (const c of server.cardio) {
-    const row: SessionCardio = {
+    await db.add("cardio", {
       sessionId: server.id,
+      instanceId: instanceFor(c.exerciseId, c.sessionExerciseId),
       date: server.date,
       exerciseId: c.exerciseId,
       exerciseName: nameOf(c.exerciseId),
@@ -362,8 +399,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       notes: c.notes,
       serverId: c.id,
       syncState: "synced",
-    };
-    await db.add("cardio", row);
+    });
   }
 
   return session;
@@ -373,6 +409,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
 
 export interface LogSetInput {
   sessionId: string;
+  instanceId: string; // the occurrence this set belongs to
   date: string;
   exerciseId: string;
   exerciseName: string;
@@ -386,9 +423,10 @@ export interface LogSetInput {
 
 export async function logSet(input: LogSetInput): Promise<SessionSet> {
   const db = await getDb();
-  const existing = await db.getAllFromIndex("sets", "by-session", input.sessionId);
-  const setIndex =
-    existing.filter((s) => s.exerciseId === input.exerciseId && s.syncState !== "pending_delete").length + 1;
+  // Set index is per-occurrence, so two occurrences of the same exercise each
+  // number their sets from 1.
+  const existing = await db.getAllFromIndex("sets", "by-instance", input.instanceId);
+  const setIndex = existing.filter((s) => s.syncState !== "pending_delete").length + 1;
 
   const row: SessionSet = { ...input, setIndex, serverId: null, syncState: "pending_create" };
   const localId = await db.add("sets", row);
@@ -423,20 +461,20 @@ export async function deleteSet(localId: number): Promise<void> {
   else await db.put("sets", { ...row, syncState: "pending_delete" });
 }
 
-// --- Completed-exercise flags (local only) ---------------------------------
+// --- Completed-occurrence flags (local only) -------------------------------
 
-export async function setExerciseCompleted(sessionId: string, exerciseId: string, completed: boolean): Promise<void> {
+export async function setOccurrenceCompleted(sessionId: string, instanceId: string, completed: boolean): Promise<void> {
   const db = await getDb();
-  await db.put("completed", { key: compKey(sessionId, exerciseId), sessionId, exerciseId, completed });
+  await db.put("completed", { instanceId, sessionId, completed });
 }
 
-export async function getCompletedExercises(sessionId: string): Promise<Set<string>> {
+export async function getCompletedInstances(sessionId: string): Promise<Set<string>> {
   const db = await getDb();
   const rows = await db.getAllFromIndex("completed", "by-session", sessionId);
-  return new Set(rows.filter((r) => r.completed).map((r) => r.exerciseId));
+  return new Set(rows.filter((r) => r.completed).map((r) => r.instanceId));
 }
 
-// --- Session composition (attached blocks / ad-hoc exercises, local only) ---
+// --- Occurrences (the ordered performed list, v2) --------------------------
 
 export interface AttachExercise {
   exerciseId: string;
@@ -452,48 +490,95 @@ export interface AttachExercise {
   params?: Record<string, unknown> | null;
 }
 
-export async function attachToComposition(sessionId: string, items: AttachExercise[], source: string): Promise<void> {
+/** Append one performed occurrence to the session (repeats allowed). Returns it.
+ * Recomputes the session's aggregated name from its occurrence sources. */
+export async function addOccurrence(sessionId: string, item: AttachExercise, source: string): Promise<Occurrence> {
   const db = await getDb();
-  const existing = await db.getAllFromIndex("composition", "by-session", sessionId);
-  let order = existing.length;
-  for (const item of items) {
-    const key = compKey(sessionId, item.exerciseId);
-    if (await db.get("composition", key)) continue;
-    await db.put("composition", {
-      key,
-      sessionId,
-      source,
-      orderIndex: order++,
-      exerciseId: item.exerciseId,
-      exerciseName: item.exerciseName,
-      loadType: item.loadType,
-      portable: item.portable,
-      conditioningOnly: item.conditioningOnly,
-      provenance: item.provenance,
-      untagged: item.untagged,
-      targetSets: item.targetSets ?? null,
-      repRange: item.repRange ?? null,
-      rirTarget: item.rirTarget ?? null,
-      params: item.params ?? null,
-    });
-  }
+  const existing = await db.getAllFromIndex("occurrences", "by-session", sessionId);
+  const orderIndex = existing.reduce((m, o) => Math.max(m, o.orderIndex + 1), 0);
+  const occ: Occurrence = {
+    instanceId: newId(),
+    sessionId,
+    source,
+    orderIndex,
+    exerciseId: item.exerciseId,
+    exerciseName: item.exerciseName,
+    loadType: item.loadType,
+    portable: item.portable,
+    conditioningOnly: item.conditioningOnly,
+    provenance: item.provenance,
+    untagged: item.untagged,
+    targetSets: item.targetSets ?? null,
+    repRange: item.repRange ?? null,
+    rirTarget: item.rirTarget ?? null,
+    params: item.params ?? null,
+    synced: false,
+  };
+  await db.put("occurrences", occ);
+  await recomputeSessionName(sessionId);
+  return occ;
 }
 
-export async function getSessionComposition(sessionId: string): Promise<CompositionItem[]> {
+export async function listOccurrences(sessionId: string): Promise<Occurrence[]> {
   const db = await getDb();
-  const rows = await db.getAllFromIndex("composition", "by-session", sessionId);
+  const rows = await db.getAllFromIndex("occurrences", "by-session", sessionId);
   return rows.sort((a, b) => a.orderIndex - b.orderIndex);
 }
 
-export async function removeFromComposition(sessionId: string, exerciseId: string): Promise<void> {
+/** Move an occurrence up/down by swapping order_index with its neighbor. */
+export async function moveOccurrence(sessionId: string, instanceId: string, dir: "up" | "down"): Promise<void> {
   const db = await getDb();
-  await db.delete("composition", compKey(sessionId, exerciseId));
+  const ordered = await listOccurrences(sessionId);
+  const i = ordered.findIndex((o) => o.instanceId === instanceId);
+  if (i === -1) return;
+  const j = dir === "up" ? i - 1 : i + 1;
+  if (j < 0 || j >= ordered.length) return;
+  const a = ordered[i];
+  const b = ordered[j];
+  await db.put("occurrences", { ...a, orderIndex: b.orderIndex, synced: false });
+  await db.put("occurrences", { ...b, orderIndex: a.orderIndex, synced: false });
+}
+
+/** Remove an occurrence and everything hanging off it (for an accidental add). */
+export async function removeOccurrence(sessionId: string, instanceId: string): Promise<void> {
+  const db = await getDb();
+  await db.delete("occurrences", instanceId);
+  await db.delete("completed", instanceId);
+  for (const s of await db.getAllFromIndex("sets", "by-instance", instanceId)) {
+    // A synced set needs a server delete; an unsynced one can just vanish.
+    if (s.serverId != null) await db.put("sets", { ...s, syncState: "pending_delete" });
+    else if (s.localId != null) await db.delete("sets", s.localId);
+  }
+  for (const c of await db.getAllFromIndex("cardio", "by-instance", instanceId)) {
+    if (c.serverId != null) await db.put("cardio", { ...c, syncState: "pending_delete" });
+    else if (c.localId != null) await db.delete("cardio", c.localId);
+  }
+  await recomputeSessionName(sessionId);
+}
+
+// The session name reflects every contributing source, in the order they first
+// appeared ("Legs + shoulders" → add abs → "Legs + shoulders + abs"). Ad-hoc
+// picks contribute "Ad-hoc". Persisted onto the session so the list + finish
+// label read it without recomputing.
+export async function recomputeSessionName(sessionId: string): Promise<void> {
+  const db = await getDb();
+  const session = await db.get("sessions", sessionId);
+  if (!session) return;
+  const occ = await listOccurrences(sessionId);
+  const seen: string[] = [];
+  for (const o of occ) {
+    const label = (o.source || "Ad-hoc").trim();
+    if (!seen.includes(label)) seen.push(label);
+  }
+  const origin = seen.length ? seen.join(" + ") : "New session";
+  if (origin !== session.origin) await db.put("sessions", { ...session, origin });
 }
 
 // --- Cardio ----------------------------------------------------------------
 
 export interface LogCardioInput {
   sessionId: string;
+  instanceId: string;
   date: string;
   exerciseId: string;
   exerciseName: string;
@@ -572,12 +657,29 @@ export async function pendingCount(sessionId?: string): Promise<number> {
   const cardioRows = sessionId ? await db.getAllFromIndex("cardio", "by-session", sessionId) : await db.getAll("cardio");
   n += cardioRows.filter((c) => c.syncState !== "synced").length;
 
+  // An unsynced occurrence (e.g. added but not yet logged, or reordered) is a
+  // pending change too — the ordered list must reach the server.
+  const occRows = sessionId ? await db.getAllFromIndex("occurrences", "by-session", sessionId) : await db.getAll("occurrences");
+  n += occRows.filter((o) => !o.synced).length;
+
   const sessions = sessionId ? [await db.get("sessions", sessionId)] : await db.getAll("sessions");
   for (const s of sessions) if (s && s.finishedAt && !s.finishSynced) n += 1;
   return n;
 }
 
-export async function sync(): Promise<SyncResult> {
+// Serialize sync: concurrent callers (e.g. two rapid set logs each firing
+// onSessionChanged) would otherwise both read the same pending rows and
+// double-POST — set-logs is a plain insert, so that duplicates logged sets.
+// Chaining each drain after the previous makes the second run see the outbox
+// already emptied. Data-integrity fix, discovered via rapid logging.
+let syncChain: Promise<unknown> = Promise.resolve();
+export function sync(): Promise<SyncResult> {
+  const run = syncChain.then(() => runSync());
+  syncChain = run.catch(() => {});
+  return run;
+}
+
+async function runSync(): Promise<SyncResult> {
   const db = await getDb();
   const result: SyncResult = {
     created: 0, updated: 0, deleted: 0, finished: 0, failed: 0,
@@ -599,6 +701,38 @@ export async function sync(): Promise<SyncResult> {
 
   const jsonHeaders = { "Content-Type": "application/json" };
 
+  // Occurrences first — the ordered performed list must exist server-side so the
+  // set/cardio POSTs can link to session_exercise rows by client_instance_id.
+  // One upsert per session pushes its whole ordered list (idempotent).
+  const allSessions = await db.getAll("sessions");
+  const sessionById = new Map(allSessions.map((s) => [s.id, s]));
+  const occBySession = new Map<string, Occurrence[]>();
+  for (const o of await db.getAll("occurrences")) {
+    (occBySession.get(o.sessionId) ?? occBySession.set(o.sessionId, []).get(o.sessionId)!).push(o);
+  }
+  for (const [sid, occs] of occBySession) {
+    if (occs.every((o) => o.synced)) continue;
+    const s = sessionById.get(sid);
+    if (!s) continue;
+    try {
+      await send("/api/session-exercises", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          clientSessionId: sid,
+          date: s.date,
+          programDay: s.origin,
+          exercises: [...occs]
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+            .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source })),
+        }),
+      });
+      for (const o of occs) await db.put("occurrences", { ...o, synced: true });
+    } catch (e) {
+      if (record(e)) return result;
+    }
+  }
+
   for (const row of await db.getAll("sets")) {
     try {
       if (row.syncState === "pending_create") {
@@ -607,6 +741,7 @@ export async function sync(): Promise<SyncResult> {
           headers: jsonHeaders,
           body: JSON.stringify({
             clientSessionId: row.sessionId,
+            instanceId: row.instanceId,
             date: row.date,
             exerciseId: row.exerciseId,
             machineId: row.machineId,
@@ -649,6 +784,7 @@ export async function sync(): Promise<SyncResult> {
           headers: jsonHeaders,
           body: JSON.stringify({
             clientSessionId: row.sessionId,
+            instanceId: row.instanceId,
             date: row.date,
             exerciseId: row.exerciseId,
             durationMin: row.durationMin,
