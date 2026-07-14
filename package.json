@@ -14,7 +14,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
-    "db:seed:library": "tsx src/db/seedLibrary.ts"
+    "db:seed:library": "tsx src/db/seedLibrary.ts",
+    "db:check": "tsx scripts/check-migrations.ts",
+    "release": "npm run db:migrate && npm run db:seed && npm run db:seed:library"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
