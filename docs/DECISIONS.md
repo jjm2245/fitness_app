@@ -907,3 +907,27 @@ portable/free lane the progression core treats as un-rebaselined).
   set to the library entry with no orphans; machine add/edit-note/remove and
   auto-associate-on-log all work.
 - Migrations 0011 + 0012, IndexedDB v4 — **LOCAL only**; prod held for review.
+
+## Prod brought to parity (session-model v2)
+
+Production Neon DB was found **4 migrations behind** the deployed code (applied
+0000–0008; missing 0009–0012) with the pre-merge seed (curated 37 / library 873,
+twins unmerged) — the cause of the broken prod app beyond the service-worker
+bug. Diagnosed via `scripts/inspect-db.sql` + `/api/health` (read `behind:true,
+applied:9`).
+
+With explicit user approval, ran `db:migrate` → `db:seed` → `db:seed:library`
+against Neon's **direct** (non-pooled) endpoint (the pooled endpoint can choke
+drizzle-kit migrations). Result: 13/13 migrations, `client_session_id`
+backfilled (0 nulls), curated 41 / library 835 / custom 4, merges applied.
+**User logged history preserved** (2 workout_logs, 6 set_logs intact).
+
+- `db:seed:library` is slow over a remote connection (873 single-row ingests —
+  ~minutes vs. seconds on the local socket); needs a long timeout or a
+  background run against prod.
+- **Known residue:** `lib_Hack_Squat` was left in place (the merge's guard
+  refused to delete it because prod logs/program reference it), so "Hack Squat"
+  appears twice in prod search. Cosmetic; resolvable by re-pointing its
+  references to the curated `hack_squat` then deleting the twin.
+- The exposed Neon credential was used with the user's temporary say-so;
+  **rotation is still outstanding.**
