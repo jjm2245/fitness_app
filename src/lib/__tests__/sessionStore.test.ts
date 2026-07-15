@@ -22,6 +22,8 @@ import {
   removeOccurrence,
   listLocalSessionSummaries,
   reconcileFinishedFromServer,
+  reconcileOccurrenceList,
+  rehydrateLocalFromServer,
   _resetDbForTests,
   type AttachExercise,
   type ServerSession,
@@ -590,6 +592,67 @@ describe("history-safe prune + two-pass heal (occurrence with synced sets)", () 
     expect(await pendingCount(id)).toBe(0); // flag cleared, nothing lingering
     // The deleted set is gone locally too (no orphaned set for the removed occ).
     expect((await getSessionSets(id)).some((s) => s.instanceId === t.instanceId)).toBe(false);
+  });
+});
+
+// Refusal path (item 2): the server keeps set-bearing occurrences this device
+// can't delete (it never knew about them) — THIS device is the stale side, so
+// Reconcile (re-POST local) is a dead end. We must flag it and offer the opposite
+// heal: pull the server's copy down.
+describe("refusal path — this device is behind, pull-from-server heals it", () => {
+  it("flags occurrenceConflict when the server keeps sets local can't delete, then rehydrate fixes it", async () => {
+    const serverOcc = new Set<string>();
+    const withSets = new Set<string>();
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
+      if (url === "/api/session-exercises" && (opts?.method ?? "GET") === "POST") {
+        const list = (JSON.parse(String(opts?.body ?? "{}")).exercises as Array<{ clientInstanceId: string }>).map((e) => e.clientInstanceId);
+        const keep = new Set(list);
+        const keptWithHistory: string[] = [];
+        for (const gid of [...serverOcc]) {
+          if (keep.has(gid)) continue;
+          if (withSets.has(gid)) keptWithHistory.push(gid); // guard keeps it
+          else serverOcc.delete(gid);
+        }
+        for (const gid of list) serverOcc.add(gid);
+        return { ok: true, status: 200, json: async () => ({ ok: true, keptWithHistory }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+
+    const { id } = await newSession();
+    const a = (await listOccurrences(id))[0].instanceId;
+    await sync(); // server now holds [a], clean
+
+    // The server also holds an occurrence with a logged set this device never had.
+    serverOcc.add("srv-b");
+    withSets.add("srv-b");
+
+    // Reconcile re-POSTs local [a] — the dead end: srv-b is kept (has a set) and
+    // local has no delete to fire, so it can't be resolved by pushing local.
+    await reconcileOccurrenceList(id);
+    const stale = await getSession(id);
+    expect(stale?.occurrenceConflict).toBe(true); // surfaced, not a silent forever-badge
+    expect(stale?.occurrencesDirty).toBe(true);
+    expect(await pendingCount(id)).toBeGreaterThan(0);
+
+    // The opposite heal: pull the server's authoritative copy down.
+    const server: ServerSession = {
+      id, clientSessionId: id, date: "2026-08-01", programDay: "Test day", finishedAt: null,
+      exercises: [
+        { sessionExerciseId: 1, clientInstanceId: a, exerciseId: "deadlift", exerciseName: "Deadlift", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 0, source: "Test day" },
+        { sessionExerciseId: 2, clientInstanceId: "srv-b", exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 1, source: "Test day" },
+      ],
+      sets: [ { id: 999, sessionExerciseId: 2, exerciseId: "skull_crusher", machineId: null, setIndex: 1, setType: "working", load: "80", reps: 8, effort: "near_failure", rir: null } ],
+      cardio: [],
+    };
+    await rehydrateLocalFromServer(server);
+
+    // Local now matches the server: the missing occurrence + its set are back,
+    // and the conflict/pending state is cleared.
+    expect((await listOccurrences(id)).map((o) => o.exerciseId)).toEqual(["deadlift", "skull_crusher"]);
+    expect((await getSession(id))?.occurrenceConflict ?? false).toBe(false);
+    expect((await getSessionSets(id)).length).toBe(1);
+    expect(await pendingCount(id)).toBe(0);
   });
 });
 

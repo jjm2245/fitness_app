@@ -10,6 +10,7 @@ import {
   deleteSession,
   reconcileFinishedFromServer,
   reconcileOccurrenceList,
+  rehydrateLocalFromServer,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -44,6 +45,9 @@ interface Row {
   // Why it's pending — surfaced in the badge so "not synced" is never a mystery
   // (esp. on a phone, where we can't open the store). null when fully synced.
   pendingReason: string | null;
+  // This device is the stale side (server has sets it lacks) — offer "pull from
+  // server" instead of "Reconcile" (which would be a no-op here).
+  conflict: boolean;
 }
 
 function todayIso() {
@@ -136,6 +140,7 @@ export default function SessionsPage() {
         local: false,
         pendingSync: false,
         pendingReason: null,
+        conflict: false,
       });
     }
     for (const s of local) {
@@ -147,7 +152,12 @@ export default function SessionsPage() {
       const finishPending = !!s.finishedAt && !s.finishSynced && !prev?.finishedAt;
       const serverCount = prev?.exerciseCount ?? s.exerciseCount;
       const listPending = s.exerciseCount !== serverCount;
-      const reason = finishPending
+      // Conflict wins: the server proved it holds logged sets this device is
+      // missing, so re-POSTing local is a dead end — the heal is to pull down.
+      const conflict = !!s.occurrenceConflict;
+      const reason = conflict
+        ? "this device is behind"
+        : finishPending
         ? "finish"
         : listPending
         ? `list (local ${s.exerciseCount}${prev ? ` / server ${serverCount}` : ""})`
@@ -163,6 +173,7 @@ export default function SessionsPage() {
         local: true,
         pendingSync: reason !== null,
         pendingReason: reason,
+        conflict,
       });
     }
     const all = Array.from(byId.values());
@@ -189,6 +200,21 @@ export default function SessionsPage() {
     try {
       await reconcileOccurrenceList(id); // re-POST local list; server prunes (history-safe)
       await refresh();
+    } finally {
+      setReconciling(null);
+    }
+  }
+
+  // The opposite heal: this device is behind, so pull the server's copy down.
+  async function pullFromServer(id: string) {
+    if (reconciling) return;
+    setReconciling(id);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+      if (res.ok) {
+        await rehydrateLocalFromServer(await res.json());
+        await refresh();
+      }
     } finally {
       setReconciling(null);
     }
@@ -253,7 +279,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>In progress</div>
               <ul className={styles.list}>
                 {inProgress.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} reconciling={reconciling === r.id} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} onPull={pullFromServer} reconciling={reconciling === r.id} />
                 ))}
               </ul>
             </>
@@ -263,7 +289,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>Finished</div>
               <ul className={styles.list}>
                 {finished.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} reconciling={reconciling === r.id} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} onPull={pullFromServer} reconciling={reconciling === r.id} />
                 ))}
               </ul>
             </>
@@ -295,8 +321,8 @@ export default function SessionsPage() {
   );
 }
 
-function SessionRow({ row, onOpen, onDelete, onReconcile, reconciling }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void; onReconcile: (id: string) => void; reconciling: boolean }) {
-  const listMismatch = row.pendingSync && !!row.pendingReason?.startsWith("list");
+function SessionRow({ row, onOpen, onDelete, onReconcile, onPull, reconciling }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void; onReconcile: (id: string) => void; onPull: (id: string) => void; reconciling: boolean }) {
+  const listMismatch = row.pendingSync && !row.conflict && !!row.pendingReason?.startsWith("list");
   return (
     <li className={styles.rowWrap}>
       <button className={styles.row} onClick={() => onOpen(row.id)}>
@@ -323,6 +349,17 @@ function SessionRow({ row, onOpen, onDelete, onReconcile, reconciling }: { row: 
           disabled={reconciling}
         >
           {reconciling ? "…" : "Reconcile"}
+        </button>
+      )}
+      {row.conflict && (
+        <button
+          type="button"
+          className={styles.rowReconcile}
+          title="The server has logged sets this device doesn't have — this device is the stale side. Pull the server's copy down to replace the local one (safe: your logged sets on the server are kept)."
+          onClick={() => onPull(row.id)}
+          disabled={reconciling}
+        >
+          {reconciling ? "…" : "Pull from server"}
         </button>
       )}
       <button

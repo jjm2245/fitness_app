@@ -1198,3 +1198,32 @@ Two parts, per the chosen option:
 Tests: stateful-server test proving the guard + two-pass heal (remove an
 occurrence with a synced set → server keeps it → set deletes → pruned, no phantom,
 no lost set). 21/21 store tests; clean build.
+
+## Batch: refusal-path heal (this-device-is-behind) + prod URL
+
+Prod URL recorded in README: **https://fitness-app-self-pi.vercel.app** (health at
+`/api/health`). Confirmed `6ba5867` deployed green — `{"ok":true,"migrations":
+{"applied":14,"expected":14}}`.
+
+### Refusal path has a user-facing story now
+The guard keeps set-bearing occurrences and `occurrencesDirty` only clears on full
+reconcile — so if THIS device is the stale side (the server holds sets it never
+knew about), it has no deletes to fire, the two-pass can't resolve it, and
+Reconcile would be a silent no-op forever. Fix:
+- New session flag **`occurrenceConflict`**: set when `pushOccurrences` gets a
+  non-empty `keptWithHistory` on the **second** pass (i.e. after our own deletes
+  ran, the server still refuses — proof this device is behind, not mid-removal).
+  Cleared on any clean reconcile.
+- Badge reads **`not synced · this device is behind`**; the row shows a **"Pull
+  from server"** button instead of Reconcile.
+- New store fn **`rehydrateLocalFromServer(server)`**: local-only wipe of the
+  session + rebuild from the server's authoritative copy (`GET /api/sessions/[id]`),
+  pulling the missing occurrences + their sets/cardio back. Never a server delete;
+  the server is the source of truth in this direction.
+- Test: server keeps a set-bearing occurrence the device can't delete →
+  `occurrenceConflict` true, pending > 0 → `rehydrateLocalFromServer` restores the
+  missing occurrence + set and clears the conflict (22/22 store tests).
+
+Both heal directions now exist and are explicit/user-initiated: **Reconcile**
+(local is source of truth, safe via the prune guard) and **Pull from server**
+(server is source of truth). No automatic resolution — no wrong-side-wins.

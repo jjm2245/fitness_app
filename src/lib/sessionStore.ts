@@ -27,6 +27,12 @@ export interface LocalSession {
   // survives even when the last occurrence is removed (nothing left to flag),
   // which the old per-occurrence approach couldn't. Cleared when the list POSTs.
   occurrencesDirty?: boolean;
+  // Set when the server refused to prune occurrence(s) we tried to drop because
+  // they still carry logged sets/cardio (server `keptWithHistory`) AND deleting
+  // our local sets didn't resolve it — i.e. THIS DEVICE is the stale side (the
+  // server has data we never knew about). Re-POSTing local can't fix it (dead
+  // end); the correct heal is to pull the server's copy down (rehydrate).
+  occurrenceConflict?: boolean;
 }
 
 export interface SessionSet {
@@ -292,6 +298,16 @@ export async function reconcileFinishedFromServer(finishedIds: string[]): Promis
 export async function reconcileOccurrenceList(sessionId: string): Promise<SyncResult> {
   await markOccurrencesDirty(sessionId);
   return sync();
+}
+
+// The opposite heal, for when THIS device is the stale side (occurrenceConflict):
+// the server holds logged sets local never knew about, so re-POSTing local is a
+// dead end. Discard the local copy and rebuild it from the server's authoritative
+// session — pulling the missing occurrences (and their sets/cardio) back down.
+// Local-only wipe (never a server delete); the server's data is the source here.
+export async function rehydrateLocalFromServer(server: ServerSession): Promise<LocalSession> {
+  await deleteLocalSession(server.id);
+  return hydrateFromServer(server); // local now absent → rebuilds clean (dirty/conflict false)
 }
 
 export async function deleteLocalSession(id: string): Promise<void> {
@@ -833,7 +849,9 @@ async function runSync(): Promise<SyncResult> {
     if (!needsSync) continue;
     try {
       const clean = await pushOccurrences(s, occs);
-      if (s.occurrencesDirty && clean) await db.put("sessions", { ...s, occurrencesDirty: false });
+      // Clean → fully reconciled. Not clean → keep dirty for the post-delete
+      // retry (pass 2); don't declare a conflict yet (the sets may still delete).
+      await db.put("sessions", { ...s, occurrencesDirty: !clean, occurrenceConflict: false });
     } catch (e) {
       if (record(e)) return result;
     }
@@ -924,7 +942,11 @@ async function runSync(): Promise<SyncResult> {
     if (!s.occurrencesDirty) continue;
     const occs = await db.getAllFromIndex("occurrences", "by-session", s.id);
     try {
-      if (await pushOccurrences(s, occs)) await db.put("sessions", { ...s, occurrencesDirty: false });
+      const clean = await pushOccurrences(s, occs);
+      // Still not clean after our deletes ran = THIS DEVICE is the stale side (the
+      // server has logged sets we never knew about). Flag a conflict so the UI
+      // offers the correct heal (pull from server), not another no-op Reconcile.
+      await db.put("sessions", { ...s, occurrencesDirty: !clean, occurrenceConflict: !clean });
     } catch (e) {
       if (record(e)) return result;
     }

@@ -52,6 +52,10 @@ npm run dev              # http://localhost:3000, gated behind APP_PASSCODE
 
 ## Production deploy
 
+**Live app: https://fitness-app-self-pi.vercel.app** — health check:
+[`/api/health`](https://fitness-app-self-pi.vercel.app/api/health) (public; returns
+`{"ok":true,"migrations":{"applied":N,"expected":N}}` when prod schema is at parity).
+
 Managed Postgres (Neon recommended, use the *pooled* connection string) +
 Vercel. `DATABASE_URL`/`APP_PASSCODE`/`SESSION_SECRET` are set as Vercel project
 environment variables, never committed.
