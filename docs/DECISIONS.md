@@ -1073,3 +1073,40 @@ Neon prod DB with the user's explicit approval (additive nullable column, no dat
 touched). Verified: column present, prod at **14/14** migrations. Prod is safe to
 deploy — no auto-deploy + manual-migration gap this time. (Neon credential still
 UNROTATED — user's standing task.)
+
+## Batch: machine "Unspecified", finish-flag honesty, occurrence-dirty edge
+
+### Machine default — "Unspecified machine" vs "No machine"
+The machine dropdown now offers **"Unspecified machine"** (the neutral default) and
+**"No machine"**, plus any named machines — on every exercise. "No machine" wrongly
+asserted no machine is used; "Unspecified" means "on a machine, didn't label which".
+**Both resolve to `machineId = null`** (the portable/free progression lane), so this
+is a labelling change only — it never splits an exercise's history and the core is
+untouched (progression still keys on null vs. a named label). A future option to make
+"Unspecified" its own tracked bucket would be an additive, separate change.
+
+### Finish-flag "not synced" — honest diagnosis + deterministic reconcile
+The earlier removeOccurrence fix addresses a bug whose signature is a **server-side
+orphan** (→ count mismatch). The user's session 3 has **no orphan**, so that fix does
+**not** explain their symptom — "self-heals" was withdrawn as an unfounded assumption.
+For a clean-on-server finished session the badge can only fire from (1) a stale local
+`finishSynced=false` while the server already has `finished_at`, or (2) a local/server
+occurrence-count mismatch. Changes:
+- **`reconcileFinishedFromServer(ids)`** (store): on the sessions page refresh, any
+  session the server reports finished has its stale local `finishSynced` flipped true
+  deterministically (the finish IS on the server) — no waiting for a re-drain. Test added.
+- The sessions-list badge now shows the **reason**: "not synced · finish" or
+  "not synced · list (local N / server M)" — so on the phone the cause is visible, not
+  masked. This is the diagnostic: if session 3 still flags after deploy, the badge says
+  which arm, and we keep digging (not closed until the phone confirms).
+
+### Item 3 — occurrence-dirty edge (last/only occurrence) — PROPOSAL, not yet built
+The current fix dirties a surviving occurrence to force a re-POST. Confirmed hole: with
+**zero survivors** (remove the last occurrence) there's nothing to dirty and the
+occurrence sync loop (which iterates existing occurrences) never re-POSTs, so the server
+keeps the stale row — same bug in the corner. Multi-removal down to ≥1 survivor is fine
+(regression test added). **Proposed** cleaner model: a session-level `occurrencesDirty`
+flag set on add/remove/reorder and cleared when the list POSTs — dirtiness lives on the
+list where it belongs, and the empty-list case falls out naturally. Held for user
+sign-off (don't unilaterally rework the sync state machine). The last-occurrence
+regression test is committed as `it.skip`, ready to un-skip when the flag lands.

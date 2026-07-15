@@ -115,6 +115,12 @@ function parseRepRangeMax(repRange: string | null): number {
 function lastMachineKey(exerciseId: string) {
   return `fitness-app:last-machine:${exerciseId}`;
 }
+// The neutral default: "I'm using a machine but haven't said which" — distinct
+// from "No machine" (which asserts free/portable). Both resolve to a null
+// machineId (the portable/free progression lane), so this is a labelling choice
+// only and never splits an exercise's history — the core is untouched. A sentinel
+// (not "") so we can tell it apart from an explicit "No machine" in the UI.
+const UNSPECIFIED_MACHINE = "__unspecified__";
 function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
@@ -255,8 +261,9 @@ function StrengthCard({
     if (res.ok) setMachines(await res.json());
   }, [activeExercise.id]);
   const [machineId, setMachineId] = useState(() => {
-    if (ex.portable || typeof window === "undefined") return "";
-    return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "";
+    // Default to "Unspecified machine" unless a named machine was last used here.
+    if (typeof window === "undefined") return UNSPECIFIED_MACHINE;
+    return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? UNSPECIFIED_MACHINE;
   });
   const [newMachineName, setNewMachineName] = useState("");
   const [setType, setSetType] = useState<"warmup" | "working">("working");
@@ -275,11 +282,13 @@ function StrengthCard({
 
   // The machine field is always shown now — we never infer which exercises
   // "should" have a machine (a dumbbell move can still be done on a machine at a
-  // different gym, etc.). "No machine" resolves to null = the portable/free
-  // lane; any label = a context-bound machine. This is purely data-entry: the
-  // per-machine progression semantics (null = portable, never re-baselined;
-  // named = re-baseline on change) are unchanged — they key off this same null.
-  const resolvedMachineId = machineId.trim() || null;
+  // different gym, etc.). Both "Unspecified machine" (the neutral default) and
+  // "No machine" resolve to null = the portable/free lane; any label = a
+  // context-bound machine. This is purely data-entry: the per-machine
+  // progression semantics (null = portable, never re-baselined; named =
+  // re-baseline on change) are unchanged — they key off this same null.
+  const resolvedMachineId =
+    machineId === "" || machineId === UNSPECIFIED_MACHINE ? null : machineId;
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
@@ -356,12 +365,12 @@ function StrengthCard({
   }
   function pickSwap(c: SubstitutionCandidate) {
     setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable });
-    setMachineId(c.portable ? "" : localStorage.getItem(lastMachineKey(c.id)) ?? "");
+    setMachineId(localStorage.getItem(lastMachineKey(c.id)) ?? UNSPECIFIED_MACHINE);
     setSwapOpen(false);
   }
   function resetSwap() {
     setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable });
-    setMachineId(ex.portable ? "" : localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? "");
+    setMachineId(localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? UNSPECIFIED_MACHINE);
     setSwapOpen(false);
   }
   async function addMachine() {
@@ -428,9 +437,10 @@ function StrengthCard({
       )}
 
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        <label title="A personal label you make up — not a number on the machine. 'No machine' means the portable/free lane (dumbbells, barbell, bodyweight). Only name a machine if there are two of the same, or you're at a different gym.">
+        <label title="'Unspecified machine' (the default) just means you're on a machine but haven't labelled which — same tracking as free/portable. 'No machine' is the free/portable lane (dumbbells, barbell, bodyweight). Only name a machine if there are two of the same, or you're at a different gym.">
           Machine{" "}
           <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+            <option value={UNSPECIFIED_MACHINE}>Unspecified machine</option>
             <option value="">No machine</option>
             {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
           </select>

@@ -247,6 +247,25 @@ export async function finishSession(id: string): Promise<LocalSession | null> {
   return updated;
 }
 
+// Reconcile the local finish flag against the server's truth. If the server
+// reports a session as finished, the finish IS on the server, so a local
+// `finishSynced: false` is stale (the finish POST landed but its success wasn't
+// recorded — e.g. the response was lost) — flip it deterministically instead of
+// waiting for the next drain to re-POST. Prevents a server-confirmed-finished
+// session from showing a false "not synced". Returns how many it corrected.
+export async function reconcileFinishedFromServer(finishedIds: string[]): Promise<number> {
+  const db = await getDb();
+  let fixed = 0;
+  for (const id of finishedIds) {
+    const s = await db.get("sessions", id);
+    if (s && s.finishedAt && !s.finishSynced) {
+      await db.put("sessions", { ...s, finishSynced: true });
+      fixed += 1;
+    }
+  }
+  return fixed;
+}
+
 export async function deleteLocalSession(id: string): Promise<void> {
   const db = await getDb();
   await db.delete("sessions", id);

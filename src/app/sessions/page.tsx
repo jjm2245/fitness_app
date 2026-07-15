@@ -8,6 +8,7 @@ import {
   createSession,
   listLocalSessionSummaries,
   deleteSession,
+  reconcileFinishedFromServer,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -39,6 +40,9 @@ interface Row {
   onServer: boolean;
   local: boolean;
   pendingSync: boolean;
+  // Why it's pending — surfaced in the badge so "not synced" is never a mystery
+  // (esp. on a phone, where we can't open the store). null when fully synced.
+  pendingReason: string | null;
 }
 
 function todayIso() {
@@ -77,16 +81,25 @@ export default function SessionsPage() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const summaries = await listLocalSessionSummaries();
-    setLocal(summaries);
-    setPending(await pendingCount());
     // Server list is best-effort: offline, we still render the local store.
+    let serverSessions: ServerSession[] | null = null;
     try {
       const res = await fetch("/api/sessions");
-      if (res.ok) setServer(await res.json());
+      if (res.ok) serverSessions = await res.json();
     } catch {
       /* offline — keep whatever we last had */
     }
+    // Trust the server on finish: if it reports a session finished, a stale local
+    // finishSynced=false is corrected here (deterministic, not "self-heals later")
+    // so a server-confirmed session can't show a false "not synced".
+    if (serverSessions) {
+      const finishedIds = serverSessions.filter((s) => s.finishedAt).map((s) => s.id);
+      if (finishedIds.length) await reconcileFinishedFromServer(finishedIds);
+      setServer(serverSessions);
+    }
+    // Read local AFTER reconciling so the summaries reflect the corrected flags.
+    setLocal(await listLocalSessionSummaries());
+    setPending(await pendingCount());
     setLoaded(true);
   }, []);
 
@@ -121,10 +134,23 @@ export default function SessionsPage() {
         onServer: true,
         local: false,
         pendingSync: false,
+        pendingReason: null,
       });
     }
     for (const s of local) {
       const prev = byId.get(s.id);
+      // Finish arm: the local finish flag hasn't flipped AND the server doesn't
+      // already show this session finished (refresh reconciles that case, so a
+      // server-confirmed finish never trips this). List arm: the local occurrence
+      // count disagrees with the server's — a genuinely pending list change.
+      const finishPending = !!s.finishedAt && !s.finishSynced && !prev?.finishedAt;
+      const serverCount = prev?.exerciseCount ?? s.exerciseCount;
+      const listPending = s.exerciseCount !== serverCount;
+      const reason = finishPending
+        ? "finish"
+        : listPending
+        ? `list (local ${s.exerciseCount}${prev ? ` / server ${serverCount}` : ""})`
+        : null;
       byId.set(s.id, {
         id: s.id,
         date: s.date,
@@ -134,7 +160,8 @@ export default function SessionsPage() {
         inProgress: !s.finishedAt,
         onServer: prev?.onServer ?? false,
         local: true,
-        pendingSync: (!!s.finishedAt && !s.finishSynced) || s.exerciseCount !== (prev?.exerciseCount ?? s.exerciseCount),
+        pendingSync: reason !== null,
+        pendingReason: reason,
       });
     }
     const all = Array.from(byId.values());
@@ -266,7 +293,11 @@ function SessionRow({ row, onOpen, onDelete }: { row: Row; onOpen: (id: string) 
         <div className={styles.rowSub}>
           <span>{describe(row.label, row.exerciseCount)}</span>
           {row.inProgress && <span className={`${styles.badge} ${styles.badgeProgress}`}>resume</span>}
-          {row.pendingSync && <span className={`${styles.badge} ${styles.badgePending}`}>not synced</span>}
+          {row.pendingSync && (
+            <span className={`${styles.badge} ${styles.badgePending}`} title={`Pending: ${row.pendingReason}`}>
+              not synced · {row.pendingReason}
+            </span>
+          )}
         </div>
       </button>
       <button

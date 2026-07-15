@@ -20,6 +20,7 @@ import {
   moveOccurrence,
   removeOccurrence,
   listLocalSessionSummaries,
+  reconcileFinishedFromServer,
   _resetDbForTests,
   type AttachExercise,
   type ServerSession,
@@ -458,6 +459,71 @@ describe("removing a synced occurrence re-syncs the shortened list (bug 1)", () 
 
     // And the session is fully synced again (no lingering false "not synced").
     expect(await pendingCount(id)).toBe(0);
+  });
+
+  it("keeps re-syncing across several removals in a row (down to one survivor)", async () => {
+    const posts: string[][] = [];
+    mockOnlineCapturingOccurrences(posts);
+
+    const { id } = await newSession(); // deadlift
+    const a = await addOccurrence(id, tri, "Chest + triceps");
+    const b = await addOccurrence(id, tri, "Chest + triceps");
+    await sync();
+    expect(await pendingCount(id)).toBe(0);
+
+    // Remove two, one after another, each with its own sync.
+    await removeOccurrence(id, a.instanceId);
+    await sync();
+    await removeOccurrence(id, b.instanceId);
+    await sync();
+
+    // The last list the server saw has just the surviving deadlift occurrence.
+    const last = posts[posts.length - 1];
+    expect(last).not.toContain(a.instanceId);
+    expect(last).not.toContain(b.instanceId);
+    expect(last).toHaveLength(1);
+    expect(await pendingCount(id)).toBe(0);
+  });
+
+  // KNOWN GAP (item 3): removing the *last/only* occurrence leaves no survivor to
+  // dirty, so the occurrence sync loop (which iterates existing occurrences) never
+  // re-POSTs — the server keeps the stale row. The clean fix is a session-level
+  // `occurrencesDirty` flag (proposed to the user); un-skip when that lands.
+  it.skip("re-POSTs an empty list when the last occurrence is removed", async () => {
+    const posts: string[][] = [];
+    mockOnlineCapturingOccurrences(posts);
+
+    const { id } = await newSession(); // exactly one occurrence
+    await sync();
+    const only = (await listOccurrences(id))[0];
+    posts.length = 0;
+
+    await removeOccurrence(id, only.instanceId); // now zero occurrences
+    expect(await pendingCount(id)).toBeGreaterThan(0); // the list change is pending
+    await sync();
+
+    // The server must be told the list is now empty so it prunes the last row.
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1]).toHaveLength(0);
+    expect(await pendingCount(id)).toBe(0);
+  });
+});
+
+describe("reconcile finish flag from server truth (false 'not synced' fix)", () => {
+  it("flips a stale local finishSynced=false when the server reports finished", async () => {
+    const { id } = await newSession();
+    mockOffline();
+    await finishSession(id); // finishedAt set, finishSynced=false (finish POST never landed here)
+    expect((await getSession(id))?.finishSynced).toBe(false);
+
+    // Simulate the real case: the finish actually IS on the server (its response
+    // was just lost). The sessions page reconciles from the server's finished list.
+    const fixed = await reconcileFinishedFromServer([id]);
+    expect(fixed).toBe(1);
+    expect((await getSession(id))?.finishSynced).toBe(true);
+
+    // A session with no local finishedAt is untouched (nothing to reconcile).
+    expect(await reconcileFinishedFromServer(["nonexistent"])).toBe(0);
   });
 });
 
