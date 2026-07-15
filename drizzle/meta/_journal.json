@@ -92,6 +92,13 @@
       "when": 1783911022973,
       "tag": "0012_fast_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784094569835,
+      "tag": "0013_brave_greymalkin",
+      "breakpoints": true
     }
   ]
 }

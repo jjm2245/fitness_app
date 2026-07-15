@@ -147,6 +147,9 @@ export const exercises = pgTable("exercises", {
   libraryId: text("library_id"),
   untagged: boolean("untagged").notNull().default(false),
   notes: text("notes"),
+  // Optional free-text the user writes about how they actually do this exercise
+  // (grip, ROM, setup quirks). Never required; useful signal for the LLM later.
+  description: text("description"),
   params: jsonb("params"), // e.g. cardio { duration_min, incline, speed }
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

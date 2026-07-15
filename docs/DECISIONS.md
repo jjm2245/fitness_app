@@ -1044,3 +1044,32 @@ of the row's date/badges at phone width. Reworked `.rowWrap` into a flex row: th
 row button is `flex:1; min-width:0` (shrinks, content wraps in its box) and
 `.rowDelete` is a static `flex:0 0 auto` sibling with an 8px gap. Verified at
 375px: row ends at 309px, X starts at 317px — no overlap.
+
+### #6 — optional exercise description; #7 — add/remove in the Exercises tab
+
+**#6:** New nullable `exercises.description` column (migration `0013`,
+EXPECTED_MIGRATIONS → 14). `PATCH /api/exercises/[id]` accepts `description`
+(empty string clears to null; never required); `GET /api/exercises/manage`
+returns it. The Exercises tab gets an "Add/Edit description" textarea per row and
+renders the saved text. Works for custom and "your name → library" alike.
+
+**#7 add:** Reuses the existing `ExerciseSearch` component (library/curated
+search + create-custom-with-movement-pattern) behind a "+ Add an exercise"
+toggle; on pick/create the list reloads.
+
+**#7 remove — history-safe:** New `DELETE /api/exercises/[id]`. It counts every
+referencing row (set_logs, cardio_logs, session_exercises, program_exercises,
+exercise_substitutions on either FK, form_checks); if any exist it refuses with
+**409** + a `blockedBy` breakdown and never deletes (the FKs have no cascade, so
+history can't be orphaned) — the UI then shows "has N logged entries … blocked,
+collapse first or keep" with only a **Keep** action. With zero references, a
+confirm → delete removes the row (exercise_muscles/exercise_machines cascade).
+Verified end-to-end in-app: add custom (201) → set description (persists, shows in
+manage) → delete unused (200, gone) → delete "Leg Extensions" with history
+(**409**, kept).
+
+**⚠️ Prod migration pending:** `0013_*.sql` (add `description`) is applied
+**locally only**. Because deployed code now selects `exercises.description`, prod
+must run this migration **before/at** the next deploy or the Exercises API 500s
+(the auto-deploy + manual-migration footgun). Additive nullable column — safe —
+but held for user sign-off per the prod-write rule.

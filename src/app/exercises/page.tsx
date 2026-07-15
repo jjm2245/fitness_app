@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./exercises.module.css";
+import { ExerciseSearch } from "@/components/ExerciseSearch";
 
 interface ManagedExercise {
   id: string;
@@ -13,6 +14,7 @@ interface ManagedExercise {
   untagged: boolean;
   day: string | null;
   loadType: string;
+  description: string | null;
   kind: "library_name" | "named_on_ref" | "custom";
   loggedCount: number;
 }
@@ -46,6 +48,11 @@ export default function ExercisesPage() {
   const [editName, setEditName] = useState("");
   const [collapsing, setCollapsing] = useState<string | null>(null);
   const [machinesFor, setMachinesFor] = useState<string | null>(null);
+  const [describing, setDescribing] = useState<string | null>(null);
+  const [descText, setDescText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<ManagedExercise | null>(null);
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -96,6 +103,42 @@ export default function ExercisesPage() {
     }
   }
 
+  async function saveDescription(id: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: descText }),
+      });
+      if (res.ok) {
+        setDescribing(null);
+        await load();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeExercise(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setRemoveErr(null);
+    try {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.ok) {
+        setRemoving(null);
+        await load();
+      } else {
+        const body = await res.json().catch(() => null);
+        setRemoveErr(body?.message ?? "Couldn't remove this exercise.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function collapse(id: string, targetId: string) {
     if (busy) return;
     setBusy(true);
@@ -127,6 +170,22 @@ export default function ExercisesPage() {
         library entry, so nothing is orphaned.
       </p>
 
+      <div className={styles.addBox}>
+        {adding ? (
+          <>
+            <ExerciseSearch
+              placeholder="Search library / curated, or create a custom…"
+              onPick={() => { setAdding(false); load(); }}
+            />
+            <button type="button" className={styles.btn} onClick={() => setAdding(false)}>Cancel</button>
+          </>
+        ) : (
+          <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => setAdding(true)}>
+            + Add an exercise
+          </button>
+        )}
+      </div>
+
       {!loaded ? (
         <p className={styles.hint}>Loading…</p>
       ) : (
@@ -141,6 +200,9 @@ export default function ExercisesPage() {
               </div>
               {e.kind === "named_on_ref" && e.canonicalName && (
                 <div className={styles.refCanon}>library reference: {e.canonicalName}</div>
+              )}
+              {e.description && describing !== e.id && (
+                <div className={styles.description}>{e.description}</div>
               )}
 
               {editing === e.id ? (
@@ -161,6 +223,49 @@ export default function ExercisesPage() {
                   <button type="button" className={styles.btn} onClick={() => setMachinesFor(machinesFor === e.id ? null : e.id)}>
                     {machinesFor === e.id ? "Close machines" : "Machines"}
                   </button>
+                  <button type="button" className={styles.btn} onClick={() => { setDescribing(e.id); setDescText(e.description ?? ""); }}>
+                    {e.description ? "Edit description" : "Add description"}
+                  </button>
+                  <button type="button" className={`${styles.btn} ${styles.danger}`} onClick={() => { setRemoving(e); setRemoveErr(null); }}>Remove</button>
+                </div>
+              )}
+
+              {removing?.id === e.id && (
+                <div className={styles.removeBox}>
+                  {e.loggedCount > 0 ? (
+                    <p className={styles.removeWarn}>
+                      <strong>{e.name}</strong> has <strong>{e.loggedCount} logged {e.loggedCount === 1 ? "entry" : "entries"}</strong>.
+                      Removing it would orphan that history, so it&rsquo;s blocked — use <em>Collapse into library…</em> to move the
+                      history onto another exercise first, or keep it.
+                    </p>
+                  ) : (
+                    <p className={styles.removeWarn}>Remove <strong>{e.name}</strong>? This can&rsquo;t be undone.</p>
+                  )}
+                  {removeErr && <p className={styles.removeErr}>{removeErr}</p>}
+                  <div className={styles.actions}>
+                    {e.loggedCount === 0 && (
+                      <button type="button" className={`${styles.btn} ${styles.danger}`} onClick={() => removeExercise(e.id)} disabled={busy}>
+                        {busy ? "Removing…" : "Remove"}
+                      </button>
+                    )}
+                    <button type="button" className={styles.btn} onClick={() => { setRemoving(null); setRemoveErr(null); }}>{e.loggedCount > 0 ? "Keep" : "Cancel"}</button>
+                  </div>
+                </div>
+              )}
+
+              {describing === e.id && (
+                <div className={styles.editRow}>
+                  <textarea
+                    className={styles.input}
+                    value={descText}
+                    onChange={(ev) => setDescText(ev.target.value)}
+                    placeholder="How you actually do it — grip, ROM, setup… (optional)"
+                    rows={2}
+                    style={{ flex: "1 1 100%", resize: "vertical", fontFamily: "inherit" }}
+                    autoFocus
+                  />
+                  <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => saveDescription(e.id)} disabled={busy}>Save</button>
+                  <button type="button" className={styles.btn} onClick={() => setDescribing(null)} disabled={busy}>Cancel</button>
                 </div>
               )}
 

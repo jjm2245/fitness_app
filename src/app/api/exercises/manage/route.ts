@@ -21,6 +21,7 @@ export async function GET() {
       untagged: exercises.untagged,
       day: exercises.day,
       loadType: exercises.loadType,
+      description: exercises.description,
     })
     .from(exercises)
     .where(ne(exercises.source, "library"))

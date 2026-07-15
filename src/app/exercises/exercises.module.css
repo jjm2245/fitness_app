@@ -95,10 +95,48 @@
   color: #06111f;
   font-weight: 600;
 }
+.danger {
+  border-color: #6b3333;
+  color: #e6a3a3;
+}
+.danger:hover {
+  border-color: #a15252;
+}
+.addBox {
+  margin: 8px 0 14px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.removeBox {
+  margin-top: 8px;
+  border: 1px solid #6b3333;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(107, 51, 51, 0.12);
+}
+.removeWarn {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.removeErr {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #e6a3a3;
+}
 .refCanon {
   font-size: 12px;
   opacity: 0.7;
   margin-top: 2px;
+}
+.description {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  border-left: 2px solid var(--border, #444);
+  padding-left: 8px;
 }
 .editRow {
   display: flex;
