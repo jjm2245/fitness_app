@@ -1241,3 +1241,23 @@ data (incl. an unsynced in-progress set) — and the test genuinely fails if the
 runs unconditionally (checked by temporarily widening the guard). Updated the two
 CURRENT_STATE traps from "bumps are destructive, be careful" to "migrations are
 additive; never drop a store with live data." B–E from the prior audit remain notes.
+
+## Batch: logging depth (rests, drop sets, true loads, unilateral)
+
+### Part 0 — non-destructive upgrades: verified, and no v5 bump needed
+Item (A) already shipped (`migrateSessionDb(db, oldVersion)`, additive-by-default,
+v4 drop fenced as historical one-off, isolated guard test, negative-tested). For
+this batch specifically:
+- **No IndexedDB version bump is required.** All new logging fields (`loggedAt`,
+  `restSeconds`/`restSource`, `dropGroupId`, `side`, `loadEntered`/`builtinOffset`)
+  are per-record additions — IndexedDB is schemaless per record; bumps are only for
+  new stores/indexes. None needed; grouping/filtering (e.g. drop groups) is done
+  in memory over a session's few dozen sets, per user's instruction to prefer
+  in-memory filtering over a structural by-drop-group index.
+- Guard test extended: a pre-bump unsynced set carrying **all** the new fields
+  round-trips a v4→v5 bump intact (asserted field-by-field).
+- **Drain-before-upgrade: not built, by analysis.** The `upgrade` callback is
+  synchronous and runs inside `openDB` — reading pending rows requires opening the
+  DB, which is what triggers the upgrade (chicken-and-egg), and a sync drain can't
+  be awaited there. It's also moot: additive migrations never touch existing rows,
+  so there is nothing a missed drain can lose. Recorded instead of implemented.

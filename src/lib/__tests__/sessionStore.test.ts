@@ -162,8 +162,16 @@ describe("IndexedDB migrations are additive (data-loss guard)", () => {
   it("a future version bump (v4 → v5) preserves existing stores AND their data", async () => {
     const db4 = await openAt(4);
     // In-progress, unsynced local work — exactly what a destructive bump would eat.
+    // Includes the logging-depth record fields (rest/drop/side/load components):
+    // these are schemaless per-record additions, so they must round-trip through a
+    // bump untouched (and NOT require one themselves).
     await db4.put("sessions", { id: "keep-me", date: "2026-01-01", origin: "Leg day", programId: null, createdAt: "t0", finishedAt: null, finishSynced: false });
-    await db4.add("sets", { sessionId: "keep-me", instanceId: "inst-1", serverId: null, syncState: "pending_create", setIndex: 1, load: 100, reps: 5 } as never);
+    await db4.add("sets", {
+      sessionId: "keep-me", instanceId: "inst-1", serverId: null, syncState: "pending_create",
+      setIndex: 1, load: 110, reps: 5,
+      loggedAt: "2026-01-01T10:00:00.000Z", restSeconds: 115, restSource: "derived",
+      dropGroupId: "grp-1", side: "left", loadEntered: 90, builtinOffset: 20,
+    } as never);
     db4.close();
 
     // Bump the version: migrateSessionDb(db, oldVersion=4) has no v5 block, so it's
@@ -171,7 +179,13 @@ describe("IndexedDB migrations are additive (data-loss guard)", () => {
     const db5 = await openAt(5);
     expect(storeNames(db5)).toEqual(["cardio", "completed", "occurrences", "sessions", "sets"]);
     expect(await db5.get("sessions", "keep-me")).toBeTruthy(); // survived the bump
-    expect((await db5.getAll("sets")).length).toBe(1); // unsynced set survived too
+    const sets = (await db5.getAll("sets")) as Array<Record<string, unknown>>;
+    expect(sets.length).toBe(1); // unsynced set survived too
+    // Every new logging-depth field round-trips intact.
+    expect(sets[0]).toMatchObject({
+      load: 110, loggedAt: "2026-01-01T10:00:00.000Z", restSeconds: 115, restSource: "derived",
+      dropGroupId: "grp-1", side: "left", loadEntered: 90, builtinOffset: 20,
+    });
     db5.close();
   });
 });
