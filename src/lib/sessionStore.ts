@@ -11,6 +11,12 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 export type SetSyncState = "pending_create" | "synced" | "pending_update" | "pending_delete";
 export type EffortTag = "more_in_me" | "near_failure" | "to_failure";
+// Where a rest value came from. Honest-unknown model: a set with restSeconds null
+// has UNKNOWN rest — we never fabricate a number (the LLM must never read
+// invented rests). timed = rest timer (exact); derived = gap heuristic; user =
+// manual correction (highest trust).
+export type RestSource = "timed" | "derived" | "user";
+export type SetSide = "left" | "right" | "both";
 
 // A local session record. `finishedAt` is stamped on finish; the row is filed
 // into the sessions list whether or not it has synced yet.
@@ -51,6 +57,14 @@ export interface SessionSet {
   rir: number | null;
   serverId: number | null;
   syncState: SetSyncState;
+  // Logging depth (all optional — legacy rows simply lack them):
+  loggedAt?: string; // ISO instant the set was logged (client-stamped)
+  restSeconds?: number | null; // null/undefined = unknown, never fabricated
+  restSource?: RestSource | null;
+  dropGroupId?: string | null; // parent + drops share one group id
+  side?: SetSide | null; // unilateral exercises only
+  loadEntered?: number | null; // what the user set/added (load = entered + offset)
+  builtinOffset?: number | null; // machine built-in / bar weight applied
 }
 
 // "Done" now marks a specific occurrence (instance), since the same exercise
@@ -402,6 +416,13 @@ export interface ServerSession {
     reps: number;
     effort: EffortTag | null;
     rir: string | null;
+    loggedAt?: string | null;
+    restSeconds?: number | null;
+    restSource?: RestSource | null;
+    dropSetGroup?: string | null;
+    side?: SetSide | null;
+    loadEntered?: string | null;
+    builtinOffset?: string | null;
   }>;
   cardio: Array<{
     id: number;
@@ -492,6 +513,13 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       reps: s.reps,
       effort: s.effort,
       rir: s.rir != null ? Number(s.rir) : null,
+      loggedAt: s.loggedAt ?? undefined,
+      restSeconds: s.restSeconds ?? null,
+      restSource: s.restSource ?? null,
+      dropGroupId: s.dropSetGroup ?? null,
+      side: s.side ?? null,
+      loadEntered: s.loadEntered != null ? Number(s.loadEntered) : null,
+      builtinOffset: s.builtinOffset != null ? Number(s.builtinOffset) : null,
       serverId: s.id,
       syncState: "synced",
     });
@@ -532,16 +560,75 @@ export interface LogSetInput {
   reps: number;
   effort: EffortTag | null;
   rir: number | null;
+  // Logging depth (all optional):
+  timedRestSeconds?: number | null; // from the rest timer → source "timed"
+  dropGroupId?: string | null; // set for drop segments (and assigned to parents)
+  parentSetIndex?: number | null; // drops share the parent's set number
+  side?: SetSide | null;
+  loadEntered?: number | null;
+  builtinOffset?: number | null;
+}
+
+// Estimated seconds a set takes: ~3.5s per rep. Only used to back the rest
+// estimate out of the log-to-log gap; never shown as a fact.
+const SECONDS_PER_REP = 3.5;
+
+/** Derive rest-before-this-set from the gap since the previous logged set.
+ * Plausibility filter — an honest unknown (null) beats a fabricated number:
+ *   gap < 30s  → batch/retroactive logging → unknown
+ *   gap > 8min → walked away / logged later → unknown
+ *   else       → rest ≈ gap − reps × 3.5s (clamped ≥ 0), source "derived". */
+export function deriveRest(gapSeconds: number, reps: number): { restSeconds: number; restSource: RestSource } | null {
+  if (!Number.isFinite(gapSeconds) || gapSeconds < 30 || gapSeconds > 8 * 60) return null;
+  return { restSeconds: Math.max(0, Math.round(gapSeconds - reps * SECONDS_PER_REP)), restSource: "derived" };
 }
 
 export async function logSet(input: LogSetInput): Promise<SessionSet> {
   const db = await getDb();
   // Set index is per-occurrence, so two occurrences of the same exercise each
-  // number their sets from 1.
+  // number their sets from 1. Drop segments share the parent's number instead.
   const existing = await db.getAllFromIndex("sets", "by-instance", input.instanceId);
-  const setIndex = existing.filter((s) => s.syncState !== "pending_delete").length + 1;
+  const live = existing.filter((s) => s.syncState !== "pending_delete");
+  const setIndex = input.parentSetIndex ?? live.length + 1;
 
-  const row: SessionSet = { ...input, setIndex, serverId: null, syncState: "pending_create" };
+  const loggedAt = new Date().toISOString();
+  // Rest before this set: exact when the timer was running; otherwise derived
+  // from the gap since the last set logged in this SESSION (cross-exercise —
+  // that's the real rest); otherwise unknown (null).
+  let restSeconds: number | null = null;
+  let restSource: RestSource | null = null;
+  if (input.timedRestSeconds != null && input.timedRestSeconds >= 0) {
+    restSeconds = Math.round(input.timedRestSeconds);
+    restSource = "timed";
+  } else {
+    const sessionSets = await db.getAllFromIndex("sets", "by-session", input.sessionId);
+    let prevMs = 0;
+    for (const s of sessionSets) {
+      if (s.syncState === "pending_delete" || !s.loggedAt) continue;
+      const t = Date.parse(s.loggedAt);
+      if (t > prevMs) prevMs = t;
+    }
+    if (prevMs > 0) {
+      const derived = deriveRest((Date.parse(loggedAt) - prevMs) / 1000, input.reps);
+      if (derived) ({ restSeconds, restSource } = derived);
+    }
+  }
+
+  const { timedRestSeconds: _t, parentSetIndex: _p, ...rest } = input;
+  void _t; void _p;
+  const row: SessionSet = {
+    ...rest,
+    setIndex,
+    loggedAt,
+    restSeconds,
+    restSource,
+    dropGroupId: input.dropGroupId ?? null,
+    side: input.side ?? null,
+    loadEntered: input.loadEntered ?? null,
+    builtinOffset: input.builtinOffset ?? null,
+    serverId: null,
+    syncState: "pending_create",
+  };
   const localId = await db.add("sets", row);
   return { ...row, localId };
 }
@@ -554,7 +641,11 @@ export async function getSessionSets(sessionId: string): Promise<SessionSet[]> {
 
 export async function editSet(
   localId: number,
-  patch: { load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working" }
+  patch: {
+    load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working";
+    restSeconds?: number | null; restSource?: RestSource | null; dropGroupId?: string | null;
+    side?: SetSide | null; loadEntered?: number | null; builtinOffset?: number | null;
+  }
 ): Promise<void> {
   const db = await getDb();
   const row = await db.get("sets", localId);
@@ -900,6 +991,13 @@ async function runSync(): Promise<SyncResult> {
             reps: row.reps,
             effort: row.effort,
             rir: row.rir,
+            loggedAt: row.loggedAt ?? null,
+            restSeconds: row.restSeconds ?? null,
+            restSource: row.restSource ?? null,
+            dropSetGroup: row.dropGroupId ?? null,
+            side: row.side ?? null,
+            loadEntered: row.loadEntered ?? null,
+            builtinOffset: row.builtinOffset ?? null,
           }),
         });
         const created = await res.json();
@@ -909,7 +1007,12 @@ async function runSync(): Promise<SyncResult> {
         await send(`/api/set-logs/${row.serverId}`, {
           method: "PATCH",
           headers: jsonHeaders,
-          body: JSON.stringify({ load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType }),
+          body: JSON.stringify({
+            load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType,
+            restSeconds: row.restSeconds ?? null, restSource: row.restSource ?? null,
+            dropSetGroup: row.dropGroupId ?? null, side: row.side ?? null,
+            loadEntered: row.loadEntered ?? null, builtinOffset: row.builtinOffset ?? null,
+          }),
         });
         await db.put("sets", { ...row, syncState: "synced" });
         result.updated += 1;

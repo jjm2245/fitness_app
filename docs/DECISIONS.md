@@ -1261,3 +1261,41 @@ this batch specifically:
   DB, which is what triggers the upgrade (chicken-and-egg), and a sync drain can't
   be awaited there. It's also moot: additive migrations never touch existing rows,
   so there is nothing a missed drain can lose. Recorded instead of implemented.
+
+### Parts 1–2 — rest tracking + drop sets (migrations 0014/0015, local only so far)
+
+**Schema (all additive nullable).** 0014: `set_logs.logged_at` (client-stamped —
+`created_at` is server insert time, which lies for offline sets), `rest_seconds` +
+`rest_source` ('timed'|'derived'|'user'; both null = unknown, never fabricated),
+`drop_set_group`. 0015: `set_logs.side`, `load_entered`, `builtin_offset` (columns
+land now since the routes carry them; features arrive in Parts 3–4). `load` stays
+the effective TOTAL — the core reads exactly what it read before (untouched).
+EXPECTED_MIGRATIONS → 16. **Prod not migrated yet** — will propose the prod
+migration before the batch deploys.
+
+**Rest derivation (`deriveRest`, exported + unit-tested).** Gap = loggedAt −
+previous set's loggedAt in the same session (cross-exercise — that's real rest).
+Plausibility band: gap < 30s (batch logging) or > 8min (walked away) → unknown;
+else rest = gap − reps × 3.5s, clamped ≥ 0, source `derived`. Timer value wins as
+`timed`; chip tap-edit becomes `user` (highest trust) and re-syncs. Legacy rows
+(no logged_at) honestly show "rest —". Drop rows don't show a rest chip; if the
+drop is logged slowly enough to land in the band, the derived gap is recorded
+(true statement about the log gap; real drops land < 30s → unknown).
+
+**Rest timer.** Page-level tap-to-start count-up (shared ref); the next logged set
+consumes it exactly once as its `timed` rest, then the timer idles. Optional
+minutes target fires a Notification (permission-gated). Pure client state —
+offline-safe.
+
+**Drop sets.** "+ Drop" on any set row: assigns a client-generated `dropGroupId`
+to the parent (pending_update if already synced), opens a pre-linked entry (weight
+blank, reps prefilled), and the drop logs as its own row sharing the parent's
+occurrence AND set number. Rendered indented with "↳ drop" under the parent
+(groups pulled together in display order, in-memory — no new index). Volume math
+untouched (each row's load × reps counts).
+
+**Verified in the running app:** rest chip live, tap-corrected 1:45 → synced as
+`rest_source='user'`; timer → "rest 0:20 · timed", consumed once; drop nested,
+shares group + set_index server-side; all of it survives reload. 111 tests
+(deriveRest band, derived/timed/user transitions, drop numbering + sync), clean
+build.

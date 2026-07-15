@@ -18,6 +18,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     rir?: string | null;
     effort?: "more_in_me" | "near_failure" | "to_failure" | null;
     setType?: "warmup" | "working";
+    restSeconds?: number | null;
+    restSource?: string | null;
+    dropSetGroup?: string | null;
+    side?: string | null;
+    loadEntered?: string | null;
+    builtinOffset?: string | null;
   } = {};
   if (typeof body?.load === "number") updates.load = body.load.toString();
   if (typeof body?.reps === "number") updates.reps = body.reps;
@@ -27,6 +33,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     updates.effort = body.effort;
   }
   if (body?.setType === "warmup" || body?.setType === "working") updates.setType = body.setType;
+  // Logging depth — rest corrections, drop-group assignment, side, load parts.
+  if (body?.restSeconds === null || typeof body?.restSeconds === "number") updates.restSeconds = body.restSeconds;
+  if (body?.restSource === null || ["timed", "derived", "user"].includes(body?.restSource)) updates.restSource = body.restSource;
+  if (body?.dropSetGroup === null || typeof body?.dropSetGroup === "string") updates.dropSetGroup = body.dropSetGroup;
+  if (body?.side === null || ["left", "right", "both"].includes(body?.side)) updates.side = body.side;
+  if (body?.loadEntered === null) updates.loadEntered = null;
+  else if (typeof body?.loadEntered === "number") updates.loadEntered = body.loadEntered.toString();
+  if (body?.builtinOffset === null) updates.builtinOffset = null;
+  else if (typeof body?.builtinOffset === "number") updates.builtinOffset = body.builtinOffset.toString();
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

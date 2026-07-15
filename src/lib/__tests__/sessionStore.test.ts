@@ -25,6 +25,7 @@ import {
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
   migrateSessionDb,
+  deriveRest,
   _resetDbForTests,
   type AttachExercise,
   type ServerSession,
@@ -187,6 +188,86 @@ describe("IndexedDB migrations are additive (data-loss guard)", () => {
       dropGroupId: "grp-1", side: "left", loadEntered: 90, builtinOffset: 20,
     });
     db5.close();
+  });
+});
+
+// Rest tracking (logging depth, Part 1). Honest-unknown model: derivation only
+// inside the plausibility band, everything else stays null — never fabricated.
+describe("rest tracking — derivation, timer, honesty tags", () => {
+  it("deriveRest applies the plausibility band and backs out set duration", () => {
+    expect(deriveRest(10, 8)).toBeNull(); // batch logging → unknown
+    expect(deriveRest(29, 8)).toBeNull(); // below band
+    expect(deriveRest(9 * 60, 8)).toBeNull(); // walked away → unknown
+    expect(deriveRest(120, 8)).toEqual({ restSeconds: 120 - 28, restSource: "derived" }); // 8 reps × 3.5s
+    expect(deriveRest(31, 20)).toEqual({ restSeconds: 0, restSource: "derived" }); // clamped ≥ 0
+  });
+
+  it("first set = unknown; a later set derives from the gap; timer wins as 'timed'; edit becomes 'user'", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-08-20T10:00:00Z") });
+    try {
+      mockOnline();
+      const { id, date, inst } = await newSession();
+
+      const first = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
+      expect(first.restSeconds).toBeNull(); // nothing before it → unknown
+      expect(first.restSource).toBeNull();
+
+      vi.setSystemTime(new Date("2026-08-20T10:02:00Z")); // 120s later
+      const second = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date });
+      expect(second.restSeconds).toBe(120 - Math.round(8 * 3.5)); // gap − reps×3.5s
+      expect(second.restSource).toBe("derived");
+
+      // Timer overrides derivation with an exact value.
+      const third = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, timedRestSeconds: 95 });
+      expect(third.restSeconds).toBe(95);
+      expect(third.restSource).toBe("timed");
+
+      // A manual correction becomes the highest-trust source. (Still unsynced
+      // here, so it stays pending_create — the correction rides the create POST.)
+      await editSet(second.localId!, { restSeconds: 100, restSource: "user" });
+      const after = (await getSessionSets(id)).find((s) => s.localId === second.localId)!;
+      expect(after.restSeconds).toBe(100);
+      expect(after.restSource).toBe("user");
+      expect(after.syncState).toBe("pending_create");
+
+      // Once synced, a rest correction re-syncs as an update.
+      await sync();
+      await editSet(second.localId!, { restSeconds: 105, restSource: "user" });
+      const resynced = (await getSessionSets(id)).find((s) => s.localId === second.localId)!;
+      expect(resynced.syncState).toBe("pending_update");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// Drop sets (Part 2): parent + drops share a group id and the parent's set
+// number; drops are their own rows (volume math needs no change).
+describe("drop sets — linked rows, shared group + set number", () => {
+  it("a drop shares the parent's setIndex and group id, and syncs both", async () => {
+    mockOnline();
+    const { id, date, inst } = await newSession();
+    const parent = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 });
+    expect(parent.setIndex).toBe(1);
+
+    // "+ Drop": assign the group to the parent, then log the drop segment.
+    await editSet(parent.localId!, { dropGroupId: "grp-1" });
+    const drop = await logSet({
+      ...baseInput, sessionId: id, instanceId: inst, date, load: 70,
+      dropGroupId: "grp-1", parentSetIndex: parent.setIndex,
+    });
+    expect(drop.setIndex).toBe(1); // shares the parent's number, not 2
+    expect(drop.dropGroupId).toBe("grp-1");
+
+    // A normal set after the drop still numbers from the live count.
+    const next = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 });
+    expect(next.setIndex).toBe(3); // three live rows exist
+
+    const r = await sync();
+    expect(r.created).toBe(3);
+    const rows = await getSessionSets(id);
+    expect(rows.filter((s) => s.dropGroupId === "grp-1")).toHaveLength(2);
+    expect(rows.every((s) => s.syncState === "synced")).toBe(true);
   });
 });
 

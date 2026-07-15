@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import styles from "../log.module.css";
@@ -166,7 +166,71 @@ function EffortPicker({ value, onChange }: { value: EffortTag | null; onChange: 
   );
 }
 
-function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
+function fmtRest(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+// Accepts "1:55" or plain seconds ("115"). Null when unparseable.
+function parseRest(input: string): number | null {
+  const t = input.trim();
+  if (!t) return null;
+  const mmss = t.match(/^(\d+):([0-5]?\d)$/);
+  if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+// The rest chip: shows the value with its honesty tag (est/timed/you/unknown) and
+// is tappable to correct — a corrected value becomes source "user".
+function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const label =
+    set.restSeconds != null
+      ? set.restSource === "derived"
+        ? `rest ~${fmtRest(set.restSeconds)} · est`
+        : set.restSource === "timed"
+        ? `rest ${fmtRest(set.restSeconds)} · timed`
+        : `rest ${fmtRest(set.restSeconds)}`
+      : "rest —";
+
+  async function save() {
+    const secs = parseRest(text);
+    if (secs == null) return setEditing(false);
+    await editSet(set.localId!, { restSeconds: secs, restSource: "user" });
+    setEditing(false);
+    onChanged();
+  }
+
+  if (editing) {
+    return (
+      <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="m:ss"
+          autoFocus
+          style={{ width: 52, fontSize: 12 }}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+        />
+        <button type="button" onClick={save} className={styles.secondaryBtn}>✓</button>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={styles.restChip}
+      title={set.restSeconds == null ? "Rest unknown — tap to set" : "Tap to correct the rest"}
+      onClick={() => { setText(set.restSeconds != null ? fmtRest(set.restSeconds) : ""); setEditing(true); }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function LoggedSetRow({ set, isDrop, onChanged, onDrop }: { set: SessionSet; isDrop: boolean; onChanged: () => void; onDrop: (parent: SessionSet) => void }) {
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
@@ -186,7 +250,7 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
 
   if (editing) {
     return (
-      <li style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "3px 0", fontSize: 14 }}>
+      <li style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "3px 0", fontSize: 14, paddingLeft: isDrop ? 22 : 0 }}>
         <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 56 }} />
         <span>×</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 44 }} />
@@ -196,18 +260,91 @@ function LoggedSetRow({ set, onChanged }: { set: SessionSet; onChanged: () => vo
       </li>
     );
   }
+  const sideTag = set.side === "left" ? " · L" : set.side === "right" ? " · R" : set.side === "both" ? " · L+R" : "";
+  // Transparent load math when a built-in offset applied: "90 + 20 = 110 lb".
+  const loadText =
+    set.builtinOffset != null && set.builtinOffset !== 0 && set.loadEntered != null
+      ? `${set.loadEntered} + ${set.builtinOffset} = ${set.load} lb`
+      : `${set.load} lb`;
   return (
-    <li className={styles.loggedRow}>
+    <li className={styles.loggedRow} style={isDrop ? { paddingLeft: 22, borderLeft: "2px solid var(--accent, #6ea8fe)", marginLeft: 8 } : undefined}>
       <span className={pending ? styles.pending : styles.synced} title={pending ? "Not yet synced" : "Synced"}>
         {pending ? "○" : "✓"}
       </span>
       <span>
-        {set.setType === "warmup" ? "Warm-up" : "Working"}: {set.load} lb × {set.reps}
+        {isDrop ? "↳ drop: " : `${set.setType === "warmup" ? "Warm-up" : "Working"}: `}
+        {loadText} × {set.reps}
         {set.effort ? ` · ${EFFORT_LABEL[set.effort]}` : ""}
+        {sideTag}
       </span>
+      {!isDrop && <RestChip set={set} onChanged={onChanged} />}
       <button type="button" onClick={() => setEditing(true)} className={styles.secondaryBtn}>Edit</button>
       <button type="button" onClick={remove} className={styles.secondaryBtn}>Delete</button>
+      <button type="button" onClick={() => onDrop(set)} className={styles.secondaryBtn} title="Add a drop-set segment under this set">+ Drop</button>
     </li>
+  );
+}
+
+// Tap-to-start rest timer (a feature, not a chore): counts up after racking; the
+// NEXT set you log consumes the elapsed time as an exact, source="timed" rest.
+// Optional target fires a notification (permission-gated). Never required —
+// derivation covers untimed rests. Pure client state → works offline.
+function RestTimer({ timerRef }: { timerRef: React.MutableRefObject<number | null> }) {
+  // The shared ref is the source of truth (consumed by logSet via takeTimedRest);
+  // this state is a per-second mirror of it for display only — refs are never
+  // read during render.
+  const [view, setView] = useState<{ running: boolean; elapsed: number }>({ running: false, elapsed: 0 });
+  const [targetMin, setTargetMin] = useState("");
+  const notifyAt = useRef<number | null>(null);
+  const notified = useRef(false);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const start = timerRef.current;
+      setView(start != null ? { running: true, elapsed: Math.floor((Date.now() - start) / 1000) } : { running: false, elapsed: 0 });
+      if (start != null && notifyAt.current != null && !notified.current && Date.now() >= notifyAt.current) {
+        notified.current = true;
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("Rest done — next set");
+        }
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [timerRef]);
+
+  function toggle() {
+    if (timerRef.current != null) {
+      timerRef.current = null; // cancelled — nothing recorded
+      notifyAt.current = null;
+      setView({ running: false, elapsed: 0 });
+    } else {
+      timerRef.current = Date.now();
+      notified.current = false;
+      const mins = Number(targetMin);
+      notifyAt.current = Number.isFinite(mins) && mins > 0 ? Date.now() + mins * 60_000 : null;
+      if (notifyAt.current && typeof Notification !== "undefined" && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+      setView({ running: true, elapsed: 0 });
+    }
+  }
+
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+      <button type="button" onClick={toggle} className={styles.secondaryBtn} title="Start after racking; the next set you log records this as its exact rest">
+        {view.running ? `⏱ ${fmtRest(view.elapsed)} · cancel` : "⏱ Rest timer"}
+      </button>
+      {!view.running && (
+        <input
+          type="number"
+          value={targetMin}
+          onChange={(e) => setTargetMin(e.target.value)}
+          placeholder="min"
+          title="Optional target — notifies when your rest is up"
+          style={{ width: 44, fontSize: 12 }}
+        />
+      )}
+    </span>
   );
 }
 
@@ -238,6 +375,7 @@ function StrengthCard({
   completed,
   onSessionChanged,
   onToggleComplete,
+  takeTimedRest,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -247,6 +385,7 @@ function StrengthCard({
   completed: boolean;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
+  takeTimedRest: () => number | null;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -352,10 +491,76 @@ function StrengthCard({
       reps,
       effort,
       rir: null,
+      // If the rest timer is running, this set consumes it as an exact rest.
+      timedRestSeconds: takeTimedRest(),
     });
     if (resolvedMachineId) localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
     onSessionChanged();
   }
+
+  // Drop sets ("+ Drop"): a drop segment is its own set row, linked to its parent
+  // by dropGroupId, sharing the parent's set number + occurrence. Explicit — no
+  // conventions to remember; the group renders as one nested unit.
+  const [dropFor, setDropFor] = useState<SessionSet | null>(null);
+  const [dropLoad, setDropLoad] = useState("");
+  const [dropReps, setDropReps] = useState(8);
+  async function startDrop(parent: SessionSet) {
+    let groupId = parent.dropGroupId ?? null;
+    if (!groupId) {
+      groupId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `g_${Date.now().toString(36)}`;
+      await editSet(parent.localId!, { dropGroupId: groupId }); // pending_update if synced
+      onSessionChanged();
+    }
+    setDropFor({ ...parent, dropGroupId: groupId });
+    setDropLoad(""); // weight deliberately blank — you just stripped it
+    setDropReps(parent.reps);
+  }
+  async function addDrop(e: React.FormEvent) {
+    e.preventDefault();
+    if (!dropFor) return;
+    const l = Number(dropLoad);
+    if (!Number.isFinite(l) || l < 0) return setError("Drop load can't be negative.");
+    if (!Number.isFinite(dropReps) || dropReps < 1) return setError("Reps must be at least 1.");
+    setError(null);
+    await logSet({
+      sessionId,
+      instanceId: dropFor.instanceId, // drops inherit the parent's occurrence
+      date,
+      exerciseId: dropFor.exerciseId,
+      exerciseName: dropFor.exerciseName,
+      machineId: dropFor.machineId,
+      setType: dropFor.setType,
+      load: l,
+      reps: dropReps,
+      effort: null,
+      rir: null,
+      dropGroupId: dropFor.dropGroupId,
+      parentSetIndex: dropFor.setIndex,
+    });
+    setDropFor(null);
+    onSessionChanged();
+  }
+
+  // Render order: keep log order, but pull each drop group together — parent
+  // first (earliest row), its drops nested under it.
+  const displaySets = useMemo(() => {
+    const out: Array<{ set: SessionSet; isDrop: boolean }> = [];
+    const emitted = new Set<number>();
+    for (const s of loggedSets) {
+      if (emitted.has(s.localId!)) continue;
+      if (!s.dropGroupId) {
+        out.push({ set: s, isDrop: false });
+        emitted.add(s.localId!);
+        continue;
+      }
+      const group = loggedSets.filter((g) => g.dropGroupId === s.dropGroupId);
+      group.forEach((g, i) => {
+        out.push({ set: g, isDrop: i > 0 });
+        emitted.add(g.localId!);
+      });
+    }
+    return out;
+  }, [loggedSets]);
 
   async function openSwap() {
     setSwapOpen((o) => !o);
@@ -468,8 +673,21 @@ function StrengthCard({
 
       {loggedSets.length > 0 && (
         <ul className={styles.logged}>
-          {loggedSets.map((s) => <LoggedSetRow key={s.localId} set={s} onChanged={onSessionChanged} />)}
+          {displaySets.map(({ set: s, isDrop }) => (
+            <LoggedSetRow key={s.localId} set={s} isDrop={isDrop} onChanged={onSessionChanged} onDrop={startDrop} />
+          ))}
         </ul>
+      )}
+
+      {dropFor && (
+        <form onSubmit={addDrop} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "4px 0 4px 22px", fontSize: 14 }}>
+          <span style={{ opacity: 0.75 }}>↳ drop of set {dropFor.setIndex}:</span>
+          <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder="lb" autoFocus style={{ width: 56 }} />
+          <span>×</span>
+          <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 44 }} />
+          <button type="submit" className={styles.primary}>Add drop</button>
+          <button type="button" onClick={() => setDropFor(null)} className={styles.secondaryBtn}>Cancel</button>
+        </form>
       )}
 
       <button type="button" onClick={checkProgression} disabled={checking} className={styles.secondaryBtn}>
@@ -791,6 +1009,16 @@ export default function LogSessionPage() {
   const [showFinish, setShowFinish] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
 
+  // Rest timer (shared across cards): started by RestTimer, consumed exactly once
+  // by whichever set is logged next — that set's rest becomes source "timed".
+  const restTimerRef = useRef<number | null>(null);
+  const takeTimedRest = useCallback((): number | null => {
+    if (restTimerRef.current == null) return null;
+    const secs = (Date.now() - restTimerRef.current) / 1000;
+    restTimerRef.current = null; // consumed; tap again after racking
+    return secs;
+  }, []);
+
   const refreshSession = useCallback(async () => {
     const [occ, sets, cardio, done, p, s] = await Promise.all([
       listOccurrences(sessionId), getSessionSets(sessionId), getSessionCardio(sessionId),
@@ -975,6 +1203,7 @@ export default function LogSessionPage() {
         <button type="button" onClick={() => setPaletteOpen((o) => !o)} className={styles.primary}>
           {paletteOpen ? "Hide add panel" : "+ Add exercise"}
         </button>
+        <RestTimer timerRef={restTimerRef} />
         <span style={{ fontSize: 13, opacity: 0.65 }}>Tap to add as you go — order is kept.</span>
       </div>
 
@@ -1017,6 +1246,7 @@ export default function LogSessionPage() {
                 completed={completed.has(ex.instanceId)}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
+                takeTimedRest={takeTimedRest}
               />
             );
           })}

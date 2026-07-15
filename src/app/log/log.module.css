@@ -291,6 +291,21 @@
   padding: 5px 10px;
 }
 
+/* Rest-before-set chip: shows value + honesty tag (est/timed), tap to correct. */
+.restChip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--border, #444);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.85;
+  cursor: pointer;
+}
+.restChip:hover {
+  border-color: var(--accent, #6ea8fe);
+}
+
 .error {
   color: var(--danger);
   font-size: 13px;

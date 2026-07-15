@@ -27,6 +27,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       reps: setLogs.reps,
       effort: setLogs.effort,
       rir: setLogs.rir,
+      loggedAt: setLogs.loggedAt,
+      restSeconds: setLogs.restSeconds,
+      restSource: setLogs.restSource,
+      dropSetGroup: setLogs.dropSetGroup,
+      side: setLogs.side,
+      loadEntered: setLogs.loadEntered,
+      builtinOffset: setLogs.builtinOffset,
     })
     .from(setLogs)
     .where(eq(setLogs.workoutLogId, log.id))

@@ -18,7 +18,18 @@ interface SetLogPayload {
   rir?: number | null;
   romNote?: string | null;
   notes?: string | null;
+  // Logging depth (all optional; absent = legacy client):
+  loggedAt?: string | null; // client-stamped ISO instant
+  restSeconds?: number | null; // null = unknown (never fabricated)
+  restSource?: "timed" | "derived" | "user" | null;
+  dropSetGroup?: string | null;
+  side?: "left" | "right" | "both" | null;
+  loadEntered?: number | null;
+  builtinOffset?: number | null;
 }
+
+const REST_SOURCES = new Set(["timed", "derived", "user"]);
+const SIDES = new Set(["left", "right", "both"]);
 
 export async function POST(request: NextRequest) {
   const body: SetLogPayload = await request.json();
@@ -80,6 +91,13 @@ export async function POST(request: NextRequest) {
         rir: body.rir != null ? body.rir.toString() : null,
         romNote: body.romNote ?? null,
         notes: body.notes ?? null,
+        loggedAt: body.loggedAt ? new Date(body.loggedAt) : null,
+        restSeconds: body.restSeconds ?? null,
+        restSource: body.restSource && REST_SOURCES.has(body.restSource) ? body.restSource : null,
+        dropSetGroup: body.dropSetGroup ?? null,
+        side: body.side && SIDES.has(body.side) ? body.side : null,
+        loadEntered: body.loadEntered != null ? body.loadEntered.toString() : null,
+        builtinOffset: body.builtinOffset != null ? body.builtinOffset.toString() : null,
       })
       .returning();
 

@@ -333,6 +333,25 @@ export const setLogs = pgTable("set_logs", {
   rir: numeric("rir"),
   romNote: text("rom_note"),
   notes: text("notes"),
+  // Client-stamped instant the set was logged (created_at is server insert time,
+  // which lies for offline sets that sync late). Drives rest derivation. Nullable
+  // for legacy rows.
+  loggedAt: timestamp("logged_at", { withTimezone: true }),
+  // Rest before this set. Honest-unknown model: both null = unknown (never a
+  // fabricated number). Source: timed (rest timer) | derived (gap heuristic) |
+  // user (manual correction) — the LLM must never read invented rests.
+  restSeconds: integer("rest_seconds"),
+  restSource: text("rest_source"), // 'timed' | 'derived' | 'user'
+  // Drop sets: parent + drops share a client-generated group id; rendered as one
+  // nested unit. Volume math is unchanged (each row's load × reps counts).
+  dropSetGroup: text("drop_set_group"),
+  // Unilateral side (left/right/both) — recorded, never a counting convention.
+  side: text("side"),
+  // True-load components: `load` above stays the effective TOTAL (what the core
+  // reads); these record the transparent math (entered + built-in offset).
+  // Additive numerical weight only — pulley ratios etc. stay descriptive.
+  loadEntered: numeric("load_entered"),
+  builtinOffset: numeric("builtin_offset"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
