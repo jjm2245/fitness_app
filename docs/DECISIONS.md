@@ -1036,3 +1036,11 @@ Offline path is safe by design: `addMachine`'s POST is wrapped in try/catch, and
 the set-logs POST re-registers the machine (`insert(machines).onConflictDoNothing`)
 + curates it under the exercise **in the same transaction** as the set — so an
 offline-created machine referenced by a set can't orphan it on sync.
+
+### #8 — sessions-list delete (X) no longer overlaps the label
+
+The X was `position:absolute; right:10px` over a full-width row, so it sat on top
+of the row's date/badges at phone width. Reworked `.rowWrap` into a flex row: the
+row button is `flex:1; min-width:0` (shrinks, content wraps in its box) and
+`.rowDelete` is a static `flex:0 0 auto` sibling with an 8px gap. Verified at
+375px: row ends at 309px, X starts at 317px — no overlap.
