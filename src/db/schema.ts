@@ -190,14 +190,24 @@ export const exerciseSubstitutions = pgTable("exercise_substitutions", {
 });
 
 export const machines = pgTable("machines", {
+  // Opaque, stable id (surrogate key). Historical rows keep their old
+  // label-as-id (never rewritten, so logged history can't orphan); NEW machines
+  // get a client-generated uuid. Display always uses `label` — renames touch one
+  // row, and labels no longer need to be globally unique or carry data.
   id: text("id").primaryKey(),
+  label: text("label"), // display name; backfilled from id in migration 0016
   gym: text("gym"),
   brand: text("brand"),
   model: text("model"),
+  // Additive built-in weight (bar, fixed handles, loaded carriage) auto-applied
+  // to a set's effective load: load = entered + built_in_weight. Distinct from
+  // counterweight_lb (which REDUCES effective load and stays descriptive).
+  builtInWeight: numeric("built_in_weight"),
+  machineType: text("machine_type"), // selectorized | plate_loaded | cable | smith | …
   pulleyRatio: numeric("pulley_ratio"),
   counterweightLb: numeric("counterweight_lb"), // Smith bar ~15-20 lb at PF
   camProfile: text("cam_profile"),
-  notes: text("notes"),
+  notes: text("notes"), // free-text description: serials, links, quirks
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

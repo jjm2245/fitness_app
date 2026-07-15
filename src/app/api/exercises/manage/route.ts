@@ -19,6 +19,7 @@ export async function GET() {
       canonicalName: exercises.canonicalName,
       movementPattern: exercises.movementPattern,
       untagged: exercises.untagged,
+      unilateral: exercises.unilateral,
       day: exercises.day,
       loadType: exercises.loadType,
       description: exercises.description,

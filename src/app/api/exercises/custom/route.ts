@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
       conditioningOnly: exercises.conditioningOnly,
       source: exercises.source,
       untagged: exercises.untagged,
+      unilateral: exercises.unilateral,
     });
 
   return NextResponse.json(row, { status: 201 });

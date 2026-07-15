@@ -12,6 +12,7 @@ export interface ExerciseSearchResult {
   conditioningOnly: boolean;
   source: "curated" | "library" | "custom";
   untagged: boolean;
+  unilateral?: boolean;
   canonicalName?: string | null;
 }
 

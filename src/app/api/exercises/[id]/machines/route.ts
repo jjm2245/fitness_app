@@ -27,26 +27,32 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const ids = Array.from(new Set([...assoc.map((a) => a.machineId), ...usedCount.keys()]));
   const rows = ids.length
-    ? await db.select({ id: machines.id, notes: machines.notes }).from(machines).where(inArray(machines.id, ids))
+    ? await db
+        .select({ id: machines.id, label: machines.label, builtInWeight: machines.builtInWeight, notes: machines.notes })
+        .from(machines)
+        .where(inArray(machines.id, ids))
     : [];
 
   return NextResponse.json(
     rows
-      .map((m) => ({ id: m.id, notes: m.notes, loggedCount: usedCount.get(m.id) ?? 0 }))
-      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((m) => ({ id: m.id, label: m.label ?? m.id, builtInWeight: m.builtInWeight, notes: m.notes, loggedCount: usedCount.get(m.id) ?? 0 }))
+      .sort((a, b) => a.label.localeCompare(b.label))
   );
 }
 
-// POST /api/exercises/[id]/machines { label, notes? } — curate a machine for
-// this exercise ahead of logging (create the global machine if new, associate).
+// POST /api/exercises/[id]/machines { id?, label, notes? } — curate a machine
+// for this exercise ahead of logging (create the global machine if new,
+// associate). The client sends its own uuid id (offline-first identity); legacy
+// callers without one fall back to label-as-id.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json().catch(() => null);
   const label = typeof body?.label === "string" ? body.label.trim() : "";
   if (!label) return NextResponse.json({ error: "label is required" }, { status: 400 });
+  const machineId = typeof body?.id === "string" && body.id.trim() !== "" ? body.id.trim() : label;
   const notes = typeof body?.notes === "string" && body.notes.trim() !== "" ? body.notes.trim() : null;
 
-  await db.insert(machines).values({ id: label, notes }).onConflictDoNothing();
-  await db.insert(exerciseMachines).values({ exerciseId: id, machineId: label }).onConflictDoNothing();
-  return NextResponse.json({ id: label, notes, loggedCount: 0 }, { status: 201 });
+  await db.insert(machines).values({ id: machineId, label, notes }).onConflictDoNothing();
+  await db.insert(exerciseMachines).values({ exerciseId: id, machineId }).onConflictDoNothing();
+  return NextResponse.json({ id: machineId, label, builtInWeight: null, notes, loggedCount: 0 }, { status: 201 });
 }

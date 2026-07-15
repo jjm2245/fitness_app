@@ -30,6 +30,7 @@ import {
   type SessionCardio,
   type Occurrence,
   type AttachExercise,
+  type SetSide,
 } from "@/lib/sessionStore";
 
 interface ProgramExerciseDetail {
@@ -46,6 +47,7 @@ interface ProgramExerciseDetail {
   params: Record<string, unknown> | null;
   source: string;
   untagged: boolean;
+  unilateral?: boolean;
 }
 interface ProgramDayDetail {
   id: number;
@@ -59,7 +61,9 @@ interface ProgramDetail {
   days: ProgramDayDetail[];
 }
 interface MachineOption {
-  id: string;
+  id: string; // opaque stable key (surrogate-key model)
+  label: string; // display name
+  builtInWeight: string | null; // auto-applied additive offset when selected
   notes: string | null;
 }
 interface BlockDetail {
@@ -73,6 +77,7 @@ interface SubstitutionCandidate {
   score: number;
   loadType: string;
   portable: boolean;
+  unilateral?: boolean;
 }
 
 type ProgressionResult =
@@ -104,6 +109,7 @@ interface LoggableOccurrence {
   source: string;
   provenance: string;
   untagged: boolean;
+  unilateral: boolean;
 }
 
 function parseRepRangeMax(repRange: string | null): number {
@@ -392,6 +398,7 @@ function StrengthCard({
     name: ex.exerciseName,
     loadType: ex.loadType,
     portable: ex.portable,
+    unilateral: ex.unilateral,
   });
   // Machines curated for THIS exercise (Part 3c), not the global list.
   const [machines, setMachines] = useState<MachineOption[]>([]);
@@ -409,6 +416,13 @@ function StrengthCard({
   const [load, setLoad] = useState(ex.loadType === "bodyweight" ? 0 : 45);
   const [reps, setReps] = useState(8);
   const [effort, setEffort] = useState<EffortTag | null>(null);
+  // True loads (3a): effective load = entered + a known additive offset. The
+  // offset comes from the selected machine's built-in weight, or — with no
+  // machine — an optional manual "+ bar/built-in" field. Shown transparently.
+  const [manualOffset, setManualOffset] = useState("");
+  // Unilateral side (Part 4): recorded per set; auto-alternates L→R after
+  // logging (tap to override; "both" stays put).
+  const [side, setSide] = useState<SetSide>("left");
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
@@ -428,6 +442,14 @@ function StrengthCard({
   // re-baseline on change) are unchanged — they key off this same null.
   const resolvedMachineId =
     machineId === "" || machineId === UNSPECIFIED_MACHINE ? null : machineId;
+  const selectedMachine = resolvedMachineId ? machines.find((m) => m.id === resolvedMachineId) ?? null : null;
+  // The additive offset applied to this set's effective load (3a): the selected
+  // machine's stored built-in weight, else the optional manual field. Additive
+  // numerical weight only — pulley ratios etc. stay descriptive, never folded in.
+  const machineOffset = selectedMachine?.builtInWeight != null ? Number(selectedMachine.builtInWeight) : 0;
+  const manualOffsetNum = !selectedMachine && manualOffset.trim() !== "" ? Number(manualOffset) : 0;
+  const effOffset = Number.isFinite(machineOffset) && machineOffset !== 0 ? machineOffset : Number.isFinite(manualOffsetNum) ? manualOffsetNum : 0;
+  const totalLoad = load + effOffset;
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
@@ -486,15 +508,23 @@ function StrengthCard({
       exerciseId: activeExercise.id,
       exerciseName: activeExercise.name,
       machineId: resolvedMachineId,
+      machineLabel: selectedMachine?.label ?? null,
       setType,
-      load,
+      // Effective load = entered + known offset; the components are stored too,
+      // so the math stays visible ("90 + 20 = 110") and the core reads the total.
+      load: totalLoad,
+      loadEntered: effOffset !== 0 ? load : null,
+      builtinOffset: effOffset !== 0 ? effOffset : null,
       reps,
       effort,
       rir: null,
+      side: activeExercise.unilateral ? side : null,
       // If the rest timer is running, this set consumes it as an exact rest.
       timedRestSeconds: takeTimedRest(),
     });
     if (resolvedMachineId) localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
+    // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
+    if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
     onSessionChanged();
   }
 
@@ -529,6 +559,7 @@ function StrengthCard({
       exerciseId: dropFor.exerciseId,
       exerciseName: dropFor.exerciseName,
       machineId: dropFor.machineId,
+      machineLabel: dropFor.machineLabel ?? null,
       setType: dropFor.setType,
       load: l,
       reps: dropReps,
@@ -536,6 +567,7 @@ function StrengthCard({
       rir: null,
       dropGroupId: dropFor.dropGroupId,
       parentSetIndex: dropFor.setIndex,
+      side: dropFor.side ?? null, // a drop continues the same side
     });
     setDropFor(null);
     onSessionChanged();
@@ -569,26 +601,31 @@ function StrengthCard({
     setSwapCandidates(await res.json());
   }
   function pickSwap(c: SubstitutionCandidate) {
-    setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable });
+    setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable, unilateral: c.unilateral ?? false });
     setMachineId(localStorage.getItem(lastMachineKey(c.id)) ?? UNSPECIFIED_MACHINE);
     setSwapOpen(false);
   }
   function resetSwap() {
-    setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable });
+    setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable, unilateral: ex.unilateral });
     setMachineId(localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? UNSPECIFIED_MACHINE);
     setSwapOpen(false);
   }
   async function addMachine() {
     const name = newMachineName.trim();
     if (!name) return;
-    setMachineId(name);
+    // Surrogate-key model: the client owns identity (uuid); the label is display
+    // only. Optimistically add locally so it's selected even offline; the set
+    // POST auto-registers id+label on sync if this POST never lands.
+    const newIdVal = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `m_${Date.now().toString(36)}`;
+    setMachines((ms) => [...ms, { id: newIdVal, label: name, builtInWeight: null, notes: null }]);
+    setMachineId(newIdVal);
     setNewMachineName("");
     try {
       // Curate it under this exercise (Part 3c), so it's in the list next time.
       const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: name }),
+        body: JSON.stringify({ id: newIdVal, label: name }),
       });
       if (res.ok) refreshMachines();
     } catch {
@@ -647,11 +684,17 @@ function StrengthCard({
           <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
             <option value={UNSPECIFIED_MACHINE}>Unspecified machine</option>
             <option value="">No machine</option>
-            {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+            {machines.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)} built-in)` : ""}</option>)}
           </select>
         </label>
         <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
         <button type="button" onClick={addMachine}>+ Add</button>
+        {!selectedMachine && (
+          <label style={{ fontSize: 13, opacity: 0.85 }} title="Optional constant added weight (bar, fixed handle) applied to every set's effective load">
+            + bar/built-in{" "}
+            <input type="number" value={manualOffset} onChange={(e) => setManualOffset(e.target.value)} placeholder="lb" style={{ width: 48 }} />
+          </label>
+        )}
       </div>
 
       <form onSubmit={handleAddSet} className={styles.entryForm}>
@@ -663,7 +706,21 @@ function StrengthCard({
         <span>{ex.loadType === "bodyweight" ? "added lb ×" : "lb ×"}</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} title="Reps" />
         <span>reps</span>
+        {activeExercise.unilateral && (
+          <span className={styles.effortPicker} title="Unilateral — which side is this set? Auto-alternates after each set.">
+            {(["left", "right", "both"] as const).map((s) => (
+              <button key={s} type="button" onClick={() => setSide(s)} className={side === s ? styles.effortActive : styles.effortBtn}>
+                {s === "left" ? "L" : s === "right" ? "R" : "L+R"}
+              </button>
+            ))}
+          </span>
+        )}
         <button type="submit" className={styles.primary}>Add set</button>
+        {effOffset !== 0 && (
+          <span style={{ fontSize: 13, opacity: 0.85 }} title="Effective load = what you set + the known built-in weight. Progression uses the total.">
+            = {load} + {effOffset} = <strong>{totalLoad} lb</strong>
+          </span>
+        )}
       </form>
       <div className={styles.effortRow}>
         <span className={styles.effortLabel}>Effort:</span>
@@ -1107,6 +1164,7 @@ export default function LogSessionPage() {
       source: o.source,
       provenance: o.provenance,
       untagged: o.untagged,
+      unilateral: o.unilateral ?? false,
     }));
   }, [occurrences]);
 
@@ -1118,6 +1176,7 @@ export default function LogSessionPage() {
     conditioningOnly: e.conditioningOnly,
     provenance: e.source,
     untagged: e.untagged,
+    unilateral: e.unilateral ?? false,
     targetSets: e.targetSets,
     repRange: e.repRange,
     rirTarget: e.rirTarget,
@@ -1140,6 +1199,7 @@ export default function LogSessionPage() {
         conditioningOnly: r.conditioningOnly,
         provenance: r.source,
         untagged: r.untagged,
+        unilateral: r.unilateral ?? false,
       },
       "Ad-hoc"
     );

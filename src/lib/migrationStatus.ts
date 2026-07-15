@@ -7,7 +7,7 @@ import { db } from "@/db/client";
 // signal, and `npm run db:check` fails if this drifts from
 // drizzle/meta/_journal.json (so it can't silently rot when a migration is
 // added). BUMP THIS whenever you add a migration.
-export const EXPECTED_MIGRATIONS = 16;
+export const EXPECTED_MIGRATIONS = 17;
 
 // How many migrations drizzle records as applied. A missing tracking table
 // (nothing migrated yet) reads as 0 rather than throwing.

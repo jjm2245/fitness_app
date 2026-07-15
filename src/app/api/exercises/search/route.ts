@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
       conditioningOnly: exercises.conditioningOnly,
       source: exercises.source,
       untagged: exercises.untagged,
+      unilateral: exercises.unilateral,
       canonicalName: exercises.canonicalName,
     })
     .from(exercises)

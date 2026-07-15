@@ -23,9 +23,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const body = await request.json().catch(() => null);
 
-  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; updatedAt: Date } = {
+  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; unilateral?: boolean; updatedAt: Date } = {
     updatedAt: new Date(),
   };
+
+  // Unilateral tag — visible + editable per exercise (Part 4). Your edit
+  // overrides for your copy; the library value was only ever the default.
+  if (typeof body?.unilateral === "boolean") updates.unilateral = body.unilateral;
 
   if (body?.movementPattern !== undefined) {
     if (typeof body.movementPattern !== "string" || !PATTERNS.has(body.movementPattern)) {
@@ -47,7 +51,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     updates.description = d === "" ? null : d;
   }
 
-  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined) {
+  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined && updates.unilateral === undefined) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
@@ -66,6 +70,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       canonicalName: exercises.canonicalName,
       movementPattern: exercises.movementPattern,
       description: exercises.description,
+      unilateral: exercises.unilateral,
     });
 
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });

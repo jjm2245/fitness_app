@@ -112,6 +112,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       conditioningOnly: m?.conditioningOnly ?? false,
       provenance: m?.source ?? "custom",
       untagged: m?.untagged ?? true,
+      unilateral: m?.unilateral ?? false,
       params: m?.params ?? null,
       orderIndex: o.orderIndex,
       source: o.source,

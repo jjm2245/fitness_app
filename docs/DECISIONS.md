@@ -1299,3 +1299,54 @@ untouched (each row's load × reps counts).
 shares group + set_index server-side; all of it survives reload. 111 tests
 (deriveRest band, derived/timed/user transitions, drop numbering + sync), clean
 build.
+
+### Parts 3–4 — true loads, Machines section (surrogate keys), unilateral sides
+
+**Machines surrogate-key model (approved).** `machines.id` is now an opaque
+stable key: historical rows keep their old label-as-id (zero history rows
+rewritten — proven by migration 0016's before/after counts: 3→3 machines, 1→1
+set refs, 2→2 exercise links, labels 100% backfilled, 0 orphans), and NEW
+machines get client-generated uuids (offline-first identity, same pattern as
+sessions/occurrences). `label` is display-only, so a rename touches ONE row and
+labels no longer need global uniqueness or to carry data. 0016 also adds
+`built_in_weight` (additive offset — deliberately NOT reusing `counterweight_lb`,
+which subtracts) and `machine_type`; brand/gym/notes already existed.
+EXPECTED_MIGRATIONS → 17. Prod not migrated yet (proposed with the batch deploy).
+
+**Machines APIs.** `GET /api/machines` returns the managed list (fields +
+referenced exercises + logged counts). `PATCH /api/machines/[id]` edits fields;
+**rename into an existing label → 409 `duplicate_label` with the existing id — an
+explicit warning offering merge, never a silent merge** (user condition).
+`DELETE` refuses (409) while logged sets reference the machine.
+`POST /api/machines/[id]/merge {targetId}` re-points set_logs + exercise_machines
+(deduped) then deletes the source — the collapse pattern, kept for genuine
+merges. Set-log auto-registration now carries `machineLabel` so an
+offline-created machine lands server-side with its real label.
+
+**/machines page** mirrors /exercises: label + structured fields (gym, brand,
+model, built-in weight, type) + free-text description, per-machine "used by"
+exercise list + logged count, edit / merge-into / history-safe delete, and the
+duplicate-label warning UI with a one-tap "merge into the existing one".
+
+**3a true loads.** Effective load = entered + known additive offset (selected
+machine's built-in weight auto-applied; manual "+ bar/built-in" field when no
+machine). `set_logs.load` stays the TOTAL — core/progression/volume unchanged;
+`load_entered`/`builtin_offset` record the components and the UI shows the math
+("30 + 20 = 50 lb") in the form preview and on logged rows. Additive numerical
+weight only; pulley ratios etc. stay descriptive.
+
+**Part 4 unilateral.** `unilateral` exposed through search/manage/program/
+substitutions/session-hydration and carried on occurrences (schemaless field, no
+IDB bump). Side selector (L / R / L+R) appears ONLY on unilateral exercises;
+auto-alternates L→R after each logged set (approved default); drops inherit the
+parent's side; each side-set is its own row so volume falls out naturally. The
+tag is visible + toggleable per exercise in /exercises (PATCH; your copy
+overrides the library default).
+
+**Verified in-app:** uuid machine create (201) → one-row rename → duplicate-label
+409 with merge hint → merge → guarded delete (409 with sets / 200 without);
+"curl station +20 (+20 built-in)" in the dropdown, live "= 30 + 20 = 50 lb"
+preview, logged row "30 + 20 = 50 lb × 8 · L", server row load=50/entered=30/
+offset=20/side=left with the uuid machine ref; side selector on the unilateral
+card only, auto-alternate L→R observed; /machines page renders all of it.
+112 tests, clean build, src/core untouched.

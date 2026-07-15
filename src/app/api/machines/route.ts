@@ -1,31 +1,65 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { machines } from "@/db/schema";
+import { machines, exerciseMachines, exercises, setLogs } from "@/db/schema";
 
+// GET /api/machines — the full managed machine list (Machines section, Part 3b):
+// structured fields + free-text notes, which exercises reference each machine,
+// and how many logged sets point at it (drives history-safe delete/merge).
 export async function GET() {
-  const rows = await db.select().from(machines).orderBy(machines.id);
-  return NextResponse.json(rows);
+  const rows = await db.select().from(machines).orderBy(machines.label);
+
+  const refs = await db
+    .select({ machineId: exerciseMachines.machineId, exerciseId: exerciseMachines.exerciseId, name: exercises.name })
+    .from(exerciseMachines)
+    .innerJoin(exercises, eq(exerciseMachines.exerciseId, exercises.id));
+  const used = await db
+    .select({ machineId: setLogs.machineId, n: sql<number>`count(*)`.mapWith(Number) })
+    .from(setLogs)
+    .groupBy(setLogs.machineId);
+
+  const refsBy = new Map<string, Array<{ exerciseId: string; name: string }>>();
+  for (const r of refs) (refsBy.get(r.machineId) ?? refsBy.set(r.machineId, []).get(r.machineId)!).push({ exerciseId: r.exerciseId, name: r.name });
+  const usedBy = new Map<string, number>();
+  for (const u of used) if (u.machineId) usedBy.set(u.machineId, u.n);
+
+  return NextResponse.json(
+    rows.map((m) => ({
+      id: m.id,
+      label: m.label ?? m.id,
+      gym: m.gym,
+      brand: m.brand,
+      model: m.model,
+      builtInWeight: m.builtInWeight,
+      machineType: m.machineType,
+      notes: m.notes,
+      exercises: refsBy.get(m.id) ?? [],
+      loggedCount: usedBy.get(m.id) ?? 0,
+    }))
+  );
 }
 
-// Lets the logging screen register a machine in one tap instead of requiring
-// it to pre-exist (spec §16's "machine identification UX" friction point).
+// POST /api/machines { id?, label, ... } — create a machine. The client owns
+// identity (a uuid) so a machine created offline maps to exactly one row on
+// sync; legacy callers without a separate label fall back to label-as-id.
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const id = body?.id;
-  if (typeof id !== "string" || id.trim() === "") {
-    return NextResponse.json({ error: "id is required" }, { status: 400 });
-  }
-  const trimmedId = id.trim();
+  const label = typeof body?.label === "string" ? body.label.trim() : typeof body?.id === "string" ? body.id.trim() : "";
+  if (!label) return NextResponse.json({ error: "label is required" }, { status: 400 });
+  const id = typeof body?.id === "string" && body.id.trim() !== "" ? body.id.trim() : label;
 
   const [row] = await db
     .insert(machines)
-    .values({ id: trimmedId, notes: typeof body?.notes === "string" ? body.notes : null })
+    .values({
+      id,
+      label,
+      notes: typeof body?.notes === "string" && body.notes.trim() !== "" ? body.notes.trim() : null,
+      builtInWeight: typeof body?.builtInWeight === "number" ? body.builtInWeight.toString() : null,
+    })
     .onConflictDoNothing()
     .returning();
 
   if (row) return NextResponse.json(row, { status: 201 });
-
-  const [existing] = await db.select().from(machines).where(eq(machines.id, trimmedId));
+  const [existing] = await db.select().from(machines).where(eq(machines.id, id));
   return NextResponse.json(existing, { status: 200 });
 }

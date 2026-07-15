@@ -10,6 +10,7 @@ interface SetLogPayload {
   programDay?: string | null;
   exerciseId: string;
   machineId?: string | null;
+  machineLabel?: string | null; // display label for offline-created machines
   setIndex: number;
   setType: "warmup" | "working";
   load: number;
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     // machine row on first use rather than requiring a separate "add machine" step
     // before logging is possible. Users can enrich brand/pulley-ratio/etc. later.
     if (body.machineId) {
-      await tx.insert(machines).values({ id: body.machineId }).onConflictDoNothing();
+      await tx.insert(machines).values({ id: body.machineId, label: body.machineLabel ?? body.machineId }).onConflictDoNothing();
       // Curate the machine under this exercise (Part 3c) — builds the per-
       // exercise machine list automatically from real use.
       await tx

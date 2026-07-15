@@ -271,6 +271,38 @@ describe("drop sets — linked rows, shared group + set number", () => {
   });
 });
 
+// True loads + unilateral (Parts 3–4): the stored `load` is the effective TOTAL
+// (what the core reads); the components + side + machine label ride along.
+describe("true loads + side + machine label sync through", () => {
+  it("POSTs loadEntered/builtinOffset/side/machineLabel and stores load as the total", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
+      const method = opts?.method ?? "GET";
+      if (url === "/api/session-exercises" && method === "POST") return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      if (url === "/api/set-logs" && method === "POST") {
+        bodies.push(JSON.parse(String(opts?.body ?? "{}")));
+        return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+
+    const { id, date, inst } = await newSession();
+    const row = await logSet({
+      ...baseInput, sessionId: id, instanceId: inst, date,
+      load: 110, loadEntered: 90, builtinOffset: 20, // 90 entered + 20 built-in
+      side: "left", machineId: "m-uuid-1", machineLabel: "pec fly by the mirror",
+    });
+    expect(row.load).toBe(110); // the total — progression/volume read this
+    await sync();
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({
+      load: 110, loadEntered: 90, builtinOffset: 20,
+      side: "left", machineId: "m-uuid-1", machineLabel: "pec fly by the mirror",
+    });
+  });
+});
+
 describe("logging + sync", () => {
   beforeEach(mockOnline);
 

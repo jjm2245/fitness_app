@@ -65,6 +65,9 @@ export interface SessionSet {
   side?: SetSide | null; // unilateral exercises only
   loadEntered?: number | null; // what the user set/added (load = entered + offset)
   builtinOffset?: number | null; // machine built-in / bar weight applied
+  // Display label of the referenced machine (surrogate-key model) — carried so
+  // an offline-created machine auto-registers server-side with its real label.
+  machineLabel?: string | null;
 }
 
 // "Done" now marks a specific occurrence (instance), since the same exercise
@@ -90,6 +93,7 @@ export interface Occurrence {
   source: string; // where added from: "Legs + shoulders" | "block:Abs" | "Ad-hoc"
   provenance: string; // curated | library | custom
   untagged: boolean;
+  unilateral?: boolean; // side selector shows only for unilateral exercises
   orderIndex: number;
   // Program-day targets travel with the occurrence so the log screen is fully
   // self-contained per session (no /api/program round-trip). Null for
@@ -401,6 +405,7 @@ export interface ServerSession {
     conditioningOnly: boolean;
     provenance: string;
     untagged: boolean;
+    unilateral?: boolean;
     params: Record<string, unknown> | null;
     orderIndex: number;
     source: string | null;
@@ -484,6 +489,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       source: e.source ?? session.origin,
       provenance: e.provenance,
       untagged: e.untagged,
+      unilateral: e.unilateral ?? false,
       orderIndex: i,
       targetSets: null,
       repRange: null,
@@ -567,6 +573,7 @@ export interface LogSetInput {
   side?: SetSide | null;
   loadEntered?: number | null;
   builtinOffset?: number | null;
+  machineLabel?: string | null;
 }
 
 // Estimated seconds a set takes: ~3.5s per rep. Only used to back the rest
@@ -626,6 +633,7 @@ export async function logSet(input: LogSetInput): Promise<SessionSet> {
     side: input.side ?? null,
     loadEntered: input.loadEntered ?? null,
     builtinOffset: input.builtinOffset ?? null,
+    machineLabel: input.machineLabel ?? null,
     serverId: null,
     syncState: "pending_create",
   };
@@ -688,6 +696,7 @@ export interface AttachExercise {
   conditioningOnly: boolean;
   provenance: string;
   untagged: boolean;
+  unilateral?: boolean;
   targetSets?: number | null;
   repRange?: string | null;
   rirTarget?: string | null;
@@ -712,6 +721,7 @@ export async function addOccurrence(sessionId: string, item: AttachExercise, sou
     conditioningOnly: item.conditioningOnly,
     provenance: item.provenance,
     untagged: item.untagged,
+    unilateral: item.unilateral ?? false,
     targetSets: item.targetSets ?? null,
     repRange: item.repRange ?? null,
     rirTarget: item.rirTarget ?? null,
@@ -985,6 +995,7 @@ async function runSync(): Promise<SyncResult> {
             date: row.date,
             exerciseId: row.exerciseId,
             machineId: row.machineId,
+            machineLabel: row.machineLabel ?? null,
             setIndex: row.setIndex,
             setType: row.setType,
             load: row.load,

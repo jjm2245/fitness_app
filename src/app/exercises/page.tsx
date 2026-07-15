@@ -15,12 +15,14 @@ interface ManagedExercise {
   day: string | null;
   loadType: string;
   description: string | null;
+  unilateral: boolean;
   kind: "library_name" | "named_on_ref" | "custom";
   loggedCount: number;
 }
 
 interface ExerciseMachine {
-  id: string;
+  id: string; // opaque stable key (surrogate-key model)
+  label: string; // display name
   notes: string | null;
   loggedCount: number;
 }
@@ -121,6 +123,23 @@ export default function ExercisesPage() {
     }
   }
 
+  // Unilateral tag toggle (Part 4) — visible + correctable per exercise. Your
+  // edit overrides for your copy; a library value was only ever the default.
+  async function toggleUnilateral(e: ManagedExercise) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(e.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unilateral: !e.unilateral }),
+      });
+      if (res.ok) await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeExercise(id: string) {
     if (busy) return;
     setBusy(true);
@@ -161,7 +180,10 @@ export default function ExercisesPage() {
     <main className={styles.page}>
       <div className={styles.head}>
         <h1>My exercises</h1>
-        <Link href="/sessions" className={styles.btn}>← Sessions</Link>
+        <span style={{ display: "inline-flex", gap: 8 }}>
+          <Link href="/machines" className={styles.btn}>Machines</Link>
+          <Link href="/sessions" className={styles.btn}>← Sessions</Link>
+        </span>
       </div>
       <p className={styles.hint}>
         Your named + custom exercises. <strong>library name</strong> uses the library&rsquo;s own name;{" "}
@@ -196,6 +218,7 @@ export default function ExercisesPage() {
                 <span className={styles.name}>{e.name}</span>
                 <span className={`${styles.badge} ${styles[`k_${e.kind}`]}`}>{KIND_LABEL[e.kind]}</span>
                 {e.untagged && <span className={styles.meta}>· untagged</span>}
+                {e.unilateral && <span className={styles.meta}>· unilateral</span>}
                 {e.loggedCount > 0 && <span className={styles.meta}>· {e.loggedCount} logged</span>}
               </div>
               {e.kind === "named_on_ref" && e.canonicalName && (
@@ -225,6 +248,9 @@ export default function ExercisesPage() {
                   </button>
                   <button type="button" className={styles.btn} onClick={() => { setDescribing(e.id); setDescText(e.description ?? ""); }}>
                     {e.description ? "Edit description" : "Add description"}
+                  </button>
+                  <button type="button" className={styles.btn} onClick={() => toggleUnilateral(e)} disabled={busy} title="Unilateral = one side at a time; each logged set gets an L/R/both selector">
+                    {e.unilateral ? "Unilateral ✓" : "Mark unilateral"}
                   </button>
                   <button type="button" className={`${styles.btn} ${styles.danger}`} onClick={() => { setRemoving(e); setRemoveErr(null); }}>Remove</button>
                 </div>
@@ -362,7 +388,8 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
       const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/machines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: l, notes: note.trim() || undefined }),
+        // Client-generated opaque id (surrogate-key model) — label is display only.
+        body: JSON.stringify({ id: crypto.randomUUID(), label: l, notes: note.trim() || undefined }),
       });
       if (res.ok) {
         setLabel("");
@@ -419,7 +446,7 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
           {rows.map((m) => (
             <li key={m.id} className={styles.itemTop} style={{ justifyContent: "space-between" }}>
               <span>
-                <span className={styles.name}>{m.id}</span>
+                <span className={styles.name}>{m.label}</span>
                 {m.notes ? <span className={styles.meta}> · {m.notes}</span> : null}
                 {m.loggedCount > 0 ? <span className={styles.meta}> · {m.loggedCount} logged</span> : null}
               </span>

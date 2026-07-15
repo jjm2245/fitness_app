@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
           name: exercises.name,
           loadType: exercises.loadType,
           portable: exercises.portable,
+          unilateral: exercises.unilateral,
         })
         .from(exercises)
         .where(inArray(exercises.id, candidateIds))
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
       name: detailsById.get(r.exercise.id)?.name ?? r.exercise.id,
       loadType: detailsById.get(r.exercise.id)?.loadType,
       portable: detailsById.get(r.exercise.id)?.portable,
+      unilateral: detailsById.get(r.exercise.id)?.unilateral ?? false,
       // preserves weekly stimulus, not the load number (spec §8) — the swap UI
       // keeps the original program-exercise's target sets/rep-range/RIR as-is.
     }))
