@@ -528,6 +528,71 @@ describe("reconcile finish flag from server truth (false 'not synced' fix)", () 
   });
 });
 
+// The wrong-side-wins guard + its paired client retry (item 4, "safe reconcile").
+// A stateful mock server mirrors the real /api/session-exercises prune: it refuses
+// to drop an occurrence that still has logged sets, reporting it in keptWithHistory
+// until those sets are deleted.
+describe("history-safe prune + two-pass heal (occurrence with synced sets)", () => {
+  const tri: AttachExercise = { exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false };
+
+  function statefulServer() {
+    const occ = new Set<string>(); // instanceIds the server currently holds
+    const setToInst = new Map<number, string>(); // set serverId -> instanceId
+    const instHasSets = () => new Set([...setToInst.values()]);
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
+      const method = opts?.method ?? "GET";
+      if (url === "/api/session-exercises" && method === "POST") {
+        const list = (JSON.parse(String(opts?.body ?? "{}")).exercises as Array<{ clientInstanceId: string }>).map((e) => e.clientInstanceId);
+        const keep = new Set(list);
+        const withSets = instHasSets();
+        const keptWithHistory: string[] = [];
+        for (const id of [...occ]) {
+          if (keep.has(id)) continue;
+          if (withSets.has(id)) keptWithHistory.push(id); // guard: never drop a row with sets
+          else occ.delete(id);
+        }
+        for (const id of list) occ.add(id);
+        return { ok: true, status: 200, json: async () => ({ ok: true, keptWithHistory }) } as Response;
+      }
+      if (url === "/api/set-logs" && method === "POST") {
+        const inst = JSON.parse(String(opts?.body ?? "{}")).instanceId as string;
+        const id = nextServerId++;
+        setToInst.set(id, inst);
+        return { ok: true, status: 201, json: async () => ({ id }) } as Response;
+      }
+      const del = url.match(/\/api\/set-logs\/(\d+)$/);
+      if (del && method === "DELETE") {
+        setToInst.delete(Number(del[1]));
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+    return { serverOcc: occ };
+  }
+
+  it("keeps the occurrence until its sets delete, then prunes it — no phantom, no lost sets", async () => {
+    const { serverOcc } = statefulServer();
+    const { id, date } = await newSession(); // deadlift occurrence
+    const only = (await listOccurrences(id))[0];
+    const t = await addOccurrence(id, tri, "Chest + triceps");
+    await logSet({ ...baseInput, sessionId: id, instanceId: t.instanceId, date, load: 90 });
+    await sync();
+    expect([...serverOcc].sort()).toEqual([only.instanceId, t.instanceId].sort());
+    expect(await pendingCount(id)).toBe(0);
+
+    // Remove the occurrence that HAS a synced set.
+    await removeOccurrence(id, t.instanceId);
+    const r = await sync();
+    expect(r.authError).toBe(false);
+
+    // One sync heals it: the set was deleted, then the now-empty row pruned.
+    expect([...serverOcc]).toEqual([only.instanceId]); // tri pruned, deadlift kept
+    expect(await pendingCount(id)).toBe(0); // flag cleared, nothing lingering
+    // The deleted set is gone locally too (no orphaned set for the removed occ).
+    expect((await getSessionSets(id)).some((s) => s.instanceId === t.instanceId)).toBe(false);
+  });
+});
+
 // The gap that let session 3 sit broken: a session that went stale *before* the
 // occurrencesDirty flag existed (its list shrank locally but never re-POSTed) has
 // occurrencesDirty=false and all remaining occurrences synced — so the store

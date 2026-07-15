@@ -1174,3 +1174,27 @@ Added a characterisation test for the pre-existing stale state (clean dirty flag
 shorter local list, reproduced by simulating the old un-dirtying removal directly in
 the store): plain sync() does not re-reconcile it and pendingCount reports 0 — the
 exact reason session 3 sat broken. Guards against an accidental (unreviewed) auto-heal.
+
+### Item 4 — safe reconcile (APPROVED, built)
+Two parts, per the chosen option:
+1. **History-safe prune** in `POST /api/session-exercises`: an occurrence dropped
+   from the client's list is pruned **only if it has no logged sets/cardio**; any
+   with logged data is kept and reported in `keptWithHistory`. This caps the
+   blast radius so a stale/wiped client can never make the server auto-delete real
+   history. Verified in-app against the dev DB: omitting a set-bearing occurrence
+   returns `keptWithHistory:[…]` and keeps it; omitting a setless one prunes it.
+2. **Paired client retry (two-pass)**: because occurrences sync *before* sets, a
+   legit removal of an occurrence that still has synced sets is kept on pass 1
+   (`keptWithHistory` → session stays dirty), its sets delete in the set/cardio
+   loops, then a **second occurrence pass** re-POSTs and it prunes cleanly — no
+   phantom, no lost sets, all in one sync. `pushOccurrences` only clears
+   `occurrencesDirty` when the server fully reconciled (`keptWithHistory` empty).
+3. **Explicit heal**: `reconcileOccurrenceList(sessionId)` (dirty + sync) behind a
+   **"Reconcile"** button that appears on a sessions-list row flagged
+   `not synced · list (…)`. User-initiated, never automatic (wrong-side-wins). It
+   treats the local list as source of truth but, thanks to (1), cannot delete
+   logged history.
+
+Tests: stateful-server test proving the guard + two-pass heal (remove an
+occurrence with a synced set → server keeps it → set deletes → pruned, no phantom,
+no lost set). 21/21 store tests; clean build.

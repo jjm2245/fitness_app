@@ -9,6 +9,7 @@ import {
   listLocalSessionSummaries,
   deleteSession,
   reconcileFinishedFromServer,
+  reconcileOccurrenceList,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -181,6 +182,18 @@ export default function SessionsPage() {
     router.push(`/log/${id}`);
   }
 
+  const [reconciling, setReconciling] = useState<string | null>(null);
+  async function reconcile(id: string) {
+    if (reconciling) return;
+    setReconciling(id);
+    try {
+      await reconcileOccurrenceList(id); // re-POST local list; server prunes (history-safe)
+      await refresh();
+    } finally {
+      setReconciling(null);
+    }
+  }
+
   async function doDelete() {
     if (!confirm || deleting) return;
     setDeleting(true);
@@ -240,7 +253,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>In progress</div>
               <ul className={styles.list}>
                 {inProgress.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} reconciling={reconciling === r.id} />
                 ))}
               </ul>
             </>
@@ -250,7 +263,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>Finished</div>
               <ul className={styles.list}>
                 {finished.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} />
+                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} reconciling={reconciling === r.id} />
                 ))}
               </ul>
             </>
@@ -282,7 +295,8 @@ export default function SessionsPage() {
   );
 }
 
-function SessionRow({ row, onOpen, onDelete }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void }) {
+function SessionRow({ row, onOpen, onDelete, onReconcile, reconciling }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void; onReconcile: (id: string) => void; reconciling: boolean }) {
+  const listMismatch = row.pendingSync && !!row.pendingReason?.startsWith("list");
   return (
     <li className={styles.rowWrap}>
       <button className={styles.row} onClick={() => onOpen(row.id)}>
@@ -300,6 +314,17 @@ function SessionRow({ row, onOpen, onDelete }: { row: Row; onOpen: (id: string) 
           )}
         </div>
       </button>
+      {listMismatch && (
+        <button
+          type="button"
+          className={styles.rowReconcile}
+          title="This session's exercise list disagrees with the server (a pre-fix stale sync). Re-push your local list; the server keeps any occurrence that still has logged sets."
+          onClick={() => onReconcile(row.id)}
+          disabled={reconciling}
+        >
+          {reconciling ? "…" : "Reconcile"}
+        </button>
+      )}
       <button
         type="button"
         className={styles.rowDelete}

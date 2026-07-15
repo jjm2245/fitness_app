@@ -282,6 +282,18 @@ export async function reconcileFinishedFromServer(finishedIds: string[]): Promis
   return fixed;
 }
 
+// Explicit, user-initiated heal for a session whose server occurrence list
+// disagrees with the local one (a session that went stale before occurrencesDirty
+// existed — the flag never re-POSTs on its own). Treats the LOCAL list as the
+// source of truth and re-POSTs it. Safe by construction: the server prune refuses
+// to delete any occurrence that still carries logged sets/cardio, so this can
+// never auto-delete real history — at worst it leaves a with-history row for
+// review. Not automatic (see DECISIONS item 4 — wrong-side-wins risk).
+export async function reconcileOccurrenceList(sessionId: string): Promise<SyncResult> {
+  await markOccurrencesDirty(sessionId);
+  return sync();
+}
+
 export async function deleteLocalSession(id: string): Promise<void> {
   const db = await getDb();
   await db.delete("sessions", id);
@@ -787,6 +799,29 @@ async function runSync(): Promise<SyncResult> {
   // occurrence was removed still POSTs its now-empty list and the server prunes
   // the stale rows. A session syncs when its list is dirty (add/remove/reorder)
   // or any occurrence is still unsynced.
+  // Push one session's ordered list. Marks its occurrences synced; returns
+  // `clean` = the server fully reconciled. `clean` is false when the server kept
+  // occurrence(s) we tried to drop because they still carry logged sets/cardio
+  // (the wrong-side-wins guard) — we keep the session dirty and retry after the
+  // set/cardio delete loops have run, at which point the row is empty and prunes.
+  const pushOccurrences = async (s: LocalSession, occs: Occurrence[]): Promise<boolean> => {
+    const res = await send("/api/session-exercises", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        clientSessionId: s.id,
+        date: s.date,
+        programDay: s.origin,
+        exercises: [...occs]
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source })),
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { keptWithHistory?: string[] };
+    for (const o of occs) await db.put("occurrences", { ...o, synced: true });
+    return !(Array.isArray(body.keptWithHistory) && body.keptWithHistory.length > 0);
+  };
+
   const allSessions = await db.getAll("sessions");
   const occBySession = new Map<string, Occurrence[]>();
   for (const o of await db.getAll("occurrences")) {
@@ -797,20 +832,8 @@ async function runSync(): Promise<SyncResult> {
     const needsSync = s.occurrencesDirty || occs.some((o) => !o.synced);
     if (!needsSync) continue;
     try {
-      await send("/api/session-exercises", {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          clientSessionId: s.id,
-          date: s.date,
-          programDay: s.origin,
-          exercises: [...occs]
-            .sort((a, b) => a.orderIndex - b.orderIndex)
-            .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source })),
-        }),
-      });
-      for (const o of occs) await db.put("occurrences", { ...o, synced: true });
-      if (s.occurrencesDirty) await db.put("sessions", { ...s, occurrencesDirty: false });
+      const clean = await pushOccurrences(s, occs);
+      if (s.occurrencesDirty && clean) await db.put("sessions", { ...s, occurrencesDirty: false });
     } catch (e) {
       if (record(e)) return result;
     }
@@ -888,6 +911,20 @@ async function runSync(): Promise<SyncResult> {
         if (row.localId != null) await db.delete("cardio", row.localId);
         result.deleted += 1;
       }
+    } catch (e) {
+      if (record(e)) return result;
+    }
+  }
+
+  // Second occurrence pass: a session still dirty after the first pass had an
+  // occurrence the server kept because it still had logged sets/cardio. Those
+  // sets/cardio were just deleted above, so the row is now empty — re-POST so it
+  // prunes and the flag clears (heals a legit remove-with-sets in one sync).
+  for (const s of await db.getAll("sessions")) {
+    if (!s.occurrencesDirty) continue;
+    const occs = await db.getAllFromIndex("occurrences", "by-session", s.id);
+    try {
+      if (await pushOccurrences(s, occs)) await db.put("sessions", { ...s, occurrencesDirty: false });
     } catch (e) {
       if (record(e)) return result;
     }

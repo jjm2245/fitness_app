@@ -50,6 +50,22 @@
   align-items: stretch;
   gap: 8px;
 }
+.rowReconcile {
+  flex: 0 0 auto;
+  align-self: stretch;
+  background: transparent;
+  border: 1px solid var(--accent, #6ea8fe);
+  border-radius: 6px;
+  color: var(--accent, #6ea8fe);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+}
+.rowReconcile:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .rowDelete {
   flex: 0 0 auto;
   align-self: stretch;
