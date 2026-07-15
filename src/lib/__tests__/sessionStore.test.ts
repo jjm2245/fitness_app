@@ -485,11 +485,11 @@ describe("removing a synced occurrence re-syncs the shortened list (bug 1)", () 
     expect(await pendingCount(id)).toBe(0);
   });
 
-  // KNOWN GAP (item 3): removing the *last/only* occurrence leaves no survivor to
-  // dirty, so the occurrence sync loop (which iterates existing occurrences) never
-  // re-POSTs — the server keeps the stale row. The clean fix is a session-level
-  // `occurrencesDirty` flag (proposed to the user); un-skip when that lands.
-  it.skip("re-POSTs an empty list when the last occurrence is removed", async () => {
+  // Item 3, now fixed by the session-level `occurrencesDirty` flag: removing the
+  // *last/only* occurrence leaves no survivor to dirty, but dirtiness lives on the
+  // session, so the sync loop still re-POSTs the now-empty list and the server
+  // prunes the stale row.
+  it("re-POSTs an empty list when the last occurrence is removed", async () => {
     const posts: string[][] = [];
     mockOnlineCapturingOccurrences(posts);
 

@@ -1110,3 +1110,16 @@ flag set on add/remove/reorder and cleared when the list POSTs — dirtiness liv
 list where it belongs, and the empty-list case falls out naturally. Held for user
 sign-off (don't unilaterally rework the sync state machine). The last-occurrence
 regression test is committed as `it.skip`, ready to un-skip when the flag lands.
+
+### Item 3 — occurrencesDirty flag (approved, built)
+Replaced the survivor-dirtying hack with a session-level `occurrencesDirty` flag —
+dirtiness is a property of the ordered list, not any single occurrence. Set on
+add/remove/reorder (`markOccurrencesDirty`), cleared when the list POSTs. The
+occurrence sync loop now iterates **all** sessions (not just those with
+occurrences) and syncs any that are dirty or have an unsynced occurrence — so
+removing the **last** occurrence still re-POSTs a now-empty list and the server
+prunes the stale rows (the corner-case hole is closed). `pendingCount` counts a
+dirty list once (added only when no unsynced occurrence already accounts for it,
+so no double-count). `hydrateFromServer` marks hydrated sessions clean. Regression
+tests: multi-removal down to one survivor, and last-occurrence removal → empty
+re-POST (both passing; 19/19 in the store suite).

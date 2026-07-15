@@ -22,6 +22,11 @@ export interface LocalSession {
   createdAt: string; // ISO
   finishedAt: string | null; // ISO instant, stamped on "Finish session"
   finishSynced: boolean;
+  // The ordered occurrence list has an un-pushed change (add/remove/reorder).
+  // Dirtiness is a property of the *list*, not of any single occurrence — so it
+  // survives even when the last occurrence is removed (nothing left to flag),
+  // which the old per-occurrence approach couldn't. Cleared when the list POSTs.
+  occurrencesDirty?: boolean;
 }
 
 export interface SessionSet {
@@ -176,9 +181,20 @@ export async function createSession(input: CreateSessionInput): Promise<LocalSes
     createdAt: new Date().toISOString(),
     finishedAt: null,
     finishSynced: false,
+    occurrencesDirty: false,
   };
   await db.put("sessions", session);
   return session;
+}
+
+// Flag a session's ordered occurrence list as having an un-pushed change, so the
+// next sync re-POSTs it (and the server reconciles adds/removes/reorders). Kept
+// separate from per-occurrence `synced` so removing the *last* occurrence still
+// records a pending list change with nothing left to flag.
+async function markOccurrencesDirty(sessionId: string): Promise<void> {
+  const db = await getDb();
+  const s = await db.get("sessions", sessionId);
+  if (s && !s.occurrencesDirty) await db.put("sessions", { ...s, occurrencesDirty: true });
 }
 
 export async function getSession(id: string): Promise<LocalSession | null> {
@@ -368,6 +384,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
     createdAt: server.finishedAt ?? new Date().toISOString(),
     finishedAt: server.finishedAt,
     finishSynced: true,
+    occurrencesDirty: false, // hydrated straight from the server = already in sync
   };
   await db.put("sessions", session);
 
@@ -558,6 +575,7 @@ export async function addOccurrence(sessionId: string, item: AttachExercise, sou
     synced: false,
   };
   await db.put("occurrences", occ);
+  await markOccurrencesDirty(sessionId);
   await recomputeSessionName(sessionId);
   return occ;
 }
@@ -580,6 +598,7 @@ export async function moveOccurrence(sessionId: string, instanceId: string, dir:
   const b = ordered[j];
   await db.put("occurrences", { ...a, orderIndex: b.orderIndex, synced: false });
   await db.put("occurrences", { ...b, orderIndex: a.orderIndex, synced: false });
+  await markOccurrencesDirty(sessionId);
 }
 
 /** Remove an occurrence and everything hanging off it (for an accidental add). */
@@ -596,18 +615,12 @@ export async function removeOccurrence(sessionId: string, instanceId: string): P
     if (c.serverId != null) await db.put("cardio", { ...c, syncState: "pending_delete" });
     else if (c.localId != null) await db.delete("cardio", c.localId);
   }
-  // The occurrence sync loop skips a session whose occurrences are *all* synced.
-  // Deleting one leaves the survivors untouched (still synced), so without this
-  // the shortened list is never re-POSTed and the removed occurrence lingers on
-  // the server forever — inflating its exercise count so the sessions list shows
-  // a permanent, false "not synced" while sync honestly reports success (the
-  // third sync-adjacent data-integrity bug). Dirtying a survivor forces the next
-  // sync to push the shortened list, which the server upsert then prunes.
-  const survivors = await db.getAllFromIndex("occurrences", "by-session", sessionId);
-  if (survivors.length) {
-    const s0 = survivors[0];
-    if (s0.synced) await db.put("occurrences", { ...s0, synced: false });
-  }
+  // Removing an occurrence shortens the ordered list, which must be re-POSTed so
+  // the server prunes the dropped instance (else it lingers, inflating the count
+  // and showing a permanent false "not synced" — the third sync-adjacent bug).
+  // Dirtiness lives on the session, not on a surviving occurrence, so this holds
+  // even when the *last* occurrence is removed (nothing left to flag).
+  await markOccurrencesDirty(sessionId);
   await recomputeSessionName(sessionId);
 }
 
@@ -716,9 +729,16 @@ export async function pendingCount(sessionId?: string): Promise<number> {
   // pending change too — the ordered list must reach the server.
   const occRows = sessionId ? await db.getAllFromIndex("occurrences", "by-session", sessionId) : await db.getAll("occurrences");
   n += occRows.filter((o) => !o.synced).length;
+  const hasUnsyncedOcc = new Set(occRows.filter((o) => !o.synced).map((o) => o.sessionId));
 
   const sessions = sessionId ? [await db.get("sessions", sessionId)] : await db.getAll("sessions");
-  for (const s of sessions) if (s && s.finishedAt && !s.finishSynced) n += 1;
+  for (const s of sessions) {
+    if (!s) continue;
+    if (s.finishedAt && !s.finishSynced) n += 1;
+    // A dirty ordered list with no unsynced occurrence to already account for it
+    // (a removal — incl. removing the last one) is still one pending change.
+    if (s.occurrencesDirty && !hasUnsyncedOcc.has(s.id)) n += 1;
+  }
 
   // Queued server-side deletes are pending changes too.
   const dq = readDeleteQueue();
@@ -762,23 +782,26 @@ async function runSync(): Promise<SyncResult> {
 
   // Occurrences first — the ordered performed list must exist server-side so the
   // set/cardio POSTs can link to session_exercise rows by client_instance_id.
-  // One upsert per session pushes its whole ordered list (idempotent).
+  // One upsert per session pushes its whole ordered list (idempotent). We iterate
+  // *sessions* (not just those with occurrences) so a session whose last
+  // occurrence was removed still POSTs its now-empty list and the server prunes
+  // the stale rows. A session syncs when its list is dirty (add/remove/reorder)
+  // or any occurrence is still unsynced.
   const allSessions = await db.getAll("sessions");
-  const sessionById = new Map(allSessions.map((s) => [s.id, s]));
   const occBySession = new Map<string, Occurrence[]>();
   for (const o of await db.getAll("occurrences")) {
     (occBySession.get(o.sessionId) ?? occBySession.set(o.sessionId, []).get(o.sessionId)!).push(o);
   }
-  for (const [sid, occs] of occBySession) {
-    if (occs.every((o) => o.synced)) continue;
-    const s = sessionById.get(sid);
-    if (!s) continue;
+  for (const s of allSessions) {
+    const occs = occBySession.get(s.id) ?? [];
+    const needsSync = s.occurrencesDirty || occs.some((o) => !o.synced);
+    if (!needsSync) continue;
     try {
       await send("/api/session-exercises", {
         method: "POST",
         headers: jsonHeaders,
         body: JSON.stringify({
-          clientSessionId: sid,
+          clientSessionId: s.id,
           date: s.date,
           programDay: s.origin,
           exercises: [...occs]
@@ -787,6 +810,7 @@ async function runSync(): Promise<SyncResult> {
         }),
       });
       for (const o of occs) await db.put("occurrences", { ...o, synced: true });
+      if (s.occurrencesDirty) await db.put("sessions", { ...s, occurrencesDirty: false });
     } catch (e) {
       if (record(e)) return result;
     }
