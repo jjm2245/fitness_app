@@ -23,8 +23,6 @@ interface ExerciseMachine {
   loggedCount: number;
 }
 
-const MACHINE_LOAD_TYPES = new Set(["machine_selectorized", "cable", "smith", "plate_loaded"]);
-
 const KIND_LABEL: Record<ManagedExercise["kind"], string> = {
   library_name: "library name",
   named_on_ref: "your name → library",
@@ -160,11 +158,9 @@ export default function ExercisesPage() {
                   <button type="button" className={styles.btn} onClick={() => setCollapsing(collapsing === e.id ? null : e.id)}>
                     {collapsing === e.id ? "Close" : "Collapse into library…"}
                   </button>
-                  {MACHINE_LOAD_TYPES.has(e.loadType) && (
-                    <button type="button" className={styles.btn} onClick={() => setMachinesFor(machinesFor === e.id ? null : e.id)}>
-                      {machinesFor === e.id ? "Close machines" : "Machines"}
-                    </button>
-                  )}
+                  <button type="button" className={styles.btn} onClick={() => setMachinesFor(machinesFor === e.id ? null : e.id)}>
+                    {machinesFor === e.id ? "Close machines" : "Machines"}
+                  </button>
                 </div>
               )}
 

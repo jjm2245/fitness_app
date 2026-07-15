@@ -1014,3 +1014,25 @@ twin is excluded on ingest and `removeTwins` now succeeds since the program
 reference is cleared). Hardened `removeTwins` to also guard on `session_exercises`
 (a plain FK with no cascade) so a session-referenced twin degrades to a warning
 instead of hard-failing the seed.
+
+### #5 — machine field always shown (stop inferring), #4 — dropdown verified
+
+**#5:** Removed the load-type gating (`usesMachineTag`/`MACHINE_LOAD_TYPES`) from
+both the log page (`StrengthCard`) and the Exercises tab. The machine field now
+shows on **every** exercise; the "(none)" option is relabelled **"No machine"**
+(the portable/free lane → `machineId` null). No name/load-type inference. This is
+data-entry only — the per-machine progression semantics are unchanged because
+they key off the same `machineId` null (portable, never re-baselined) vs. label
+(context-bound, re-baseline on change). Verified in the running app: the field
+renders on all exercises including bodyweight (`Captain's Chair Straight-Leg
+Raise`), each defaulting to "No machine".
+
+**#4 (verify-only):** In-app, added "bench by the mirror" on Machine Bench Press
+→ it appeared **selected** in the dropdown, **persisted** (rows in `machines` +
+`exercise_machines` under `machine_chest_press`), and **survived a reload**. Both
+the log page and the Exercises-tab `MachinePanel` read the same
+`/api/exercises/[id]/machines` endpoint, so they're consistent by construction.
+Offline path is safe by design: `addMachine`'s POST is wrapped in try/catch, and
+the set-logs POST re-registers the machine (`insert(machines).onConflictDoNothing`)
++ curates it under the exercise **in the same transaction** as the set — so an
+offline-created machine referenced by a set can't orphan it on sync.

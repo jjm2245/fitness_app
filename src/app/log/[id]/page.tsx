@@ -119,11 +119,6 @@ function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
 
-const MACHINE_LOAD_TYPES = new Set(["machine_selectorized", "cable", "smith", "plate_loaded"]);
-function usesMachineTag(loadType: string): boolean {
-  return MACHINE_LOAD_TYPES.has(loadType);
-}
-
 type CardioField = "duration" | "speed" | "incline" | "level" | "distance";
 function cardioFields(name: string): CardioField[] {
   const n = name.toLowerCase();
@@ -278,19 +273,23 @@ function StrengthCard({
   const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
-  const showMachine = usesMachineTag(activeExercise.loadType);
-  const resolvedMachineId = !showMachine ? null : machineId.trim() || null;
+  // The machine field is always shown now — we never infer which exercises
+  // "should" have a machine (a dumbbell move can still be done on a machine at a
+  // different gym, etc.). "No machine" resolves to null = the portable/free
+  // lane; any label = a context-bound machine. This is purely data-entry: the
+  // per-machine progression semantics (null = portable, never re-baselined;
+  // named = re-baseline on change) are unchanged — they key off this same null.
+  const resolvedMachineId = machineId.trim() || null;
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
-  // Load this exercise's curated machine list when the machine tag is relevant.
+  // Load this exercise's curated machine list (always — the field is always on).
   useEffect(() => {
-    if (!usesMachineTag(activeExercise.loadType)) return;
     (async () => {
       const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`);
       if (res.ok) setMachines(await res.json());
     })();
-  }, [activeExercise.id, activeExercise.loadType]);
+  }, [activeExercise.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -428,19 +427,17 @@ function StrengthCard({
         </div>
       )}
 
-      {showMachine && (
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <label title="A personal label you make up — not a number on the machine. Only add one if there are two of the same machine, or you're at a different gym.">
-            Machine{" "}
-            <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-              <option value="">(none — one machine here)</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
-            </select>
-          </label>
-          <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
-          <button type="button" onClick={addMachine}>+ Add</button>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <label title="A personal label you make up — not a number on the machine. 'No machine' means the portable/free lane (dumbbells, barbell, bodyweight). Only name a machine if there are two of the same, or you're at a different gym.">
+          Machine{" "}
+          <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+            <option value="">No machine</option>
+            {machines.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+          </select>
+        </label>
+        <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
+        <button type="button" onClick={addMachine}>+ Add</button>
+      </div>
 
       <form onSubmit={handleAddSet} className={styles.entryForm}>
         <select value={setType} onChange={(e) => setSetType(e.target.value as "warmup" | "working")}>
