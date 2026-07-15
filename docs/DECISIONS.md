@@ -969,3 +969,48 @@ didn't leave a dangling occurrence — the badge they saw was either this bug on
 session where a removal *was* left dangling, or a transient finish flag that
 self-heals on the next drain. Data is safe either way; the one persistent,
 non-self-healing cause is now fixed.
+
+### #2 — exercise-mapping audit (verify-only): all correct, no fix needed
+
+Verified against prod (read-only). **The three that must stay custom were NOT
+force-mapped onto a library name** — all have `canonical_name` and `library_id`
+NULL, and are fully tagged:
+- `back_extension` "Seated Back Extension Machine" — source curated, pattern
+  `spinal_extension`, `lumbar_spine`; spinal_erectors(1)/glutes/hamstrings. NOT
+  collapsed into "Hyperextensions" (that stays a separate untagged library row
+  `lib_Hyperextensions_Back_Extensions`).
+- `rotary_torso_machine` — curated, pattern `trunk_rotation`, `lumbar_spine`,
+  obliques(1).
+- `bayesian_curl` — source custom, pattern `elbow_flexion`, biceps(1)/forearms.
+
+(Nuance: back_extension/rotary_torso are `source=curated`, bayesian_curl is
+`source=custom` — but the invariant that matters, "not mapped onto a library
+entry," holds for all three.)
+
+**Net-new are intact and fully tagged:**
+- `face_pull` — `rear_delt_fly`; muscles **exactly mirror `reverse_pec_dec`**
+  (posterior_deltoid 1 / rhomboids 0.5 / mid_traps 0.5), so it substitutes for
+  reverse pec dec as intended.
+- `barbell_squat` — `squat`, `lumbar_spine`, quads(1) + glutes/hams/adductors/
+  spinal_erectors/calves.
+- `stiff_legged_barbell_deadlift` — `hinge`, `lumbar_spine`, hamstrings(1)/glutes(1).
+- `hack_squat` — `squat`, quads(1); **no `lumbar_spine`** (machine, not a barbell
+  hinge/squat — correct per the rule).
+
+**Orphan check:** zero logged rows (set_logs / cardio_logs / session_exercises /
+program_exercises) point at a missing exercise. Watch-list pairings untouched.
+
+### #3 — Hack Squat prod duplicate resolved (approved prod write)
+
+`lib_Hack_Squat` was referenced only by one `program_exercises` row (day
+`legs_shoulders`, order 10) — no logged sets/cardio/occurrences, and curated
+`hack_squat` was not already in that day (no dup risk; `program_exercises` has no
+unique on day+exercise anyway). In one transaction: re-pointed all FK tables
+(only program_exercises had a ref) onto `hack_squat`, then deleted the twin
+(its `exercise_muscles` cascade). Verified: twin gone, exactly one curated "Hack
+Squat" remains, zero orphaned logged rows. The merge map already carries
+`hack_squat → "Hack Squat"`, so a future `db:seed:library` stays idempotent (the
+twin is excluded on ingest and `removeTwins` now succeeds since the program
+reference is cleared). Hardened `removeTwins` to also guard on `session_exercises`
+(a plain FK with no cascade) so a session-referenced twin degrades to a warning
+instead of hard-failing the seed.

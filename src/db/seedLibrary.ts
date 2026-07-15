@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq, inArray, and, sql } from "drizzle-orm";
 import { db } from "./client";
-import { exercises, exerciseMuscles, setLogs, cardioLogs, programExercises, loadTypeEnum } from "./schema";
+import { exercises, exerciseMuscles, setLogs, cardioLogs, programExercises, sessionExercises, loadTypeEnum } from "./schema";
 
 // Ingests the free-exercise-db (github.com/yuhonas/free-exercise-db, Unlicense /
 // public domain) into the exercise graph as source="library", pre-tagged with
@@ -251,7 +251,11 @@ async function removeTwins(names: Set<string>) {
     const [s] = await db.select({ id: setLogs.id }).from(setLogs).where(eq(setLogs.exerciseId, id)).limit(1);
     const [c] = await db.select({ id: cardioLogs.id }).from(cardioLogs).where(eq(cardioLogs.exerciseId, id)).limit(1);
     const [p] = await db.select({ id: programExercises.id }).from(programExercises).where(eq(programExercises.exerciseId, id)).limit(1);
-    if (s || c || p) {
+    // session_exercises.exercise_id is a plain FK (no cascade/set null), so a
+    // twin referenced by a performed occurrence would hard-fail the delete —
+    // guard it the same way (leave in place with a warning, never orphan).
+    const [se] = await db.select({ id: sessionExercises.id }).from(sessionExercises).where(eq(sessionExercises.exerciseId, id)).limit(1);
+    if (s || c || p || se) {
       console.warn(`  ! twin ${id} is referenced (log/program) — left in place, not merged away`);
       continue;
     }
