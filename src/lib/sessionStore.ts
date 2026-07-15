@@ -116,32 +116,57 @@ interface SessionDB extends DBSchema {
 
 let dbPromise: Promise<IDBPDatabase<SessionDB>> | null = null;
 
+// Versioned IndexedDB migrations for the session store.
+//
+// **ADDITIVE BY DEFAULT — this is the template to copy.** Each version's block
+// only *creates* what's new (createObjectStore / createIndex) and must NEVER drop
+// or recreate a store that carries data forward. A destructive bump silently
+// loses unsynced, in-progress local work (sets/cardio/occurrences not yet on the
+// server) — the exact data the user is mid-session with. To add a version: bump
+// the number in `openDB()` below and append `if (oldVersion < N) { … }` with
+// creates only. Verify the guard *before* shipping the bump it protects.
+//
+// The one destructive step (`oldVersion < 4`) is a documented historical
+// exception, not the pattern — see its comment.
+export function migrateSessionDb(db: IDBPDatabase<SessionDB>, oldVersion: number): void {
+  const names = db.objectStoreNames as unknown as DOMStringList;
+
+  if (oldVersion < 4) {
+    // HISTORICAL ONE-OFF (session-model v2). Pre-v4 stores (date-keyed
+    // `sets`/`cardio`, `composition`, `meta`) have no occurrence link and can't be
+    // transformed into the occurrence model, so any *unsynced* pre-v2 local data
+    // is dropped here; finished sessions are safe on the server and re-hydrate via
+    // GET /api/sessions. Runs only for devices below v4 (fresh installs included),
+    // never for v4+. DO NOT copy this drop-and-recreate shape for new versions.
+    for (const name of ["sets", "completed", "meta", "composition", "occurrences", "cardio"]) {
+      if (names.contains(name)) db.deleteObjectStore(name as never);
+    }
+    if (!names.contains("sessions")) db.createObjectStore("sessions", { keyPath: "id" });
+    const occ = db.createObjectStore("occurrences", { keyPath: "instanceId" });
+    occ.createIndex("by-session", "sessionId");
+    const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
+    sets.createIndex("by-session", "sessionId");
+    sets.createIndex("by-instance", "instanceId");
+    const completed = db.createObjectStore("completed", { keyPath: "instanceId" });
+    completed.createIndex("by-session", "sessionId");
+    const cardio = db.createObjectStore("cardio", { keyPath: "localId", autoIncrement: true });
+    cardio.createIndex("by-session", "sessionId");
+    cardio.createIndex("by-instance", "instanceId");
+  }
+
+  // Future versions go here, ADDITIVE only, e.g.:
+  //   if (oldVersion < 5) {
+  //     const s = db.createObjectStore("newThing", { keyPath: "id" });
+  //     s.createIndex("by-session", "sessionId");
+  //     // NEVER deleteObjectStore on a store holding data that must survive.
+  //   }
+}
+
 function getDb() {
   if (!dbPromise) {
     dbPromise = openDB<SessionDB>("fitness-app-session", 4, {
-      upgrade(db) {
-        // v4 introduces the ordered-occurrence model (session-model v2): sets and
-        // cardio link to an occurrence (instanceId), the `composition` store is
-        // replaced by `occurrences`, and `completed` is keyed by occurrence.
-        // Destructive bump — unsynced local data is cleared; finished sessions
-        // are safe on the server and reappear via GET /api/sessions.
-        for (const name of ["sets", "completed", "meta", "composition", "occurrences", "cardio"]) {
-          const stores = db.objectStoreNames as unknown as DOMStringList;
-          if (stores.contains(name)) db.deleteObjectStore(name as never);
-        }
-        if (!(db.objectStoreNames as unknown as DOMStringList).contains("sessions")) {
-          db.createObjectStore("sessions", { keyPath: "id" });
-        }
-        const occ = db.createObjectStore("occurrences", { keyPath: "instanceId" });
-        occ.createIndex("by-session", "sessionId");
-        const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
-        sets.createIndex("by-session", "sessionId");
-        sets.createIndex("by-instance", "instanceId");
-        const completed = db.createObjectStore("completed", { keyPath: "instanceId" });
-        completed.createIndex("by-session", "sessionId");
-        const cardio = db.createObjectStore("cardio", { keyPath: "localId", autoIncrement: true });
-        cardio.createIndex("by-session", "sessionId");
-        cardio.createIndex("by-instance", "instanceId");
+      upgrade(db, oldVersion) {
+        migrateSessionDb(db, oldVersion);
       },
     });
   }

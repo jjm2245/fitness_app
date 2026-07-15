@@ -1227,3 +1227,17 @@ Reconcile would be a silent no-op forever. Fix:
 Both heal directions now exist and are explicit/user-initiated: **Reconcile**
 (local is source of truth, safe via the prune guard) and **Pull from server**
 (server is source of truth). No automatic resolution — no wrong-side-wins.
+
+### Item A — IndexedDB migrations made additive (data-loss guard), as its own change
+Shipped standalone (not folded into a schema bump) so the guard is verified before
+anything relies on it, and so the migration function stops being a destructive
+*template* for the next agent to copy. Extracted the inline `upgrade` into
+**`migrateSessionDb(db, oldVersion)`**: additive by default, each future version an
+`if (oldVersion < N)` create-only block; the drop-and-recreate is scoped to
+`oldVersion < 4` and clearly labelled a historical one-off (pre-v2 stores can't map
+to the occurrence model). `getDb()` now passes `oldVersion` through. Verified in
+isolation: a v4→v5 bump through `migrateSessionDb` preserves all stores AND their
+data (incl. an unsynced in-progress set) — and the test genuinely fails if the drop
+runs unconditionally (checked by temporarily widening the guard). Updated the two
+CURRENT_STATE traps from "bumps are destructive, be careful" to "migrations are
+additive; never drop a store with live data." B–E from the prior audit remain notes.

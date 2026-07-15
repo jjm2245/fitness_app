@@ -295,9 +295,14 @@ on next sync.
 occurrences + unsynced finishes + queued deletes.
 
 Footguns here:
-- The DB is on **v4**; opening it wipes *unsynced* local data on a version bump
-  (finished sessions are safe on the server). Any future store change that needs
-  a bump is destructive for in-flight local data — be deliberate.
+- The DB is on **v4**. Migrations live in **`migrateSessionDb(db, oldVersion)`**
+  and are **additive by default** — bump the version in `openDB()` and append an
+  `if (oldVersion < N) { … }` block that *only* creates stores/indexes. **Never**
+  `deleteObjectStore` a store that holds data that must survive (that silently
+  eats unsynced in-flight work). The `oldVersion < 4` drop is a documented
+  historical one-off, not the pattern. The "additive bump preserves data" guard is
+  unit-tested in isolation (`sessionStore.test.ts` → "IndexedDB migrations are
+  additive") — un-skip/extend it when you add a version.
 - `_resetDbForTests()` is exported **for tests only** (deletes the whole IDB).
 - `localStorage` is used for the delete queue → tests stub it.
 
@@ -403,8 +408,10 @@ lives in the DB/seed, and `movementPattern: null` is treated as unplaceable.
   auto-mode classifier blocks unqualified deletes for good reason. `TRUNCATE …
   CASCADE`. Re-running `db:seed:library` re-derives library rows (idempotent, but
   it *does* delete+recreate `exercise_muscles` for each row).
-- **IndexedDB version bumps are destructive to unsynced local data.** Bump v4→v5
-  only when you mean it, and document it.
+- **IndexedDB migrations must stay additive.** `migrateSessionDb` creates only;
+  never `deleteObjectStore` a store carrying data forward (it silently eats
+  unsynced in-flight work). The `oldVersion < 4` drop is a historical one-off, not
+  a template. There's an isolated data-loss guard test — keep it green.
 - **`sync()` must stay serialized.** If you refactor it, keep the `syncChain`
   (or an equivalent lock) or you'll reintroduce duplicate logged sets.
 - **Occurrence ordering + set linking:** occurrences must sync *before* sets, or

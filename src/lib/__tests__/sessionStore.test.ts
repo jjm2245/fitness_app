@@ -24,6 +24,7 @@ import {
   reconcileFinishedFromServer,
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
+  migrateSessionDb,
   _resetDbForTests,
   type AttachExercise,
   type ServerSession,
@@ -138,6 +139,41 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+// Data-loss guard (item A): the IndexedDB `upgrade` must be additive — a future
+// version bump must NOT drop stores holding unsynced in-progress work. Verified
+// here in isolation, separate from any real bump, so the guard is proven before
+// it's relied on. `migrateSessionDb` is the single source of truth for both.
+describe("IndexedDB migrations are additive (data-loss guard)", () => {
+  const NAME = "migration-guard-test-db";
+  const openAt = (version: number) =>
+    openDB(NAME, version, { upgrade(d, oldVersion) { migrateSessionDb(d as never, oldVersion); } });
+  const storeNames = (db: { objectStoreNames: DOMStringList }) => [...db.objectStoreNames].sort();
+
+  afterEach(async () => { await new Promise<void>((res) => { const r = indexedDB.deleteDatabase(NAME); r.onsuccess = r.onerror = () => res(); }); });
+
+  it("a fresh open creates the full session-model-v2 store set", async () => {
+    const db = await openAt(4);
+    expect(storeNames(db)).toEqual(["cardio", "completed", "occurrences", "sessions", "sets"]);
+    db.close();
+  });
+
+  it("a future version bump (v4 → v5) preserves existing stores AND their data", async () => {
+    const db4 = await openAt(4);
+    // In-progress, unsynced local work — exactly what a destructive bump would eat.
+    await db4.put("sessions", { id: "keep-me", date: "2026-01-01", origin: "Leg day", programId: null, createdAt: "t0", finishedAt: null, finishSynced: false });
+    await db4.add("sets", { sessionId: "keep-me", instanceId: "inst-1", serverId: null, syncState: "pending_create", setIndex: 1, load: 100, reps: 5 } as never);
+    db4.close();
+
+    // Bump the version: migrateSessionDb(db, oldVersion=4) has no v5 block, so it's
+    // a no-op — the whole point is that this DOESN'T wipe anything.
+    const db5 = await openAt(5);
+    expect(storeNames(db5)).toEqual(["cardio", "completed", "occurrences", "sessions", "sets"]);
+    expect(await db5.get("sessions", "keep-me")).toBeTruthy(); // survived the bump
+    expect((await db5.getAll("sets")).length).toBe(1); // unsynced set survived too
+    db5.close();
+  });
 });
 
 describe("logging + sync", () => {
