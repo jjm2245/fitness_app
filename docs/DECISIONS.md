@@ -1068,8 +1068,8 @@ Verified end-to-end in-app: add custom (201) → set description (persists, show
 manage) → delete unused (200, gone) → delete "Leg Extensions" with history
 (**409**, kept).
 
-**⚠️ Prod migration pending:** `0013_*.sql` (add `description`) is applied
-**locally only**. Because deployed code now selects `exercises.description`, prod
-must run this migration **before/at** the next deploy or the Exercises API 500s
-(the auto-deploy + manual-migration footgun). Additive nullable column — safe —
-but held for user sign-off per the prod-write rule.
+**Prod migration applied:** `0013_*.sql` (add `description`) was run against the
+Neon prod DB with the user's explicit approval (additive nullable column, no data
+touched). Verified: column present, prod at **14/14** migrations. Prod is safe to
+deploy — no auto-deploy + manual-migration gap this time. (Neon credential still
+UNROTATED — user's standing task.)
