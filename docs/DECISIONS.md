@@ -1350,3 +1350,12 @@ preview, logged row "30 + 20 = 50 lb × 8 · L", server row load=50/entered=30/
 offset=20/side=left with the uuid machine ref; side selector on the unilateral
 card only, auto-alternate L→R observed; /machines page renders all of it.
 112 tests, clean build, src/core untouched.
+
+### Batch shipped — prod migrated 14→17, then deployed
+With approval, ran migrations 0014–0016 against prod Neon (direct endpoint),
+migrate-then-deploy ordering. Proof: BEFORE {migrations 14, machines 7, set_logs
+30 (7 with machine), exercise_machines 4} → AFTER {migrations **17**, machines 7,
+set_logs 30 (7 with machine), exercise_machines 4, **labels backfilled 7/7, 0
+null, 0 orphaned machine refs**} — zero rows touched beyond the label backfill.
+Pushed `2c361de` to main (Vercel auto-deploy); /api/health confirmed on the live
+URL after deploy. (Neon credential rotation remains the user's task.)
