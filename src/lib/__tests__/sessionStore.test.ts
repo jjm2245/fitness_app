@@ -404,6 +404,63 @@ describe("occurrences — ordered, repeats, reorder, aggregated name (v2)", () =
   });
 });
 
+// Third sync-adjacent data-integrity bug: removing an already-synced occurrence
+// must re-POST the shortened list so the server prunes the dropped instance.
+// Before the fix, the occurrence sync loop skipped any session whose remaining
+// occurrences were all `synced`, so the removal never reached the server: the
+// dropped occurrence lingered, inflating the server's exercise count and making
+// the sessions list show a permanent, false "not synced" while sync reported OK.
+describe("removing a synced occurrence re-syncs the shortened list (bug 1)", () => {
+  const tri: AttachExercise = { exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false };
+
+  // Capture the occurrence lists the client POSTs, so we can assert the server
+  // is told about the removal (the real server would then prune it).
+  function mockOnlineCapturingOccurrences(sink: string[][]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, opts?: RequestInit) => {
+        const method = opts?.method ?? "GET";
+        if (url === "/api/session-exercises" && method === "POST") {
+          const body = JSON.parse(String(opts?.body ?? "{}")) as { exercises: Array<{ clientInstanceId: string }> };
+          sink.push(body.exercises.map((e) => e.clientInstanceId));
+          return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+        }
+        if (url === "/api/set-logs" && method === "POST") return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
+        if (/\/api\/set-logs\/\d+$/.test(url)) return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      })
+    );
+  }
+
+  it("re-POSTs the pruned occurrence list after a synced occurrence is removed", async () => {
+    const posts: string[][] = [];
+    mockOnlineCapturingOccurrences(posts);
+
+    const { id } = await newSession(); // one occurrence (deadlift)
+    const extra = await addOccurrence(id, tri, "Chest + triceps");
+    await sync(); // both occurrences land server-side, marked synced locally
+    expect(await pendingCount(id)).toBe(0);
+    posts.length = 0; // ignore the initial pushes; focus on what happens after removal
+
+    // Remove the second occurrence, then sync again.
+    await removeOccurrence(id, extra.instanceId);
+    // The removal is a pending change until it reaches the server.
+    expect(await pendingCount(id)).toBeGreaterThan(0);
+    const result = await sync();
+    expect(result.authError).toBe(false);
+
+    // The client must have re-POSTed the shortened list (deadlift only) so the
+    // server can prune the removed instance — before the fix, no POST happened.
+    expect(posts.length).toBeGreaterThan(0);
+    const last = posts[posts.length - 1];
+    expect(last).not.toContain(extra.instanceId);
+    expect(last).toHaveLength(1);
+
+    // And the session is fully synced again (no lingering false "not synced").
+    expect(await pendingCount(id)).toBe(0);
+  });
+});
+
 describe("delete a session (offline-safe, Part 3a)", () => {
   it("removes local rows immediately, queues the server delete, and drains it on reconnect", async () => {
     const { id, date, inst } = await newSession();

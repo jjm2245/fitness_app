@@ -577,6 +577,18 @@ export async function removeOccurrence(sessionId: string, instanceId: string): P
     if (c.serverId != null) await db.put("cardio", { ...c, syncState: "pending_delete" });
     else if (c.localId != null) await db.delete("cardio", c.localId);
   }
+  // The occurrence sync loop skips a session whose occurrences are *all* synced.
+  // Deleting one leaves the survivors untouched (still synced), so without this
+  // the shortened list is never re-POSTed and the removed occurrence lingers on
+  // the server forever — inflating its exercise count so the sessions list shows
+  // a permanent, false "not synced" while sync honestly reports success (the
+  // third sync-adjacent data-integrity bug). Dirtying a survivor forces the next
+  // sync to push the shortened list, which the server upsert then prunes.
+  const survivors = await db.getAllFromIndex("occurrences", "by-session", sessionId);
+  if (survivors.length) {
+    const s0 = survivors[0];
+    if (s0.synced) await db.put("occurrences", { ...s0, synced: false });
+  }
   await recomputeSessionName(sessionId);
 }
 

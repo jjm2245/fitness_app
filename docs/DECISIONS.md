@@ -931,3 +931,41 @@ backfilled (0 nulls), curated 41 / library 835 / custom 4, merges applied.
   references to the curated `hack_squat` then deleting the twin.
 - The exposed Neon credential was used with the user's temporary say-so;
   **rotation is still outstanding.**
+
+## Batch: sync-issue + remaining fixes (session-model-v2 follow-ups)
+
+### #1 — "not synced" that never clears (third sync-adjacent data-integrity bug)
+
+**Verified first (prod, read-only):** the user's first real logged session
+(`workout_log` id 3, `client_session_id 14afea9b…`, "Chest + triceps + Abs") is
+**fully on the server** — 9 occurrences, 24 set_logs, `finished_at` stamped. The
+last occurrence (`hanging_leg_raise`) legitimately has 0 sets (added, never
+logged). Nothing local-only; nothing at risk from an IndexedDB bump. So this is
+hypothesis (a): a display/counter bug, **not** data loss.
+
+**Root cause (removal path).** `removeOccurrence` deleted the local occurrence
+and marked its *own* synced sets `pending_delete`, but left the **surviving**
+occurrences `synced: true`. The occurrence sync loop skips any session whose
+occurrences are *all* `synced` (`occs.every(o => o.synced) → continue`), so the
+shortened list was **never re-POSTed** — and the server prunes removed
+occurrences only when it receives the new list. The dropped occurrence therefore
+lingered server-side forever, inflating the server's exercise count so the
+sessions list's `exerciseCount` mismatch arm showed a **permanent, false "not
+synced"** while `sync()` honestly reported success. (Every other pending signal —
+finish stamp, unsynced occurrence/set, delete queue — self-heals on the next
+successful drain, which the sessions page already triggers on mount; the count
+mismatch was the only non-self-healing one.)
+
+**Fix.** `removeOccurrence` now dirties one surviving occurrence
+(`synced: false`) so the next sync re-POSTs the pruned list and the server-side
+prune runs. Regression test added (`sessionStore.test.ts` → "removing a synced
+occurrence re-syncs the shortened list") — it fails on the old code (no re-POST)
+and passes now. Degenerate edge left as a known gap: removing the *last*
+occurrence leaves nothing to dirty, so an empty session's server occurrences
+aren't pruned; users delete the whole session instead, so not fixed here.
+
+**Note on the user's specific session:** id 3 has no server orphan, so they
+didn't leave a dangling occurrence — the badge they saw was either this bug on a
+session where a removal *was* left dangling, or a transient finish flag that
+self-heals on the next drain. Data is safe either way; the one persistent,
+non-self-healing cause is now fixed.
