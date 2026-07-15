@@ -1123,3 +1123,54 @@ dirty list once (added only when no unsynced occurrence already accounts for it,
 so no double-count). `hydrateFromServer` marks hydrated sessions clean. Regression
 tests: multi-removal down to one survivor, and last-occurrence removal → empty
 re-POST (both passing; 19/19 in the store suite).
+
+## Batch: session-3 phantom heal + list-arm reconcile proposal
+
+### Audit correction (item 1)
+The earlier "zero orphans" audit checked the wrong definition: it looked for logged
+rows pointing at a *missing exercise* (referential integrity) and read se#9's 0 sets
+as a legit "added, never logged" occurrence. It did NOT check for a *stale server
+occurrence the client no longer has* — which is the removeOccurrence signature. The
+badge's `local 8 / server 9` is that: the client removed hanging_leg_raise, the
+server kept it. "Verified, no orphans" only counted the wrong definition. Lesson: to
+detect this class, compare the server occurrence list against the client's count, or
+scan for finished-session occurrences the client dropped — not just dangling FKs.
+
+### Contamination check (item 2) — clean
+The phantom (`se#9`, hanging_leg_raise, log 3) had **0 sets / 0 cardio**, so it fed
+nothing into volume/volume-load — the core reads set_logs and there were none on it.
+All 24 sets were `3 × 8` real occurrences, every one linked. A prod-wide audit for
+the signature (finished-session occurrences with 0 sets AND 0 cardio) found exactly
+one row — se#9 — so no other session is contaminated. This was list-integrity, not a
+core-input bug.
+
+### Heal (item 3) — done, prod write
+Deleted the confirmed 0-set phantom `se#9` (guarded: aborts unless it's exactly
+hanging_leg_raise with 0 sets/0 cardio). Before: 9 occ / 24 sets. After: 8 occ / 24
+sets, all 24 still linked, 0 orphaned. Server now matches the client's 8; the badge
+clears on next refresh. No training data touched.
+
+### Item 4 — list-arm auto-reconcile: PROPOSAL (recommend: do NOT blanket auto-heal)
+The finish-arm reconcile is safe because it only *flips a local flag* to match a fact
+the server already holds (finished) — it deletes nothing. The list arm is different:
+reconciling a count mismatch means one side's occurrences get pruned. A blanket
+"finished session with server≠local → auto re-POST local" is **dangerous**: if the
+local store is the wrong side (IndexedDB version bump wiped it, or partial hydration),
+re-POSTing a short list makes the server prune **real** occurrences — and the current
+`/api/session-exercises` prune is unconditional, so it would take their logged sets
+too. That violates "never mass-delete data" for the sake of a cosmetic badge.
+**Recommended safer design (needs sign-off, not built):**
+1. Harden the server prune to **refuse to delete an occurrence that still has logged
+   sets/cardio** (report it instead). Legit removals already zero-out sets first, so
+   this doesn't change normal behaviour — it just caps the blast radius of a stale
+   re-POST so logged history can never be auto-deleted.
+2. Heal stale sessions via an **explicit, user-initiated "reconcile" button** on the
+   flagged session (re-POST the local list), not an automatic background heal.
+Keeping it fully manual (as we did for session 3) is also acceptable given
+occurrencesDirty prevents recurrence. Deferred to the user.
+
+### Item 5 — regression test
+Added a characterisation test for the pre-existing stale state (clean dirty flag +
+shorter local list, reproduced by simulating the old un-dirtying removal directly in
+the store): plain sync() does not re-reconcile it and pendingCount reports 0 — the
+exact reason session 3 sat broken. Guards against an accidental (unreviewed) auto-heal.

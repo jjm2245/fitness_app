@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { openDB } from "idb";
 import {
   createSession,
   logSet,
@@ -524,6 +525,54 @@ describe("reconcile finish flag from server truth (false 'not synced' fix)", () 
 
     // A session with no local finishedAt is untouched (nothing to reconcile).
     expect(await reconcileFinishedFromServer(["nonexistent"])).toBe(0);
+  });
+});
+
+// The gap that let session 3 sit broken: a session that went stale *before* the
+// occurrencesDirty flag existed (its list shrank locally but never re-POSTed) has
+// occurrencesDirty=false and all remaining occurrences synced — so the store
+// believes it's clean and plain sync() never re-sends the shortened list. This
+// characterises that state; it is NOT auto-healed today (list-arm auto-reconcile
+// is a proposed, not-yet-built design because of the wrong-side-wins risk).
+describe("pre-existing stale session (clean dirty flag + shorter local list)", () => {
+  const tri: AttachExercise = { exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false };
+
+  it("plain sync() does NOT re-reconcile it, and the store reports it as clean", async () => {
+    const posts: string[][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, opts?: RequestInit) => {
+        if (url === "/api/session-exercises" && (opts?.method ?? "GET") === "POST") {
+          posts.push((JSON.parse(String(opts?.body ?? "{}")).exercises as Array<{ clientInstanceId: string }>).map((e) => e.clientInstanceId));
+          return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+        }
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      })
+    );
+
+    const { id } = await newSession(); // deadlift
+    const extra = await addOccurrence(id, tri, "Chest + triceps");
+    await sync(); // server + local both have 2; synced; flag cleared
+    expect(await pendingCount(id)).toBe(0);
+
+    // Simulate the OLD (pre-fix) removeOccurrence: drop one occurrence from the
+    // local store WITHOUT dirtying the session — the exact state session 3 was in.
+    const db = await openDB("fitness-app-session", 4);
+    await db.delete("occurrences", extra.instanceId);
+    const s = await db.get("sessions", id);
+    await db.put("sessions", { ...s, occurrencesDirty: false });
+    db.close();
+    expect((await listOccurrences(id)).length).toBe(1); // local now shorter than server's 2
+
+    posts.length = 0;
+    await sync();
+
+    // The bug: nothing is re-POSTed, so the server keeps its stale extra row, and
+    // the store can't tell (pendingCount 0). This is why the badge flagged forever
+    // until a manual heal. A regression here (accidental auto-heal) should be a
+    // deliberate, reviewed change — see the item-4 proposal in DECISIONS.
+    expect(posts).toHaveLength(0);
+    expect(await pendingCount(id)).toBe(0);
   });
 });
 
