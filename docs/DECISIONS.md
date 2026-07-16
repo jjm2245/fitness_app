@@ -1466,3 +1466,14 @@ encodes exactly this boundary so Codex inherits it.
 offset). Migration 0019 proven (metadata-only renames; 4→4/2→2/3→3). Prod
 migrations 0017–0019 pending the batch-ship proposal. Lane param: progression +
 last-session accept `lane` (with machineId back-compat).
+
+### Batch shipped — prod migrated 17→20, then deployed
+Migrate-then-deploy ordering held. Proof: BEFORE {migrations 17, machines 9,
+set refs 6, links 5, set_logs 30, finished 1, pulley values 0 (guard
+precondition), phantom first-set derived rests 0 (prod sessions predate rest
+tracking — 0018 was a no-op there by design)} → AFTER {migrations **20**,
+equipment 9 (renamed, same rows), set refs 6, links 5, set_logs 30,
+first_finished_at backfilled 1/1, pulley_ratio_kind defaulted 9/9, **0 orphaned
+equipment refs**}. Zero rows touched beyond the two backfills. Pushed `c211ad9`;
+/api/health confirmed on the live URL after the new build served. (Neon
+credential rotation remains the user's task.)
