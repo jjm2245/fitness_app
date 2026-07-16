@@ -353,9 +353,9 @@ function CollapsePicker({ exercise, onCollapse, busy }: { exercise: ManagedExerc
   );
 }
 
-// Per-exercise machine list (Part 3c): curate the machines that apply to this
+// Per-exercise equipment list (Part 3): curate the units that apply to this
 // exercise (add / edit note / remove), complementing auto-create-on-first-use.
-// "No machine" (the portable/free lane for progression) is always available at
+// Portable equipment types (dumbbell, bars, bodyweight) need no unit row at
 // log time — it's the empty selection, not a row here.
 function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
   const [rows, setRows] = useState<ExerciseEquipment[]>([]);
@@ -435,12 +435,12 @@ function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
   return (
     <div className={styles.collapseBox}>
       <p className={styles.warn}>
-        Machines for this exercise. &ldquo;No machine&rdquo; (the portable/free lane) is always an option when logging.
+        Equipment units for this exercise. Context-bound types (cable/selectorized/Smith/plate-loaded) track each unit as its own lane when logging.
       </p>
       {!loaded ? (
         <p className={styles.meta}>Loading…</p>
       ) : rows.length === 0 ? (
-        <p className={styles.meta}>No machines yet — add one below, or they appear automatically the first time you log with one.</p>
+        <p className={styles.meta}>No units yet — add one below, or they appear automatically the first time you log with one.</p>
       ) : (
         <ul className={styles.list} style={{ marginBottom: 8 }}>
           {rows.map((m) => (
@@ -467,9 +467,9 @@ function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
         </ul>
       )}
       <div className={styles.editRow}>
-        <input className={styles.input} value={label} onChange={(e) => setLabel(e.target.value)} placeholder='label, e.g. "by the mirror"' />
+        <input className={styles.input} value={label} onChange={(e) => setLabel(e.target.value)} placeholder='unit label, e.g. "by the mirror"' />
         <input className={styles.input} value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" style={{ minWidth: 140 }} />
-        <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={add} disabled={busy || !label.trim()}>Add machine</button>
+        <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={add} disabled={busy || !label.trim()}>Add unit</button>
       </div>
     </div>
   );

@@ -53,8 +53,12 @@ interface Row {
   conflict: boolean;
 }
 
+// LOCAL calendar date, never UTC: toISOString() flips to tomorrow after ~8 PM
+// Eastern, filing an evening session to the wrong day. Date-boundary logic is
+// always local; only storage is UTC.
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // The displayed date comes from the STABLE anchors: the session's `date`

@@ -1477,3 +1477,42 @@ first_finished_at backfilled 1/1, pulley_ratio_kind defaulted 9/9, **0 orphaned
 equipment refs**}. Zero rows touched beyond the two backfills. Pushed `c211ad9`;
 /api/health confirmed on the live URL after the new build served. (Neon
 credential rotation remains the user's task.)
+
+## Batch: post-deploy fixes (times, sides, offsets, equipment polish)
+
+### 1 — session time: hypothesis (a) CONFIRMED, plus the UTC date-boundary bug
+Diagnosis from prod: session 3's `first_finished_at` = **Jul 15 10:47 PM local**
+— exactly the moment the user edited/re-finished — because the 0017 backfill
+copied `finished_at`, which the edit had already re-stamped. Display rendering
+was already local (hypothesis b rejected for the list). The user's related risk
+was REAL though: `todayIso()` derived the session date from `toISOString()`
+(UTC), so an evening session after ~8 PM Eastern filed to the NEXT day — fixed
+to local calendar parts (display and date-boundary logic are always local; only
+storage is UTC). Audit found no other raw-UTC rendering (all display paths use
+toLocaleDate/TimeString; date strings parse as local parts).
+Recovery: the session's only timestamped sets are Jul-16 edits (originals
+predate logged_at), so max(logged_at) would be WORSE — per the honest-unknown
+rule the correction NULLs first_finished_at when no set timestamp lands on the
+session's own date and the current value's local date contradicts `date`
+(display shows the date alone, no fabricated time). Sessions with same-day set
+timestamps get first_finished_at := max(logged_at) (true end ≈ last set).
+
+### 2 — side selector condition fixed: "exercise is unilateral", not "set has a side"
+The verified-wrong condition meant pre-feature sets could never gain a side. Now
+the editor shows the selector when the EXERCISE is unilateral (new lightweight
+GET /api/exercises/[id] refreshes the flag so occurrence snapshots taken before
+the tag was set don't hide it) — verified by ADDING a side to a historical
+no-side set. Lesson recorded: verify the case the user hit, not a neighboring one.
+
+### 3 — "+ built-in" hidden for zero-offset types
+Shown only where the equipment's own constant exists: non-zero defaults
+(Olympic/EZ/Smith) or unknown (plate-loaded), or a unit with an explicit stored
+offset. Hidden for bodyweight/dumbbell/kettlebell/fixed-barbell/cable/
+selectorized (effOffset forced 0). This is definition, not inference — the type
+selector stays always-visible. Added weight (belt/vest) stays in the existing
+load input, untouched. Verified per-type in-app.
+
+### 4/5/6 — equipment nav returns to Sessions (+ full links row incl. Blocks);
+"machines" copy fully renamed in /equipment + the exercises panel (type labels
+like "Smith machine" are correct and kept); the add-unit modal fits at 375px
+(flex inputs got min-width:0 / wrap; verified 0 overflowing elements).

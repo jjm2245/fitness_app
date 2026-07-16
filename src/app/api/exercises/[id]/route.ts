@@ -19,6 +19,28 @@ const PATTERNS = new Set<string>(movementPatternEnum.enumValues);
 // (the "graduation" step of movement-pattern-on-add, Part B — makes it
 // substitutable and clears untagged) and/or rename it (custom-exercise
 // management, Part 3b). Both are optional; at least one must be present.
+// GET /api/exercises/[id] — current metadata for one exercise. The log screen
+// uses this to refresh flags like `unilateral` that may have been edited AFTER
+// a session's occurrence snapshot was taken (e.g. tagging rotary torso
+// unilateral should make historical sets side-editable, not just future ones).
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [row] = await db
+    .select({
+      id: exercises.id,
+      name: exercises.name,
+      loadType: exercises.loadType,
+      portable: exercises.portable,
+      unilateral: exercises.unilateral,
+      untagged: exercises.untagged,
+      description: exercises.description,
+    })
+    .from(exercises)
+    .where(eq(exercises.id, id));
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await request.json().catch(() => null);

@@ -248,7 +248,7 @@ function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }
   );
 }
 
-function LoggedSetRow({ set, isDrop, showRest, onChanged, onDrop }: { set: SessionSet; isDrop: boolean; showRest: boolean; onChanged: () => void; onDrop: (parent: SessionSet) => void }) {
+function LoggedSetRow({ set, isDrop, showRest, unilateral, onChanged, onDrop }: { set: SessionSet; isDrop: boolean; showRest: boolean; unilateral: boolean; onChanged: () => void; onDrop: (parent: SessionSet) => void }) {
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
@@ -258,7 +258,7 @@ function LoggedSetRow({ set, isDrop, showRest, onChanged, onDrop }: { set: Sessi
 
   async function save() {
     if (reps < 1 || load < 0) return;
-    await editSet(set.localId!, { load, reps, effort, ...(set.side != null ? { side } : {}) });
+    await editSet(set.localId!, { load, reps, effort, ...(side != null ? { side } : {}) });
     setEditing(false);
     onChanged();
   }
@@ -274,9 +274,10 @@ function LoggedSetRow({ set, isDrop, showRest, onChanged, onDrop }: { set: Sessi
         <span>×</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 44 }} />
         <EffortPicker value={effort} onChange={setEffort} />
-        {set.side != null && (
-          // Retroactively correctable — a mis-tagged side from a prior session
-          // is fixable here (the selector shows on any set that carries a side).
+        {(unilateral || set.side != null) && (
+          // The condition is "the EXERCISE is unilateral" — not "the set already
+          // has a side" — so a historical set logged before the tag existed can
+          // have its side ADDED here, not just flipped.
           <span className={styles.effortPicker}>
             {(["left", "right", "both"] as const).map((s) => (
               <button key={s} type="button" onClick={() => setSide(s)} className={side === s ? styles.effortActive : styles.effortBtn}>
@@ -356,12 +357,12 @@ function AddUnitModal({ exerciseId, presetType, onClose, onCreated }: {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ background: "var(--bg, #111)", border: "1px solid var(--border, #444)", borderRadius: 10, padding: 16, width: "min(420px, 92vw)", display: "flex", flexDirection: "column", gap: 8 }} onClick={(e) => e.stopPropagation()}>
         <strong>New {EQUIPMENT_TYPE_BY_ID.get(presetType)?.label.toLowerCase()} unit</strong>
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder='label, e.g. "leg ext by the mirror"' autoFocus />
-        <div style={{ display: "flex", gap: 6 }}>
-          <input value={gym} onChange={(e) => setGym(e.target.value)} placeholder="gym / location" style={{ flex: 1 }} />
-          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="manufacturer" style={{ flex: 1 }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder='label, e.g. "leg ext by the mirror"' autoFocus style={{ minWidth: 0, width: "100%", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", gap: 6, minWidth: 0 }}>
+          <input value={gym} onChange={(e) => setGym(e.target.value)} placeholder="gym / location" style={{ flex: 1, minWidth: 0 }} />
+          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="manufacturer" style={{ flex: 1, minWidth: 0 }} />
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
           <label>built-in lb{" "}
             <input type="number" value={offset} onChange={(e) => setOffset(e.target.value)} placeholder={EQUIPMENT_TYPE_BY_ID.get(presetType)?.defaultOffset == null ? "?" : String(EQUIPMENT_TYPE_BY_ID.get(presetType)?.defaultOffset)} style={{ width: 64 }} />
           </label>
@@ -535,11 +536,13 @@ function StrengthCard({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [equipType, resolvedUnitId, activeExercise.id]);
+  const offsetRelevant =
+    typeDef.defaultOffset !== 0 || (selectedUnit?.builtInWeight != null && Number(selectedUnit.builtInWeight) !== 0);
   const offsetNum = offsetInput.trim() !== "" && Number.isFinite(Number(offsetInput)) ? Number(offsetInput) : 0;
   // Needs a one-tap confirmation: non-zero type-level default, not yet confirmed
   // for this exercise, and no explicit unit-stored offset backing it.
-  const offsetNeedsConfirm = offsetNum !== 0 && !offsetConfirmed && selectedUnit?.builtInWeight == null;
-  const effOffset = offsetNeedsConfirm ? 0 : offsetNum;
+  const offsetNeedsConfirm = offsetRelevant && offsetNum !== 0 && !offsetConfirmed && selectedUnit?.builtInWeight == null;
+  const effOffset = !offsetRelevant ? 0 : offsetNeedsConfirm ? 0 : offsetNum;
   const totalLoad = load + effOffset;
   function confirmOffset(value: number) {
     localStorage.setItem(offsetOkKey(activeExercise.id, equipType), String(value));
@@ -553,11 +556,30 @@ function StrengthCard({
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
-  // Load this exercise's curated machine list (always — the field is always on).
+  // Load this exercise's curated unit list (always — the field is always on).
   useEffect(() => {
     (async () => {
       const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
       if (res.ok) setEquipmentUnits(await res.json());
+    })();
+  }, [activeExercise.id]);
+
+  // Refresh flags that may have changed since this occurrence was snapshotted —
+  // tagging an exercise unilateral must make its HISTORICAL sets side-editable
+  // too, not just future ones. Offline: the snapshot stands.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}`);
+        if (res.ok) {
+          const meta: { unilateral?: boolean } = await res.json();
+          if (typeof meta.unilateral === "boolean") {
+            setActiveExercise((a) => (a.unilateral === meta.unilateral ? a : { ...a, unilateral: meta.unilateral! }));
+          }
+        }
+      } catch {
+        /* offline — occurrence snapshot stands */
+      }
     })();
   }, [activeExercise.id]);
 
@@ -802,16 +824,18 @@ function StrengthCard({
             <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.secondaryBtn} style={{ marginLeft: 4 }}>+ New unit…</button>
           </label>
         )}
-        <label style={{ fontSize: 13, opacity: 0.9 }} title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged.">
+        {offsetRelevant && (
+        <label style={{ fontSize: 13, opacity: 0.9 }} title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged. Weight YOU add (belt, vest) goes in the normal load input.">
           + built-in{" "}
           <input type="number" value={offsetInput} onChange={(e) => { setOffsetInput(e.target.value); if (!offsetConfirmed) confirmOffset(Number(e.target.value) || 0); }} placeholder={typeDef.defaultOffset == null ? "?" : "lb"} style={{ width: 48 }} />
         </label>
+        )}
         {offsetNeedsConfirm && (
           <button type="button" onClick={() => confirmOffset(offsetNum)} className={styles.secondaryBtn} style={{ borderColor: "#a8741a", color: "#e0b566" }} title="A default offset is suggested but NOT applied until you confirm it — a wrong offset silently corrupts every set.">
             apply +{offsetNum} {typeDef.label.toLowerCase()}? ✓
           </button>
         )}
-        {typeDef.defaultOffset == null && offsetInput.trim() === "" && (
+        {offsetRelevant && typeDef.defaultOffset == null && offsetInput.trim() === "" && (
           <span style={{ fontSize: 12, color: "#e0b566" }} title="Plate-loaded carriage/handle weight is unit-specific — set it rather than guessing. Until then, loads record what you put on.">
             carriage weight unknown — set it
           </span>
@@ -872,7 +896,7 @@ function StrengthCard({
           {displaySets.map(({ set: s, isDrop }, i) => (
             // Rest is an edge: N sets = N−1 rests, so set 1 shows no chip at all
             // (its "rest" would be the inter-exercise transition — excluded).
-            <LoggedSetRow key={s.localId} set={s} isDrop={isDrop} showRest={i > 0 && !isDrop} onChanged={onSessionChanged} onDrop={startDrop} />
+            <LoggedSetRow key={s.localId} set={s} isDrop={isDrop} showRest={i > 0 && !isDrop} unilateral={activeExercise.unilateral} onChanged={onSessionChanged} onDrop={startDrop} />
           ))}
         </ul>
       )}

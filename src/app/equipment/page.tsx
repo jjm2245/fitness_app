@@ -4,14 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "../exercises/exercises.module.css";
 
-// Machines section (Part 3b) — mirrors the Exercises section. Machines are
+// Equipment section (Part 3) — mirrors the Exercises section. Units are
 // surrogate-keyed: the id is opaque and stable (logged sets reference it), the
 // label is display-only, so names stop carrying data — structured fields hold
 // gym/brand/type/built-in weight and notes hold everything else. Renames touch
 // one row; duplicate-label renames warn (409) and offer merge; deletes are
-// history-safe (blocked while logged sets reference the machine).
+// history-safe (blocked while logged sets reference the unit).
 
-interface Machine {
+interface EquipmentUnit {
   id: string;
   label: string;
   gym: string | null;
@@ -38,8 +38,8 @@ interface EditState {
 
 const EQUIPMENT_UNIT_TYPES = ["", "selectorized", "plate_loaded", "cable", "smith", "other"];
 
-export default function MachinesPage() {
-  const [rows, setRows] = useState<Machine[]>([]);
+export default function EquipmentPage() {
+  const [rows, setRows] = useState<EquipmentUnit[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -61,7 +61,7 @@ export default function MachinesPage() {
     })();
   }, []);
 
-  function startEdit(m: Machine) {
+  function startEdit(m: EquipmentUnit) {
     setErr(null);
     setEditing(m.id);
     setEdit({
@@ -108,7 +108,7 @@ export default function MachinesPage() {
     }
   }
 
-  async function remove(m: Machine) {
+  async function remove(m: EquipmentUnit) {
     if (busy) return;
     setBusy(true);
     setErr(null);
@@ -150,20 +150,23 @@ export default function MachinesPage() {
   return (
     <main className={styles.page}>
       <div className={styles.head}>
-        <h1>Machines</h1>
-        <Link href="/exercises" className={styles.btn}>← Exercises</Link>
+        <h1>Equipment</h1>
+        <span style={{ display: "inline-flex", gap: 8 }}>
+          <Link href="/exercises" className={styles.btn}>Exercises</Link>
+          <Link href="/sessions" className={styles.btn}>← Sessions</Link>
+        </span>
       </div>
       <p className={styles.hint}>
-        Machines are labelled for you, not for the data — gym, brand, type, and <strong>built-in weight</strong> live in
+        Equipment units are labelled for you, not for the data — gym, brand, type, and <strong>built-in weight</strong> live in
         structured fields (built-in weight is auto-added to every set&rsquo;s effective load), and the description holds
-        everything else. Deleting is blocked while logged sets reference a machine — <strong>merge</strong> duplicates
+        everything else. Deleting is blocked while logged sets reference a unit — <strong>merge</strong> duplicates
         instead (history moves, never orphans).
       </p>
 
       {!loaded ? (
         <p className={styles.hint}>Loading…</p>
       ) : rows.length === 0 ? (
-        <p className={styles.hint}>No machines yet — they appear when you add one while logging, or via an exercise&rsquo;s Machines panel.</p>
+        <p className={styles.hint}>No equipment units yet — they appear when you add one while logging, or via an exercise&rsquo;s Equipment panel.</p>
       ) : (
         <ul className={styles.list}>
           {rows.map((m) => (
@@ -213,7 +216,7 @@ export default function MachinesPage() {
               {merging === m.id && (
                 <div className={styles.removeBox}>
                   <p className={styles.removeWarn}>
-                    Merge <strong>{m.label}</strong> into another machine — its {m.loggedCount} logged set{m.loggedCount === 1 ? "" : "s"} and
+                    Merge <strong>{m.label}</strong> into another unit — its {m.loggedCount} logged set{m.loggedCount === 1 ? "" : "s"} and
                     exercise links move over, then this entry is deleted.
                   </p>
                   <div className={styles.actions}>
@@ -245,6 +248,7 @@ export default function MachinesPage() {
         <Link href="/sessions">Sessions</Link>
         <Link href="/exercises">Exercises</Link>
         <Link href="/program">Program</Link>
+        <Link href="/blocks">Blocks</Link>
       </div>
     </main>
   );
