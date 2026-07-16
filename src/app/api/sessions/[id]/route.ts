@@ -20,7 +20,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       id: setLogs.id,
       sessionExerciseId: setLogs.sessionExerciseId,
       exerciseId: setLogs.exerciseId,
-      machineId: setLogs.machineId,
+      equipmentId: setLogs.equipmentId,
       setIndex: setLogs.setIndex,
       setType: setLogs.setType,
       load: setLogs.load,

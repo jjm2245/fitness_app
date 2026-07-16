@@ -41,7 +41,7 @@ import {
 const baseInput = {
   exerciseId: "deadlift",
   exerciseName: "Deadlift",
-  machineId: null,
+  equipmentId: null,
   setType: "working" as const,
   load: 100,
   reps: 8,
@@ -304,7 +304,7 @@ describe("drop sets — linked rows, shared group + set number", () => {
 // True loads + unilateral (Parts 3–4): the stored `load` is the effective TOTAL
 // (what the core reads); the components + side + machine label ride along.
 describe("true loads + side + machine label sync through", () => {
-  it("POSTs loadEntered/builtinOffset/side/machineLabel and stores load as the total", async () => {
+  it("POSTs loadEntered/builtinOffset/side/equipmentLabel and stores load as the total", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
       const method = opts?.method ?? "GET";
@@ -320,7 +320,7 @@ describe("true loads + side + machine label sync through", () => {
     const row = await logSet({
       ...baseInput, sessionId: id, instanceId: inst, date,
       load: 110, loadEntered: 90, builtinOffset: 20, // 90 entered + 20 built-in
-      side: "left", machineId: "m-uuid-1", machineLabel: "pec fly by the mirror",
+      side: "left", equipmentId: "m-uuid-1", equipmentLabel: "pec fly by the mirror",
     });
     expect(row.load).toBe(110); // the total — progression/volume read this
     await sync();
@@ -328,7 +328,7 @@ describe("true loads + side + machine label sync through", () => {
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({
       load: 110, loadEntered: 90, builtinOffset: 20,
-      side: "left", machineId: "m-uuid-1", machineLabel: "pec fly by the mirror",
+      side: "left", equipmentId: "m-uuid-1", equipmentLabel: "pec fly by the mirror",
     });
   });
 });
@@ -849,7 +849,7 @@ describe("refusal path — this device is behind, pull-from-server heals it", ()
         { sessionExerciseId: 1, clientInstanceId: a, exerciseId: "deadlift", exerciseName: "Deadlift", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 0, source: "Test day" },
         { sessionExerciseId: 2, clientInstanceId: "srv-b", exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 1, source: "Test day" },
       ],
-      sets: [ { id: 999, sessionExerciseId: 2, exerciseId: "skull_crusher", machineId: null, setIndex: 1, setType: "working", load: "80", reps: 8, effort: "near_failure", rir: null } ],
+      sets: [ { id: 999, sessionExerciseId: 2, exerciseId: "skull_crusher", equipmentId: null, setIndex: 1, setType: "working", load: "80", reps: 8, effort: "near_failure", rir: null } ],
       cardio: [],
     };
     await rehydrateLocalFromServer(server);
@@ -950,7 +950,7 @@ describe("hydrate a server-only session (opening a past session)", () => {
         { sessionExerciseId: 77, clientInstanceId: "inst-a", exerciseId: "back_squat", exerciseName: "Back Squat", loadType: "free_weight", portable: false, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 0, source: "Legs" },
       ],
       sets: [
-        { id: 5001, sessionExerciseId: 77, exerciseId: "back_squat", machineId: null, setIndex: 1, setType: "working", load: "225", reps: 5, effort: "near_failure", rir: null },
+        { id: 5001, sessionExerciseId: 77, exerciseId: "back_squat", equipmentId: null, setIndex: 1, setType: "working", load: "225", reps: 5, effort: "near_failure", rir: null },
       ],
       cardio: [],
     };

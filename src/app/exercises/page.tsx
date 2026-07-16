@@ -20,7 +20,7 @@ interface ManagedExercise {
   loggedCount: number;
 }
 
-interface ExerciseMachine {
+interface ExerciseEquipment {
   id: string; // opaque stable key (surrogate-key model)
   label: string; // display name
   notes: string | null;
@@ -49,7 +49,7 @@ export default function ExercisesPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [collapsing, setCollapsing] = useState<string | null>(null);
-  const [machinesFor, setMachinesFor] = useState<string | null>(null);
+  const [equipmentFor, setEquipmentFor] = useState<string | null>(null);
   const [describing, setDescribing] = useState<string | null>(null);
   const [descText, setDescText] = useState("");
   const [adding, setAdding] = useState(false);
@@ -181,7 +181,7 @@ export default function ExercisesPage() {
       <div className={styles.head}>
         <h1>My exercises</h1>
         <span style={{ display: "inline-flex", gap: 8 }}>
-          <Link href="/machines" className={styles.btn}>Machines</Link>
+          <Link href="/equipment" className={styles.btn}>Equipment</Link>
           <Link href="/sessions" className={styles.btn}>← Sessions</Link>
         </span>
       </div>
@@ -243,8 +243,8 @@ export default function ExercisesPage() {
                   <button type="button" className={styles.btn} onClick={() => setCollapsing(collapsing === e.id ? null : e.id)}>
                     {collapsing === e.id ? "Close" : "Collapse into library…"}
                   </button>
-                  <button type="button" className={styles.btn} onClick={() => setMachinesFor(machinesFor === e.id ? null : e.id)}>
-                    {machinesFor === e.id ? "Close machines" : "Machines"}
+                  <button type="button" className={styles.btn} onClick={() => setEquipmentFor(equipmentFor === e.id ? null : e.id)}>
+                    {equipmentFor === e.id ? "Close equipment" : "Equipment"}
                   </button>
                   <button type="button" className={styles.btn} onClick={() => { setDescribing(e.id); setDescText(e.description ?? ""); }}>
                     {e.description ? "Edit description" : "Add description"}
@@ -299,7 +299,7 @@ export default function ExercisesPage() {
                 <CollapsePicker exercise={e} onCollapse={(targetId) => collapse(e.id, targetId)} busy={busy} />
               )}
 
-              {machinesFor === e.id && <MachinePanel exerciseId={e.id} />}
+              {equipmentFor === e.id && <EquipmentPanel exerciseId={e.id} />}
             </li>
           ))}
         </ul>
@@ -357,8 +357,8 @@ function CollapsePicker({ exercise, onCollapse, busy }: { exercise: ManagedExerc
 // exercise (add / edit note / remove), complementing auto-create-on-first-use.
 // "No machine" (the portable/free lane for progression) is always available at
 // log time — it's the empty selection, not a row here.
-function MachinePanel({ exerciseId }: { exerciseId: string }) {
-  const [rows, setRows] = useState<ExerciseMachine[]>([]);
+function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
+  const [rows, setRows] = useState<ExerciseEquipment[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
@@ -367,14 +367,14 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/machines`);
+    const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
     if (res.ok) setRows(await res.json());
     setLoaded(true);
   }, [exerciseId]);
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/machines`);
+      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
       if (res.ok) setRows(await res.json());
       setLoaded(true);
     })();
@@ -385,7 +385,7 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
     if (!l || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/machines`, {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Client-generated opaque id (surrogate-key model) — label is display only.
@@ -401,11 +401,11 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
     }
   }
 
-  async function saveNote(machineId: string) {
+  async function saveNote(equipmentId: string) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}`, {
+      const res = await fetch(`/api/equipment/${encodeURIComponent(equipmentId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: editNote }),
@@ -419,11 +419,11 @@ function MachinePanel({ exerciseId }: { exerciseId: string }) {
     }
   }
 
-  async function remove(machineId: string) {
+  async function remove(equipmentId: string) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/machines/${encodeURIComponent(machineId)}`, {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment/${encodeURIComponent(equipmentId)}`, {
         method: "DELETE",
       });
       if (res.ok) await load();

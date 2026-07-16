@@ -60,7 +60,7 @@ interface ProgramDetail {
   splitType: string;
   days: ProgramDayDetail[];
 }
-interface MachineOption {
+interface EquipmentOption {
   id: string; // opaque stable key (surrogate-key model)
   label: string; // display name
   builtInWeight: string | null; // auto-applied additive offset when selected
@@ -118,15 +118,15 @@ function parseRepRangeMax(repRange: string | null): number {
   const max = Number(parts[parts.length - 1]);
   return Number.isFinite(max) ? max : 12;
 }
-function lastMachineKey(exerciseId: string) {
+function lastEquipmentKey(exerciseId: string) {
   return `fitness-app:last-machine:${exerciseId}`;
 }
 // The neutral default: "I'm using a machine but haven't said which" — distinct
 // from "No machine" (which asserts free/portable). Both resolve to a null
-// machineId (the portable/free progression lane), so this is a labelling choice
+// equipmentId (the portable/free progression lane), so this is a labelling choice
 // only and never splits an exercise's history — the core is untouched. A sentinel
 // (not "") so we can tell it apart from an explicit "No machine" in the UI.
-const UNSPECIFIED_MACHINE = "__unspecified__";
+const UNSPECIFIED_UNIT = "__unspecified__";
 function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
@@ -349,17 +349,17 @@ function StrengthCard({
     unilateral: ex.unilateral,
   });
   // Machines curated for THIS exercise (Part 3c), not the global list.
-  const [machines, setMachines] = useState<MachineOption[]>([]);
-  const refreshMachines = useCallback(async () => {
-    const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`);
-    if (res.ok) setMachines(await res.json());
+  const [equipmentUnits, setEquipmentUnits] = useState<EquipmentOption[]>([]);
+  const refreshEquipmentUnits = useCallback(async () => {
+    const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
+    if (res.ok) setEquipmentUnits(await res.json());
   }, [activeExercise.id]);
-  const [machineId, setMachineId] = useState(() => {
+  const [equipmentId, setMachineId] = useState(() => {
     // Default to "Unspecified machine" unless a named machine was last used here.
-    if (typeof window === "undefined") return UNSPECIFIED_MACHINE;
-    return localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? UNSPECIFIED_MACHINE;
+    if (typeof window === "undefined") return UNSPECIFIED_UNIT;
+    return localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT;
   });
-  const [newMachineName, setNewMachineName] = useState("");
+  const [newEquipmentName, setNewEquipmentName] = useState("");
   const [setType, setSetType] = useState<"warmup" | "working">("working");
   const [load, setLoad] = useState(ex.loadType === "bodyweight" ? 0 : 45);
   const [reps, setReps] = useState(8);
@@ -430,14 +430,14 @@ function StrengthCard({
   // progression semantics (null = portable, never re-baselined; named =
   // re-baseline on change) are unchanged — they key off this same null.
   const resolvedMachineId =
-    machineId === "" || machineId === UNSPECIFIED_MACHINE ? null : machineId;
-  const selectedMachine = resolvedMachineId ? machines.find((m) => m.id === resolvedMachineId) ?? null : null;
+    equipmentId === "" || equipmentId === UNSPECIFIED_UNIT ? null : equipmentId;
+  const selectedUnit = resolvedMachineId ? equipmentUnits.find((m) => m.id === resolvedMachineId) ?? null : null;
   // The additive offset applied to this set's effective load (3a): the selected
   // machine's stored built-in weight, else the optional manual field. Additive
   // numerical weight only — pulley ratios etc. stay descriptive, never folded in.
-  const machineOffset = selectedMachine?.builtInWeight != null ? Number(selectedMachine.builtInWeight) : 0;
-  const manualOffsetNum = !selectedMachine && manualOffset.trim() !== "" ? Number(manualOffset) : 0;
-  const effOffset = Number.isFinite(machineOffset) && machineOffset !== 0 ? machineOffset : Number.isFinite(manualOffsetNum) ? manualOffsetNum : 0;
+  const unitOffset = selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight) : 0;
+  const manualOffsetNum = !selectedUnit && manualOffset.trim() !== "" ? Number(manualOffset) : 0;
+  const effOffset = Number.isFinite(unitOffset) && unitOffset !== 0 ? unitOffset : Number.isFinite(manualOffsetNum) ? manualOffsetNum : 0;
   const totalLoad = load + effOffset;
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
@@ -445,8 +445,8 @@ function StrengthCard({
   // Load this exercise's curated machine list (always — the field is always on).
   useEffect(() => {
     (async () => {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`);
-      if (res.ok) setMachines(await res.json());
+      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
+      if (res.ok) setEquipmentUnits(await res.json());
     })();
   }, [activeExercise.id]);
 
@@ -454,7 +454,7 @@ function StrengthCard({
     let cancelled = false;
     (async () => {
       const params = new URLSearchParams();
-      if (resolvedMachineId) params.set("machineId", resolvedMachineId);
+      if (resolvedMachineId) params.set("equipmentId", resolvedMachineId);
       const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?${params.toString()}`);
       const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
       if (cancelled) return;
@@ -477,7 +477,7 @@ function StrengthCard({
         repRangeMax: String(parseRepRangeMax(ex.target?.repRange ?? null)),
         targetRir: String(ex.target?.rirTarget ?? 2),
       });
-      if (resolvedMachineId) params.set("machineId", resolvedMachineId);
+      if (resolvedMachineId) params.set("equipmentId", resolvedMachineId);
       const res = await fetch(`/api/progression?${params.toString()}`);
       setProgression(await res.json());
     } finally {
@@ -496,8 +496,8 @@ function StrengthCard({
       date,
       exerciseId: activeExercise.id,
       exerciseName: activeExercise.name,
-      machineId: resolvedMachineId,
-      machineLabel: selectedMachine?.label ?? null,
+      equipmentId: resolvedMachineId,
+      equipmentLabel: selectedUnit?.label ?? null,
       setType,
       // Effective load = entered + known offset; the components are stored too,
       // so the math stays visible ("90 + 20 = 110") and the core reads the total.
@@ -511,7 +511,7 @@ function StrengthCard({
       // If the rest timer is running, this set consumes it as an exact rest.
       timedRestSeconds: takeTimedRest(),
     });
-    if (resolvedMachineId) localStorage.setItem(lastMachineKey(activeExercise.id), resolvedMachineId);
+    if (resolvedMachineId) localStorage.setItem(lastEquipmentKey(activeExercise.id), resolvedMachineId);
     // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
     if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
     onSessionChanged();
@@ -547,8 +547,8 @@ function StrengthCard({
       date,
       exerciseId: dropFor.exerciseId,
       exerciseName: dropFor.exerciseName,
-      machineId: dropFor.machineId,
-      machineLabel: dropFor.machineLabel ?? null,
+      equipmentId: dropFor.equipmentId,
+      equipmentLabel: dropFor.equipmentLabel ?? null,
       setType: dropFor.setType,
       load: l,
       reps: dropReps,
@@ -591,32 +591,32 @@ function StrengthCard({
   }
   function pickSwap(c: SubstitutionCandidate) {
     setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable, unilateral: c.unilateral ?? false });
-    setMachineId(localStorage.getItem(lastMachineKey(c.id)) ?? UNSPECIFIED_MACHINE);
+    setMachineId(localStorage.getItem(lastEquipmentKey(c.id)) ?? UNSPECIFIED_UNIT);
     setSwapOpen(false);
   }
   function resetSwap() {
     setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable, unilateral: ex.unilateral });
-    setMachineId(localStorage.getItem(lastMachineKey(ex.exerciseId)) ?? UNSPECIFIED_MACHINE);
+    setMachineId(localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT);
     setSwapOpen(false);
   }
-  async function addMachine() {
-    const name = newMachineName.trim();
+  async function addEquipmentUnit() {
+    const name = newEquipmentName.trim();
     if (!name) return;
     // Surrogate-key model: the client owns identity (uuid); the label is display
     // only. Optimistically add locally so it's selected even offline; the set
     // POST auto-registers id+label on sync if this POST never lands.
     const newIdVal = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `m_${Date.now().toString(36)}`;
-    setMachines((ms) => [...ms, { id: newIdVal, label: name, builtInWeight: null, notes: null }]);
+    setEquipmentUnits((ms) => [...ms, { id: newIdVal, label: name, builtInWeight: null, notes: null }]);
     setMachineId(newIdVal);
-    setNewMachineName("");
+    setNewEquipmentName("");
     try {
       // Curate it under this exercise (Part 3c), so it's in the list next time.
-      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/machines`, {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: newIdVal, label: name }),
       });
-      if (res.ok) refreshMachines();
+      if (res.ok) refreshEquipmentUnits();
     } catch {
       /* offline — set-logs auto-registers + associates on sync */
     }
@@ -670,15 +670,15 @@ function StrengthCard({
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
         <label title="'Unspecified machine' (the default) just means you're on a machine but haven't labelled which — same tracking as free/portable. 'No machine' is the free/portable lane (dumbbells, barbell, bodyweight). Only name a machine if there are two of the same, or you're at a different gym.">
           Machine{" "}
-          <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-            <option value={UNSPECIFIED_MACHINE}>Unspecified machine</option>
+          <select value={equipmentId} onChange={(e) => setMachineId(e.target.value)}>
+            <option value={UNSPECIFIED_UNIT}>Unspecified machine</option>
             <option value="">No machine</option>
-            {machines.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)} built-in)` : ""}</option>)}
+            {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)} built-in)` : ""}</option>)}
           </select>
         </label>
-        <input value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
-        <button type="button" onClick={addMachine}>+ Add</button>
-        {!selectedMachine && (
+        <input value={newEquipmentName} onChange={(e) => setNewEquipmentName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
+        <button type="button" onClick={addEquipmentUnit}>+ Add</button>
+        {!selectedUnit && (
           <label style={{ fontSize: 13, opacity: 0.85 }} title="Optional constant added weight (bar, fixed handle) applied to every set's effective load">
             + bar/built-in{" "}
             <input type="number" value={manualOffset} onChange={(e) => setManualOffset(e.target.value)} placeholder="lb" style={{ width: 48 }} />

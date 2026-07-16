@@ -3,6 +3,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
+import { laneKey } from "@/lib/equipment";
 import { exercises, exerciseMuscles, setLogs, workoutLogs, injuryFlags } from "@/db/schema";
 import type { ExerciseTags, MuscleEmphasis, SetLogInput } from "@/core/types";
 import { normalizedRir } from "@/lib/effort";
@@ -66,7 +67,8 @@ export async function loadSetLogInputsForExercise(exerciseId: string): Promise<S
   const rows = await db
     .select({
       exerciseId: setLogs.exerciseId,
-      machineId: setLogs.machineId,
+      equipmentId: setLogs.equipmentId,
+      equipmentType: setLogs.equipmentType,
       setType: setLogs.setType,
       load: setLogs.load,
       reps: setLogs.reps,
@@ -80,7 +82,11 @@ export async function loadSetLogInputsForExercise(exerciseId: string): Promise<S
 
   return rows.map((r) => ({
     exerciseId: r.exerciseId,
-    machineId: r.machineId,
+    // Opaque lane key (Part 3e): named unit -> its id (lanes unchanged from the
+    // machine era); context-bound type w/o unit -> "type:unspecified" (its own
+    // lane, NOT portable); portable types -> null. The core never learns what a
+    // Smith is - it just groups by this string and re-baselines on change.
+    machineId: laneKey(r.equipmentType, r.equipmentId),
     date: r.date,
     setType: r.setType,
     load: Number(r.load),
@@ -94,7 +100,8 @@ export async function loadAllSetLogInputs(exerciseIds: string[]): Promise<SetLog
   const rows = await db
     .select({
       exerciseId: setLogs.exerciseId,
-      machineId: setLogs.machineId,
+      equipmentId: setLogs.equipmentId,
+      equipmentType: setLogs.equipmentType,
       setType: setLogs.setType,
       load: setLogs.load,
       reps: setLogs.reps,
@@ -108,7 +115,11 @@ export async function loadAllSetLogInputs(exerciseIds: string[]): Promise<SetLog
 
   return rows.map((r) => ({
     exerciseId: r.exerciseId,
-    machineId: r.machineId,
+    // Opaque lane key (Part 3e): named unit -> its id (lanes unchanged from the
+    // machine era); context-bound type w/o unit -> "type:unspecified" (its own
+    // lane, NOT portable); portable types -> null. The core never learns what a
+    // Smith is - it just groups by this string and re-baselines on change.
+    machineId: laneKey(r.equipmentType, r.equipmentId),
     date: r.date,
     setType: r.setType,
     load: Number(r.load),

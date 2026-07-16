@@ -18,7 +18,7 @@ interface Machine {
   brand: string | null;
   model: string | null;
   builtInWeight: string | null;
-  machineType: string | null;
+  equipmentType: string | null;
   notes: string | null;
   exercises: Array<{ exerciseId: string; name: string }>;
   loggedCount: number;
@@ -30,11 +30,11 @@ interface EditState {
   brand: string;
   model: string;
   builtInWeight: string;
-  machineType: string;
+  equipmentType: string;
   notes: string;
 }
 
-const MACHINE_TYPES = ["", "selectorized", "plate_loaded", "cable", "smith", "other"];
+const EQUIPMENT_UNIT_TYPES = ["", "selectorized", "plate_loaded", "cable", "smith", "other"];
 
 export default function MachinesPage() {
   const [rows, setRows] = useState<Machine[]>([]);
@@ -46,14 +46,14 @@ export default function MachinesPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/machines");
+    const res = await fetch("/api/equipment");
     if (res.ok) setRows(await res.json());
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     (async () => {
-      const res = await fetch("/api/machines");
+      const res = await fetch("/api/equipment");
       if (res.ok) setRows(await res.json());
       setLoaded(true);
     })();
@@ -68,7 +68,7 @@ export default function MachinesPage() {
       brand: m.brand ?? "",
       model: m.model ?? "",
       builtInWeight: m.builtInWeight != null ? String(Number(m.builtInWeight)) : "",
-      machineType: m.machineType ?? "",
+      equipmentType: m.equipmentType ?? "",
       notes: m.notes ?? "",
     });
   }
@@ -78,7 +78,7 @@ export default function MachinesPage() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/machines/${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/equipment/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -86,7 +86,7 @@ export default function MachinesPage() {
           gym: edit.gym,
           brand: edit.brand,
           model: edit.model,
-          machineType: edit.machineType,
+          equipmentType: edit.equipmentType,
           notes: edit.notes,
           builtInWeight: edit.builtInWeight.trim() === "" ? null : Number(edit.builtInWeight),
         }),
@@ -109,7 +109,7 @@ export default function MachinesPage() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/machines/${encodeURIComponent(m.id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/equipment/${encodeURIComponent(m.id)}`, { method: "DELETE" });
       if (res.ok) await load();
       else {
         const body = await res.json().catch(() => null);
@@ -125,7 +125,7 @@ export default function MachinesPage() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/machines/${encodeURIComponent(sourceId)}/merge`, {
+      const res = await fetch(`/api/equipment/${encodeURIComponent(sourceId)}/merge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetId }),
@@ -166,7 +166,7 @@ export default function MachinesPage() {
             <li key={m.id} className={styles.item}>
               <div className={styles.itemTop}>
                 <span className={styles.name}>{m.label}</span>
-                {m.machineType && <span className={styles.meta}>· {m.machineType}</span>}
+                {m.equipmentType && <span className={styles.meta}>· {m.equipmentType}</span>}
                 {m.builtInWeight != null && <span className={styles.meta}>· +{Number(m.builtInWeight)} lb built-in</span>}
                 {m.loggedCount > 0 && <span className={styles.meta}>· {m.loggedCount} logged</span>}
               </div>
@@ -185,8 +185,8 @@ export default function MachinesPage() {
                   <input className={styles.input} value={edit.brand} onChange={(ev) => setEdit({ ...edit, brand: ev.target.value })} placeholder="manufacturer" />
                   <input className={styles.input} value={edit.model} onChange={(ev) => setEdit({ ...edit, model: ev.target.value })} placeholder="model" />
                   <input className={styles.input} type="number" value={edit.builtInWeight} onChange={(ev) => setEdit({ ...edit, builtInWeight: ev.target.value })} placeholder="built-in lb" style={{ width: 90 }} title="Constant added weight (bar/handles/carriage) — auto-added to logged loads" />
-                  <select className={styles.input} value={edit.machineType} onChange={(ev) => setEdit({ ...edit, machineType: ev.target.value })}>
-                    {MACHINE_TYPES.map((t) => <option key={t} value={t}>{t === "" ? "type…" : t}</option>)}
+                  <select className={styles.input} value={edit.equipmentType} onChange={(ev) => setEdit({ ...edit, equipmentType: ev.target.value })}>
+                    {EQUIPMENT_UNIT_TYPES.map((t) => <option key={t} value={t}>{t === "" ? "type…" : t}</option>)}
                   </select>
                   <textarea className={styles.input} value={edit.notes} onChange={(ev) => setEdit({ ...edit, notes: ev.target.value })} placeholder="description — serials, links, quirks…" rows={2} style={{ flex: "1 1 100%", resize: "vertical", fontFamily: "inherit" }} />
                   <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => save(m.id)} disabled={busy}>Save</button>

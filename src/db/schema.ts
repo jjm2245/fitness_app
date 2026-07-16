@@ -189,22 +189,30 @@ export const exerciseSubstitutions = pgTable("exercise_substitutions", {
   candidateExerciseId: text("candidate_exercise_id").references(() => exercises.id),
 });
 
-export const machines = pgTable("machines", {
+// Equipment = how resistance is applied to a strength set (Part 3). If it
+// doesn't change how a load is recorded or compared, it isn't equipment
+// (belts/straps/chalk are notes; cardio has its own model). A row here is a
+// context-bound INSTANCE ("which unit") — types with no instance identity
+// (dumbbells, bars) never get rows; their type + default offset live on the set.
+export const equipment = pgTable("equipment", {
   // Opaque, stable id (surrogate key). Historical rows keep their old
-  // label-as-id (never rewritten, so logged history can't orphan); NEW machines
-  // get a client-generated uuid. Display always uses `label` — renames touch one
-  // row, and labels no longer need to be globally unique or carry data.
+  // label-as-id (never rewritten, so logged history can't orphan); new units
+  // get a client-generated uuid. Display always uses `label`.
   id: text("id").primaryKey(),
-  label: text("label"), // display name; backfilled from id in migration 0016
+  label: text("label"),
   gym: text("gym"),
   brand: text("brand"),
   model: text("model"),
   // Additive built-in weight (bar, fixed handles, loaded carriage) auto-applied
   // to a set's effective load: load = entered + built_in_weight. Distinct from
   // counterweight_lb (which REDUCES effective load and stays descriptive).
+  // Null = UNKNOWN (plate-loaded prompts per unit) — never invent precision.
   builtInWeight: numeric("built_in_weight"),
-  machineType: text("machine_type"), // selectorized | plate_loaded | cable | smith | …
-  pulleyRatio: numeric("pulley_ratio"),
+  equipmentType: text("equipment_type"), // cable | selectorized | smith | plate_loaded | …
+  // Structured, NEVER folded into logged loads: a multiplicative ratio cancels
+  // out of every lane-scoped comparison (an additive offset doesn't — that's
+  // why offsets ARE in the number). Interpretation for the future agent only.
+  pulleyRatioKind: text("pulley_ratio_kind").default("unknown"), // 1:1 | 2:1 | other | unknown
   counterweightLb: numeric("counterweight_lb"), // Smith bar ~15-20 lb at PF
   camProfile: text("cam_profile"),
   notes: text("notes"), // free-text description: serials, links, quirks
@@ -216,17 +224,17 @@ export const machines = pgTable("machines", {
 // by the mirror" is a leg-extension machine), so machines are curated per
 // exercise. The association is built automatically on first logged use and can
 // also be curated directly (add/remove) outside logging.
-export const exerciseMachines = pgTable(
-  "exercise_machines",
+export const exerciseEquipment = pgTable(
+  "exercise_equipment",
   {
     exerciseId: text("exercise_id")
       .notNull()
       .references(() => exercises.id, { onDelete: "cascade" }),
-    machineId: text("machine_id")
+    equipmentId: text("equipment_id")
       .notNull()
-      .references(() => machines.id, { onDelete: "cascade" }),
+      .references(() => equipment.id, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.exerciseId, t.machineId] })]
+  (t) => [primaryKey({ columns: [t.exerciseId, t.equipmentId] })]
 );
 
 // ---------------------------------------------------------------------------
@@ -335,8 +343,13 @@ export const setLogs = pgTable("set_logs", {
   exerciseId: text("exercise_id")
     .notNull()
     .references(() => exercises.id),
-  // Machine/Smith/cable loads are context-bound; null for portable free-weight/bodyweight lifts.
-  machineId: text("machine_id").references(() => machines.id),
+  // Context-bound loads reference WHICH unit; null for portable types or an
+  // unspecified unit. Lanes are computed from (equipment_type, equipment_id).
+  equipmentId: text("equipment_id").references(() => equipment.id),
+  // The always-answered equipment TYPE for this set (bodyweight | dumbbell |
+  // kettlebell | fixed_barbell | olympic_barbell | ez_curl_bar | cable |
+  // selectorized | smith | plate_loaded). Null = legacy row (pre-model).
+  equipmentType: text("equipment_type"),
   setIndex: integer("set_index").notNull(),
   setType: setTypeEnum("set_type").notNull(),
   load: numeric("load").notNull(),

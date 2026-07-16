@@ -134,6 +134,13 @@
       "when": 1784175826295,
       "tag": "0018_rest_edges",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784178641304,
+      "tag": "0019_equipment_model",
+      "breakpoints": true
     }
   ]
 }

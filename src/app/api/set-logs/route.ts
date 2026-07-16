@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { workoutLogs, setLogs, machines, sessionExercises, exerciseMachines } from "@/db/schema";
+import { workoutLogs, setLogs, equipment, sessionExercises, exerciseEquipment } from "@/db/schema";
 
 interface SetLogPayload {
   clientSessionId?: string | null;
@@ -9,8 +9,10 @@ interface SetLogPayload {
   date: string; // ISO date, e.g. "2026-07-04"
   programDay?: string | null;
   exerciseId: string;
-  machineId?: string | null;
-  machineLabel?: string | null; // display label for offline-created machines
+  equipmentId?: string | null;
+  equipmentLabel?: string | null; // display label for offline-created equipment
+  equipmentType?: string | null; // always-answered type (Part 3); null = legacy client
+  equipmentBuiltInWeight?: number | null; // offset for offline-created units
   setIndex: number;
   setType: "warmup" | "working";
   load: number;
@@ -56,13 +58,21 @@ export async function POST(request: NextRequest) {
     // Machine/Smith/cable loads are context-bound (spec §9) — auto-register a bare
     // machine row on first use rather than requiring a separate "add machine" step
     // before logging is possible. Users can enrich brand/pulley-ratio/etc. later.
-    if (body.machineId) {
-      await tx.insert(machines).values({ id: body.machineId, label: body.machineLabel ?? body.machineId }).onConflictDoNothing();
+    if (body.equipmentId) {
+      await tx
+        .insert(equipment)
+        .values({
+          id: body.equipmentId,
+          label: body.equipmentLabel ?? body.equipmentId,
+          equipmentType: body.equipmentType ?? null,
+          builtInWeight: body.equipmentBuiltInWeight != null ? body.equipmentBuiltInWeight.toString() : null,
+        })
+        .onConflictDoNothing();
       // Curate the machine under this exercise (Part 3c) — builds the per-
       // exercise machine list automatically from real use.
       await tx
-        .insert(exerciseMachines)
-        .values({ exerciseId: body.exerciseId, machineId: body.machineId })
+        .insert(exerciseEquipment)
+        .values({ exerciseId: body.exerciseId, equipmentId: body.equipmentId })
         .onConflictDoNothing();
     }
 
@@ -83,7 +93,8 @@ export async function POST(request: NextRequest) {
         workoutLogId: workoutLog.id,
         sessionExerciseId,
         exerciseId: body.exerciseId,
-        machineId: body.machineId ?? null,
+        equipmentId: body.equipmentId ?? null,
+        equipmentType: body.equipmentType ?? null,
         setIndex: body.setIndex,
         setType: body.setType,
         load: body.load.toString(),
@@ -114,7 +125,7 @@ export async function GET() {
       id: setLogs.id,
       date: workoutLogs.date,
       exerciseId: setLogs.exerciseId,
-      machineId: setLogs.machineId,
+      equipmentId: setLogs.equipmentId,
       setType: setLogs.setType,
       load: setLogs.load,
       reps: setLogs.reps,

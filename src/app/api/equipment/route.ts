@@ -1,27 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { machines, exerciseMachines, exercises, setLogs } from "@/db/schema";
+import { equipment, exerciseEquipment, exercises, setLogs } from "@/db/schema";
 
-// GET /api/machines — the full managed machine list (Machines section, Part 3b):
+// GET /api/equipment — the full managed machine list (Machines section, Part 3b):
 // structured fields + free-text notes, which exercises reference each machine,
 // and how many logged sets point at it (drives history-safe delete/merge).
 export async function GET() {
-  const rows = await db.select().from(machines).orderBy(machines.label);
+  const rows = await db.select().from(equipment).orderBy(equipment.label);
 
   const refs = await db
-    .select({ machineId: exerciseMachines.machineId, exerciseId: exerciseMachines.exerciseId, name: exercises.name })
-    .from(exerciseMachines)
-    .innerJoin(exercises, eq(exerciseMachines.exerciseId, exercises.id));
+    .select({ equipmentId: exerciseEquipment.equipmentId, exerciseId: exerciseEquipment.exerciseId, name: exercises.name })
+    .from(exerciseEquipment)
+    .innerJoin(exercises, eq(exerciseEquipment.exerciseId, exercises.id));
   const used = await db
-    .select({ machineId: setLogs.machineId, n: sql<number>`count(*)`.mapWith(Number) })
+    .select({ equipmentId: setLogs.equipmentId, n: sql<number>`count(*)`.mapWith(Number) })
     .from(setLogs)
-    .groupBy(setLogs.machineId);
+    .groupBy(setLogs.equipmentId);
 
   const refsBy = new Map<string, Array<{ exerciseId: string; name: string }>>();
-  for (const r of refs) (refsBy.get(r.machineId) ?? refsBy.set(r.machineId, []).get(r.machineId)!).push({ exerciseId: r.exerciseId, name: r.name });
+  for (const r of refs) (refsBy.get(r.equipmentId) ?? refsBy.set(r.equipmentId, []).get(r.equipmentId)!).push({ exerciseId: r.exerciseId, name: r.name });
   const usedBy = new Map<string, number>();
-  for (const u of used) if (u.machineId) usedBy.set(u.machineId, u.n);
+  for (const u of used) if (u.equipmentId) usedBy.set(u.equipmentId, u.n);
 
   return NextResponse.json(
     rows.map((m) => ({
@@ -31,7 +31,7 @@ export async function GET() {
       brand: m.brand,
       model: m.model,
       builtInWeight: m.builtInWeight,
-      machineType: m.machineType,
+      equipmentType: m.equipmentType,
       notes: m.notes,
       exercises: refsBy.get(m.id) ?? [],
       loggedCount: usedBy.get(m.id) ?? 0,
@@ -39,7 +39,7 @@ export async function GET() {
   );
 }
 
-// POST /api/machines { id?, label, ... } — create a machine. The client owns
+// POST /api/equipment { id?, label, ... } — create a machine. The client owns
 // identity (a uuid) so a machine created offline maps to exactly one row on
 // sync; legacy callers without a separate label fall back to label-as-id.
 export async function POST(request: NextRequest) {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const id = typeof body?.id === "string" && body.id.trim() !== "" ? body.id.trim() : label;
 
   const [row] = await db
-    .insert(machines)
+    .insert(equipment)
     .values({
       id,
       label,
@@ -60,6 +60,6 @@ export async function POST(request: NextRequest) {
     .returning();
 
   if (row) return NextResponse.json(row, { status: 201 });
-  const [existing] = await db.select().from(machines).where(eq(machines.id, id));
+  const [existing] = await db.select().from(equipment).where(eq(equipment.id, id));
   return NextResponse.json(existing, { status: 200 });
 }

@@ -52,7 +52,7 @@ export interface SessionSet {
   date: string; // the session's date (denormalized for the workout_log)
   exerciseId: string;
   exerciseName: string;
-  machineId: string | null;
+  equipmentId: string | null;
   setIndex: number;
   setType: "warmup" | "working";
   load: number;
@@ -71,7 +71,7 @@ export interface SessionSet {
   builtinOffset?: number | null; // machine built-in / bar weight applied
   // Display label of the referenced machine (surrogate-key model) — carried so
   // an offline-created machine auto-registers server-side with its real label.
-  machineLabel?: string | null;
+  equipmentLabel?: string | null;
 }
 
 // "Done" now marks a specific occurrence (instance), since the same exercise
@@ -421,7 +421,7 @@ export interface ServerSession {
     id: number;
     sessionExerciseId: number | null;
     exerciseId: string;
-    machineId: string | null;
+    equipmentId: string | null;
     setIndex: number;
     setType: "warmup" | "working";
     load: string;
@@ -520,7 +520,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       date: server.date,
       exerciseId: s.exerciseId,
       exerciseName: nameOf(s.exerciseId),
-      machineId: s.machineId,
+      equipmentId: s.equipmentId,
       setIndex: s.setIndex,
       setType: s.setType,
       load: Number(s.load),
@@ -568,7 +568,7 @@ export interface LogSetInput {
   date: string;
   exerciseId: string;
   exerciseName: string;
-  machineId: string | null;
+  equipmentId: string | null;
   setType: "warmup" | "working";
   load: number;
   reps: number;
@@ -581,7 +581,7 @@ export interface LogSetInput {
   side?: SetSide | null;
   loadEntered?: number | null;
   builtinOffset?: number | null;
-  machineLabel?: string | null;
+  equipmentLabel?: string | null;
 }
 
 // Estimated seconds a set takes: ~3.5s per rep. Only used to back the rest
@@ -643,7 +643,7 @@ export async function logSet(input: LogSetInput): Promise<SessionSet> {
     side: input.side ?? null,
     loadEntered: input.loadEntered ?? null,
     builtinOffset: input.builtinOffset ?? null,
-    machineLabel: input.machineLabel ?? null,
+    equipmentLabel: input.equipmentLabel ?? null,
     serverId: null,
     syncState: "pending_create",
   };
@@ -1004,8 +1004,8 @@ async function runSync(): Promise<SyncResult> {
             instanceId: row.instanceId,
             date: row.date,
             exerciseId: row.exerciseId,
-            machineId: row.machineId,
-            machineLabel: row.machineLabel ?? null,
+            equipmentId: row.equipmentId,
+            equipmentLabel: row.equipmentLabel ?? null,
             setIndex: row.setIndex,
             setType: row.setType,
             load: row.load,

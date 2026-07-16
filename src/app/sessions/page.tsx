@@ -313,7 +313,7 @@ export default function SessionsPage() {
         <Link href="/program">Program</Link>
         <Link href="/blocks">Blocks</Link>
         <Link href="/exercises">Exercises</Link>
-        <Link href="/machines">Machines</Link>
+        <Link href="/equipment">Equipment</Link>
       </div>
 
       {confirm && (
