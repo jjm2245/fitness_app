@@ -30,8 +30,8 @@ A **private, single-user fitness app** (mobile-first PWA, personal use — not a
 |---|---|---|
 | 1. Foundations | Exercise/machine graph, schema, PWA shell, offline logging | ✅ built |
 | 2. Deterministic core | Volume, volume-load progression, set-counting, per-machine tracking, substitution filter | ✅ built |
-| 4. Logging UX | Sessions list, ordered incremental session composition, program editor, machine tagging, cardio logging | ✅ built (iterating) |
-| — | *Deploy: managed Postgres + hosted PWA on phone* | ✅ done |
+| 4. Logging UX | Sessions list, ordered incremental (occurrence-based) session composition, program editor, **equipment model** (type vs unit, offsets, lanes), **rest-edge** tracking + timer, **drop sets**, **unilateral sides**, editable session date/time, cardio logging | ✅ built (iterating on real use) |
+| — | *Deploy: managed Postgres + hosted PWA on phone* | ✅ done — live, in real-world logging |
 | **3. Agent layer** | **Claude tool-use over the core: free-text constraint → program change, substitution final-pick + explanation, coaching voice** | ⏳ **deliberately deferred** |
 | 5a. Design/gamification | Modern design system; later, gamified progression mechanics | ⏳ next-ish |
 | 5b. Recovery | Oura pull (sleep/HRV/readiness/steps) → deload + volume modifier | ⏳ not built |
@@ -39,6 +39,11 @@ A **private, single-user fitness app** (mobile-first PWA, personal use — not a
 | 5d. Nutrition | Screenshot/manual logging, tiered source-of-truth cross-validation, recomp calorie model | ⏳ not built |
 | 5e. Dashboard | Transparent sub-scores (training/nutrition/recovery), never one opaque "rank" | ⏳ not built |
 | 6. Form analysis | On-device pose estimation (reps/depth/tempo/symmetry) + gross-error coaching | ⏳ last, scoped narrowly |
+
+> This table is **phase-level intent**, not a task tracker. For the live built
+> state, current known gaps, and in-flight work, see
+> [`CURRENT_STATE.md`](CURRENT_STATE.md) §9 — that file is the single source of
+> status truth (this one points, doesn't restate, so it can't rot).
 
 ### Why Milestone 3 (the agent) is deferred — do not "helpfully" start it
 The plan is to **log real sessions for a couple of weeks first**. Building AI coaching on top of progression thresholds that haven't been validated against real training would mean reasoning over an empty/fake history and cementing untested defaults. **Do not add any LLM or vision code unless explicitly asked.** This is the single most important scope rule in the project.
@@ -111,7 +116,7 @@ This process has repeatedly caught real bugs. Honor it.
 
 ## 6. Build history — the short version
 
-Sessions have run roughly: foundations + deterministic core → logging UX v1 → **audit** (confirmed core is general; found two leaks in the seed/API layer, since retired) → program editor + logging redesign (routine demoted from "app structure" to editable data) → deploy to phone (managed Postgres, hosted, HTTPS, installable) → interaction model (confirm set / confirm exercise / **finish with summary**) → reusable blocks + cardio logging + library integration → **sessions list** as home base → **session model v2** (ordered, incremental, occurrence-based) → ongoing small fixes.
+Sessions have run roughly: foundations + deterministic core → logging UX v1 → **audit** (confirmed core is general; found two leaks in the seed/API layer, since retired) → program editor + logging redesign (routine demoted from "app structure" to editable data) → deploy to phone (managed Postgres, hosted, HTTPS, installable) → interaction model (confirm set / confirm exercise / **finish with summary**) → reusable blocks + cardio logging + library integration → **sessions list** as home base → **session model v2** (ordered, incremental, occurrence-based) → **real-world logging on the phone**, which drove: a run of sync-integrity fixes (false "not synced", occurrence-list `occurrencesDirty` model, history-safe prune + directional heals, additive-migration data-loss guard), the **rest-edge model** (restBefore + set-level timer, honest-unknown), **drop sets** + **unilateral sides**, the **Equipment model** (type vs unit, per-unit offsets, opaque lane keys — core still equipment-agnostic), **stable/editable session date-time** (local-time everywhere), and **server-persisted completion + equipment** so a finished session survives a PWA reinstall.
 
 ### Bugs found that shaped the design (understand these — they're the failure modes here)
 - **Silent sync loss.** An expired cookie caused `/api/*` to *redirect* to `/login`, which returned **200 HTML** — so `res.ok` was true, `res.json()` threw, the error was swallowed, and data sat "not synced" forever. Fix: API routes return **401 JSON**, failures are **classified** (auth/network/server) and **surfaced**, and the outbox re-drains after re-login. **Lesson: a failure disguised as success is the worst bug class here — never swallow sync errors.**
@@ -134,10 +139,22 @@ Real risk: two agents editing the same repo produce conflicting decisions and me
 
 ---
 
-## 8. Immediate context (as of this doc)
+## 8. Immediate context
 
-Recently in flight: a small-fixes batch (recurring sync error diagnosis, re-applying the under-applied library mapping so only intended customs remain, optional exercise descriptions, add/remove exercises, sessions-list X-button overlap) **combined with** machine-selection fixes (always show the machine field with an explicit "No machine" option — stop inferring from load type/name; fix the broken "add machine" and give it a working dropdown + add-new modal in both the Exercises tab and session logging).
+The app is **live and being used for real training** on the phone; recent work has
+been driven by that (the Equipment model, rest tracking, drop sets, sides,
+date/time, and reinstall-durable persistence — see the build history above). The
+current pass is **known-issues cleanup + doc maintenance** (this refresh, dead-code
+removal, small correctness fixes, and proposals for multi-device divergence, the
+inert curated substitutions, and a prod-migration runbook).
 
-**Next up after that:** a dedicated **design-system / modern-feel pass** (gamification *mechanics* deliberately deferred until after real logging), then **real-world logging for ~2 weeks**, and only then **Milestone 3, the agent layer.**
+For the **live** built-state, gaps, and in-flight work, always read
+[`CURRENT_STATE.md`](CURRENT_STATE.md) — it's regenerated from the repo and is the
+source of status truth. This section is deliberately thin so it doesn't rot.
+
+**Still deferred (unchanged):** the **agent layer** (Milestone 3) until real
+history accumulates; then a design/modern-feel pass; gamification mechanics after
+that; and the whole Phase-5/6 backlog. **No LLM/vision code unless explicitly
+asked.**
 
 **If you're unsure: ask, propose, and wait. Don't improvise on this project's architecture — the constraints above were each learned the hard way.**

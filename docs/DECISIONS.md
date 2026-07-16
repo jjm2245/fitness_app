@@ -1652,3 +1652,36 @@ async. No schema change.
 Prod migrated 21→22 (additive; occ 8→8, sets 33→33). Not browser-click-verified
 (dev cookie httpOnly; passcode not entered into a field per the credential rule)
 — covered by the hydrate round-trip test + build. 131 tests, core untouched.
+
+## Batch: known-issues cleanup + doc maintenance
+
+### Part 1 — docs refreshed + made self-maintaining
+- **`CURRENT_STATE.md`** regenerated from the live repo (was stale at migration
+  0012; now current through 0021/EXPECTED 22 — equipment model, rest-edge model,
+  occurrence/session-v2, date-time editor, occurrencesDirty, directional heals,
+  completed-sync, additive-migration guard). Mechanical facts moved into an
+  AUTOGEN block.
+- **`CODEX-ONBOARDING.md`** — updated only the factual sections (phase-table
+  Logging-UX row, build-history arc, Immediate-context §8); phase table now points
+  to CURRENT_STATE §9 for live status instead of restating it (kills the
+  duplication that made it rot). Vision/philosophy/process left as-is (not ours).
+- **`SPEC-DRIFT.md`** (new) — section-by-section report of where the built system
+  diverged from spec v0.5 (Machine→Equipment + type/instance/offset/lane model,
+  RIR→effort tag, occurrence/session-v2, rest-edge, drop/side, load-total
+  semantics, inert curated subs, `defaultLoadIncrement` keying on load_type,
+  stale §15 status). **Intent is human-owned — the spec is never auto-synced; the
+  drift report is the ritual.** For the owner to fold into v0.6.
+- **Self-maintenance mechanism:** `scripts/docs-refresh.ts` regenerates the
+  mechanical facts (migration count, tables, routes, ~test count) into the AUTOGEN
+  block; `scripts/docs-check.ts` fails loudly if that block is stale (same spirit
+  as `db:check`); `npm run docs:refresh` / `docs:check`. `AGENTS.md` gains a
+  standing rule: refresh docs + append DECISIONS at session end.
+
+### 1d — per-unit load increment (deferred refinement, recorded)
+`defaultLoadIncrement(loadType)` in `src/core/progression.ts` keys off the
+`load_type` taxonomy — the **last taxonomy remaining in core**. The Equipment
+model now makes the increment a property of the **unit** (a given leg-press pins
+in 15 lb jumps; a Smith in 10; dumbbells in 5). Clean end state: the adapter
+passes an increment from the equipment instance into the core, so core stops
+keying on `load_type` entirely and becomes fully equipment-agnostic. Deferred
+(not lost) — do when the equipment model carries a per-unit increment field.

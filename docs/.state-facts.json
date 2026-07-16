@@ -1,0 +1,13 @@
+{
+  "migrations": {
+    "count": 22,
+    "latest": "0021_session_exercise_completed",
+    "expected": 22
+  },
+  "tests": {
+    "files": 13,
+    "cases": 136
+  },
+  "tables": 19,
+  "routes": 34
+}

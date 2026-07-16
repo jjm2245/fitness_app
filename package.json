@@ -16,7 +16,9 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:seed:library": "tsx src/db/seedLibrary.ts",
     "db:check": "tsx scripts/check-migrations.ts",
-    "release": "npm run db:migrate && npm run db:seed && npm run db:seed:library"
+    "release": "npm run db:migrate && npm run db:seed && npm run db:seed:library",
+    "docs:refresh": "tsx scripts/docs-refresh.ts",
+    "docs:check": "tsx scripts/docs-check.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
