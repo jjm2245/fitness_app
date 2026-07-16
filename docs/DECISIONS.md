@@ -1621,3 +1621,34 @@ every set — you don't change units mid-exercise).
   field (credential rule), so the offset flow is covered by unit tests
   (`offsetPatch` add/re-apply/clear) + typecheck/build rather than a driven
   click-through. Flagged for the user to eyeball on the phone.
+
+## Finished sessions must survive a PWA reinstall (state persistence)
+
+The user hard-resets (delete PWA → IndexedDB wiped → re-add from the Vercel link)
+and saw a finished session revert: exercises un-checked, and Leverage Incline's
+equipment type back to "dumbbell". Root cause: two pieces of state lived only
+locally and never reached the server, so rehydration couldn't restore them.
+
+### Completed checkmarks (were local-only)
+`setOccurrenceCompleted` wrote only the local `completed` store — no server
+column. Fix: **completion now lives on the occurrence and syncs.**
+`session_exercises.completed` boolean (migration 0021, EXPECTED→22); the
+occurrence upsert carries it, GET returns it, `hydrateFromServer` restores it,
+`getCompletedInstances` reads from occurrences, and toggling a check marks the
+list dirty so it pushes. The legacy `completed` store is still written as a
+harmless mirror. Test: check → sync (payload carries completed:true) → wipe local
+→ rehydrate → still checked.
+
+### Equipment type/unit reverting (data was fine, UI didn't re-read it)
+`set_logs.equipment_type/equipment_id` DID persist and hydrate (prod confirmed:
+Leverage sets are `plate_loaded`, offset 25, load 125). The bug was purely the
+StrengthCard initialising `equipType` from `localStorage ?? suggestEquipmentType`
+— so after a localStorage wipe it fell back to the name-suggested default
+(plate-loaded → "dumbbell"). Fix: the card now reads type + unit back from the
+occurrence's logged sets first (server truth), with an `equipTouched` guard so an
+in-progress pick is never clobbered, and an effect to apply it once sets load
+async. No schema change.
+
+Prod migrated 21→22 (additive; occ 8→8, sets 33→33). Not browser-click-verified
+(dev cookie httpOnly; passcode not entered into a field per the credential rule)
+— covered by the hydrate round-trip test + build. 131 tests, core untouched.

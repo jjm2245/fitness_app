@@ -118,6 +118,7 @@ export interface Occurrence {
   repRange: string | null;
   rirTarget: string | null;
   params: Record<string, unknown> | null;
+  completed?: boolean; // the user's 'done' checkmark (syncs with the list)
   synced: boolean; // occurrence row pushed to the server
 }
 
@@ -455,6 +456,7 @@ export interface ServerSession {
     params: Record<string, unknown> | null;
     orderIndex: number;
     source: string | null;
+    completed?: boolean;
   }>;
   sets: Array<{
     id: number;
@@ -545,6 +547,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       repRange: null,
       rirTarget: null,
       params: e.params,
+      completed: e.completed ?? false,
       synced: true,
     };
     await db.put("occurrences", occ);
@@ -755,17 +758,24 @@ export async function deleteSet(localId: number): Promise<void> {
   else await db.put("sets", { ...row, syncState: "pending_delete" });
 }
 
-// --- Completed-occurrence flags (local only) -------------------------------
+// --- Completed-occurrence flags --------------------------------------------
+// The "done" checkmark now lives ON the occurrence (and syncs with the ordered
+// list), so a finished session's checked state survives a PWA reinstall /
+// IndexedDB wipe — it re-hydrates from the server. The old local-only `completed`
+// store is still written as a mirror (harmless) but reads come from occurrences.
 
 export async function setOccurrenceCompleted(sessionId: string, instanceId: string, completed: boolean): Promise<void> {
   const db = await getDb();
-  await db.put("completed", { instanceId, sessionId, completed });
+  const occ = await db.get("occurrences", instanceId);
+  if (occ) await db.put("occurrences", { ...occ, completed, synced: false });
+  await db.put("completed", { instanceId, sessionId, completed }); // legacy mirror
+  await markOccurrencesDirty(sessionId); // push the checked state to the server
 }
 
 export async function getCompletedInstances(sessionId: string): Promise<Set<string>> {
   const db = await getDb();
-  const rows = await db.getAllFromIndex("completed", "by-session", sessionId);
-  return new Set(rows.filter((r) => r.completed).map((r) => r.instanceId));
+  const occ = await db.getAllFromIndex("occurrences", "by-session", sessionId);
+  return new Set(occ.filter((o) => o.completed).map((o) => o.instanceId));
 }
 
 // --- Occurrences (the ordered performed list, v2) --------------------------
@@ -808,6 +818,7 @@ export async function addOccurrence(sessionId: string, item: AttachExercise, sou
     repRange: item.repRange ?? null,
     rirTarget: item.rirTarget ?? null,
     params: item.params ?? null,
+    completed: false,
     synced: false,
   };
   await db.put("occurrences", occ);
@@ -1040,7 +1051,7 @@ async function runSync(): Promise<SyncResult> {
         programDay: s.origin,
         exercises: [...occs]
           .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source })),
+          .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source, completed: o.completed ?? false })),
       }),
     });
     const body = (await res.json().catch(() => ({}))) as { keptWithHistory?: string[] };

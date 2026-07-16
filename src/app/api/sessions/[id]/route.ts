@@ -63,6 +63,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       exerciseId: sessionExercises.exerciseId,
       orderIndex: sessionExercises.orderIndex,
       source: sessionExercises.source,
+      completed: sessionExercises.completed,
     })
     .from(sessionExercises)
     .where(eq(sessionExercises.workoutLogId, log.id))
@@ -70,7 +71,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   // The ordered list is the real occurrences, or (legacy) one per distinct
   // logged exercise, ordered by first appearance.
-  type OccRow = { sessionExerciseId: number | null; clientInstanceId: string | null; exerciseId: string; orderIndex: number; source: string | null };
+  type OccRow = { sessionExerciseId: number | null; clientInstanceId: string | null; exerciseId: string; orderIndex: number; source: string | null; completed: boolean };
   let occRows: OccRow[];
   if (occ.length > 0) {
     occRows = occ.map((o) => ({
@@ -79,6 +80,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       exerciseId: o.exerciseId,
       orderIndex: o.orderIndex,
       source: o.source,
+      completed: o.completed,
     }));
   } else {
     const seen: string[] = [];
@@ -90,6 +92,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       exerciseId,
       orderIndex: i,
       source: log.programDay,
+      completed: false,
     }));
   }
 
@@ -117,6 +120,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       params: m?.params ?? null,
       orderIndex: o.orderIndex,
       source: o.source,
+      completed: o.completed,
     };
   });
 

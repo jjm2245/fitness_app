@@ -495,8 +495,15 @@ function StrengthCard({
     const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
     if (res.ok) setEquipmentUnits(await res.json());
   }, [activeExercise.id]);
+  // The equipment TYPE/unit are stored on this occurrence's logged sets (and
+  // restored from the server on hydrate). Read them back so a finished session's
+  // machine survives a PWA reinstall / localStorage wipe — the field had been
+  // falling back to the name-suggested default (e.g. plate-loaded → dumbbell).
+  const occStoredType = (sessionSets.find((x) => x.instanceId === ex.instanceId && x.equipmentType)?.equipmentType) as EquipmentTypeId | undefined;
+  const occStoredUnit = sessionSets.find((x) => x.instanceId === ex.instanceId && x.equipmentId)?.equipmentId ?? null;
+  const [equipTouched, setEquipTouched] = useState(false);
   const [equipmentId, setEquipmentId] = useState(() => {
-    // Default to "Unspecified machine" unless a named machine was last used here.
+    if (occStoredUnit) return occStoredUnit; // server-restored named unit wins
     if (typeof window === "undefined") return UNSPECIFIED_UNIT;
     return localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT;
   });
@@ -565,12 +572,23 @@ function StrengthCard({
   // top-level options — unspecified is a unit-level state of a context-bound
   // type, with its own lane (never the portable lane).
   const [equipType, setEquipType] = useState<EquipmentTypeId>(() => {
+    if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) return occStoredType; // server truth wins
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(lastTypeKey(ex.exerciseId));
       if (stored && EQUIPMENT_TYPE_BY_ID.has(stored as EquipmentTypeId)) return stored as EquipmentTypeId;
     }
     return suggestEquipmentType(ex.loadType, ex.exerciseName);
   });
+  // The sets may load AFTER mount — restore type/unit once they arrive, unless
+  // the user has since picked something (never clobber an in-progress choice).
+  useEffect(() => {
+    (async () => {
+      if (equipTouched) return;
+      if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) setEquipType(occStoredType);
+      if (occStoredUnit) setEquipmentId(occStoredUnit);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occStoredType, occStoredUnit]);
   const typeDef = EQUIPMENT_TYPE_BY_ID.get(equipType)!;
   const contextBound = typeDef.instanceMatters;
   const resolvedUnitId = contextBound && equipmentId !== "" && equipmentId !== UNSPECIFIED_UNIT ? equipmentId : null;
@@ -625,6 +643,7 @@ function StrengthCard({
     localStorage.setItem(lastTypeKey(activeExercise.id), t);
     setEquipmentId(UNSPECIFIED_UNIT); // unit selection resets with the type
     setOffsetTouched(false); // let the new type's default/stored offset pre-fill
+    setEquipTouched(true);
   }
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
@@ -920,7 +939,7 @@ function StrengthCard({
         </label>
         {contextBound && (
           <label title="Which unit — the same stack number means different resistance on different units, so each unit tracks its own lane. 'Unspecified' is a generic unit of this type (its own lane, not the free-weight lane).">
-            <select value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId} onChange={(e) => { setEquipmentId(e.target.value); setOffsetTouched(false); }}>
+            <select value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId} onChange={(e) => { setEquipmentId(e.target.value); setOffsetTouched(false); setEquipTouched(true); }}>
               <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
               {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
             </select>

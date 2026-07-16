@@ -17,6 +17,7 @@ interface Payload {
     exerciseId: string;
     orderIndex: number;
     source?: string | null;
+    completed?: boolean;
   }>;
 }
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       if (existing) {
         await tx
           .update(sessionExercises)
-          .set({ orderIndex: e.orderIndex, source: e.source ?? null, exerciseId: e.exerciseId, workoutLogId: workoutLog.id })
+          .set({ orderIndex: e.orderIndex, source: e.source ?? null, exerciseId: e.exerciseId, workoutLogId: workoutLog.id, completed: e.completed ?? false })
           .where(eq(sessionExercises.id, existing.id));
       } else {
         await tx.insert(sessionExercises).values({
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
           clientInstanceId: e.clientInstanceId,
           orderIndex: e.orderIndex,
           source: e.source ?? null,
+          completed: e.completed ?? false,
         });
       }
     }

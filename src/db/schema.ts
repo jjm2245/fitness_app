@@ -333,6 +333,10 @@ export const sessionExercises = pgTable("session_exercises", {
   clientInstanceId: text("client_instance_id").unique(),
   orderIndex: integer("order_index").notNull().default(0),
   source: text("source"), // where it was added from: program day / block / ad-hoc
+  // The user's "done" checkmark for this performed occurrence. Persisted here
+  // (not just the local `completed` store) so a finished session's checked state
+  // survives a PWA reinstall / IndexedDB wipe — it re-hydrates from the server.
+  completed: boolean("completed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

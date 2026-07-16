@@ -1,0 +1,1 @@
+ALTER TABLE "session_exercises" ADD COLUMN "completed" boolean DEFAULT false NOT NULL;

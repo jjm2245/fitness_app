@@ -9,6 +9,8 @@ import {
   getSessionSets,
   healSingletonDropGroups,
   finishSession,
+  setOccurrenceCompleted,
+  getCompletedInstances,
   editSessionMeta,
   getSession,
   hydrateFromServer,
@@ -556,6 +558,36 @@ describe("editable session date/time — user-provided, source-tagged, synced", 
     await editSessionMeta(id, { firstFinishedAt: null }); // user clears the time
     await finishSession(id); // re-finish must NOT re-stamp over the honest blank
     expect((await getSession(id))?.firstFinishedAt).toBeNull();
+  });
+});
+
+describe("completed checkmark persists to the server (survives PWA reinstall)", () => {
+  it("syncs completion with the occurrence and re-hydrates it after a local wipe", async () => {
+    mockOnline();
+    const posts: Array<Array<{ clientInstanceId: string; completed?: boolean }>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
+      const m = opts?.method ?? "GET";
+      if (url === "/api/session-exercises" && m === "POST") { posts.push(JSON.parse(String(opts?.body ?? "{}")).exercises); return { ok: true, status: 200, json: async () => ({ ok: true, keptWithHistory: [] }) } as Response; }
+      if (url === "/api/set-logs" && m === "POST") return { ok: true, status: 201, json: async () => ({ id: nextServerId++ }) } as Response;
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+
+    const { id, inst } = await newSession();
+    await setOccurrenceCompleted(id, inst, true);
+    expect([...(await getCompletedInstances(id))]).toEqual([inst]); // checked locally
+    await sync();
+    // The completion travelled in the occurrence upsert payload.
+    expect(posts.at(-1)!.find((e) => e.clientInstanceId === inst)?.completed).toBe(true);
+
+    // Simulate a PWA reinstall: wipe local, then re-hydrate from the server copy.
+    await _resetDbForTests();
+    await hydrateFromServer({
+      id, clientSessionId: id, date: "2026-08-01", programDay: "Test day", finishedAt: "2026-08-01T18:00:00.000Z",
+      exercises: [{ sessionExerciseId: 1, clientInstanceId: inst, exerciseId: "deadlift", exerciseName: "Deadlift", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false, params: null, orderIndex: 0, source: "Test day", completed: true }],
+      sets: [], cardio: [],
+    });
+    // The checkmark comes back — not reset to unchecked.
+    expect([...(await getCompletedInstances(id))]).toEqual([inst]);
   });
 });
 
