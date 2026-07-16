@@ -308,6 +308,11 @@ export const workoutLogs = pgTable("workout_logs", {
   // session's place in history is stable (re-stamping finished_at had been
   // jumping edited sessions to "today" — a real-data bug).
   firstFinishedAt: timestamp("first_finished_at", { withTimezone: true }),
+  // 'user' when the session's date/time were set BY the user (the honest way to
+  // fix a morning-after log or a corrupted stamp) — traceable input, same
+  // pattern as rest_source='user'. Null = system-stamped. A user-set value is
+  // never overwritten by finish stamping.
+  firstFinishedSource: text("first_finished_source"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

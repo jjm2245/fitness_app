@@ -141,6 +141,13 @@
       "when": 1784178641304,
       "tag": "0019_equipment_model",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784227555724,
+      "tag": "0020_session_time_source",
+      "breakpoints": true
     }
   ]
 }

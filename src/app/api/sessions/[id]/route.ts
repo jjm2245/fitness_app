@@ -127,6 +127,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     programDay: log.programDay,
     finishedAt: log.finishedAt,
     firstFinishedAt: log.firstFinishedAt,
+    firstFinishedSource: log.firstFinishedSource,
     exercises: exercisesOut,
     sets,
     cardio,
@@ -137,6 +138,45 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 // set_logs / cardio_logs / session_exercises cascade off workout_logs, so one
 // delete cleans everything. Idempotent: a 404 (already gone / never synced) is
 // fine, so the client's offline delete queue can retry safely.
+// PATCH /api/sessions/[id] — edit a session's date and/or first-finish time.
+// The value is USER-PROVIDED (source 'user', same pattern as rest_source): the
+// honest way to fix a morning-after log or a stamp that inherited corruption —
+// traceable as the user's input, never mistakable for a system value. A null
+// firstFinishedAt clears the time (honest blank). 404 while the session hasn't
+// synced yet — the client keeps the edit pending and retries after the log row
+// exists.
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = await request.json().catch(() => null);
+
+  const updates: { date?: string; firstFinishedAt?: Date | null; firstFinishedSource?: string } = {};
+  if (body?.date !== undefined) {
+    if (typeof body.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+      return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });
+    }
+    updates.date = body.date;
+  }
+  if (body?.firstFinishedAt !== undefined) {
+    if (body.firstFinishedAt === null) updates.firstFinishedAt = null;
+    else {
+      const t = new Date(body.firstFinishedAt);
+      if (Number.isNaN(t.getTime())) return NextResponse.json({ error: "firstFinishedAt must be an ISO instant or null" }, { status: 400 });
+      updates.firstFinishedAt = t;
+    }
+    updates.firstFinishedSource = "user";
+  }
+  if (updates.date !== undefined && updates.firstFinishedSource === undefined) updates.firstFinishedSource = "user";
+  if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+
+  const [row] = await db
+    .update(workoutLogs)
+    .set(updates)
+    .where(eq(workoutLogs.clientSessionId, id))
+    .returning({ id: workoutLogs.id, date: workoutLogs.date, firstFinishedAt: workoutLogs.firstFinishedAt, firstFinishedSource: workoutLogs.firstFinishedSource });
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
+
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [log] = await db.select({ id: workoutLogs.id }).from(workoutLogs).where(eq(workoutLogs.clientSessionId, id));

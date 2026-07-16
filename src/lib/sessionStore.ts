@@ -31,6 +31,13 @@ export interface LocalSession {
   // sessions list displays/sorts by `date` + this, so editing an old session
   // can't move it to "today" (a real-data bug that hit the user's history).
   firstFinishedAt?: string | null;
+  // 'user' when the date/time were set BY the user via the session editor —
+  // traceable input (like restSource 'user'); finish stamping never overwrites
+  // a user-set (or user-cleared) value. Null/undefined = system-stamped.
+  firstFinishedSource?: "user" | null;
+  // The session's date/time have an un-pushed user edit (same dirty-flag
+  // pattern as occurrencesDirty). Cleared when the meta PATCH lands.
+  metaDirty?: boolean;
   finishSynced: boolean;
   // The ordered occurrence list has an un-pushed change (add/remove/reorder).
   // Dirtiness is a property of the *list*, not of any single occurrence — so it
@@ -318,7 +325,10 @@ export async function finishSession(id: string): Promise<LocalSession | null> {
   const s = await db.get("sessions", id);
   if (!s) return null;
   const now = new Date().toISOString();
-  const updated: LocalSession = { ...s, finishedAt: now, firstFinishedAt: s.firstFinishedAt ?? now, finishSynced: false };
+  // Stamp the stable first-finish once — but a user-provided (or user-cleared)
+  // value is the user's input and is never overwritten by re-finishing.
+  const first = s.firstFinishedSource === "user" ? (s.firstFinishedAt ?? null) : (s.firstFinishedAt ?? now);
+  const updated: LocalSession = { ...s, finishedAt: now, firstFinishedAt: first, finishSynced: false };
   await db.put("sessions", updated);
   return updated;
 }
@@ -364,6 +374,29 @@ export async function rehydrateLocalFromServer(server: ServerSession): Promise<L
   return hydrateFromServer(server); // local now absent → rebuilds clean (dirty/conflict false)
 }
 
+// Edit a session's date and/or first-finish time — USER-PROVIDED, source
+// 'user' (traceable, like a corrected rest). Null time = honest blank. The
+// change is a pending sync (metaDirty) drained via PATCH /api/sessions/[id];
+// while the session hasn't synced yet the PATCH 404s harmlessly and retries
+// after the log row exists. Never touches finishedAt/finishSynced.
+export async function editSessionMeta(
+  id: string,
+  patch: { date?: string; firstFinishedAt?: string | null }
+): Promise<LocalSession | null> {
+  const db = await getDb();
+  const s = await db.get("sessions", id);
+  if (!s) return null;
+  const updated: LocalSession = {
+    ...s,
+    ...(patch.date !== undefined ? { date: patch.date } : {}),
+    ...(patch.firstFinishedAt !== undefined ? { firstFinishedAt: patch.firstFinishedAt } : {}),
+    firstFinishedSource: "user",
+    metaDirty: true,
+  };
+  await db.put("sessions", updated);
+  return updated;
+}
+
 export async function deleteLocalSession(id: string): Promise<void> {
   const db = await getDb();
   await db.delete("sessions", id);
@@ -405,6 +438,7 @@ export interface ServerSession {
   programDay: string | null;
   finishedAt: string | null;
   firstFinishedAt?: string | null;
+  firstFinishedSource?: "user" | null;
   // Ordered performed occurrences (session_exercises). For a legacy session with
   // no rows, the API synthesizes one occurrence per distinct logged exercise.
   exercises: Array<{
@@ -476,6 +510,8 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
     createdAt: server.finishedAt ?? new Date().toISOString(),
     finishedAt: server.finishedAt,
     firstFinishedAt: server.firstFinishedAt ?? server.finishedAt,
+    firstFinishedSource: server.firstFinishedSource ?? null,
+    metaDirty: false,
     finishSynced: true,
     occurrencesDirty: false, // hydrated straight from the server = already in sync
   };
@@ -914,6 +950,8 @@ export async function pendingCount(sessionId?: string): Promise<number> {
     // A dirty ordered list with no unsynced occurrence to already account for it
     // (a removal — incl. removing the last one) is still one pending change.
     if (s.occurrencesDirty && !hasUnsyncedOcc.has(s.id)) n += 1;
+    // An un-pushed date/time edit is a pending change too.
+    if (s.metaDirty) n += 1;
   }
 
   // Queued server-side deletes are pending changes too.
@@ -1132,6 +1170,26 @@ async function runSync(): Promise<SyncResult> {
       });
       await db.put("sessions", { ...s, finishSynced: true });
       result.finished += 1;
+    } catch (e) {
+      if (record(e)) return result;
+    }
+  }
+
+  // Drain un-pushed date/time edits. A 404 means the log row doesn't exist
+  // server-side yet — keep the edit pending (not a failure) and retry on the
+  // next drain, after the creation paths above have made the row.
+  for (const s of await db.getAll("sessions")) {
+    if (!s.metaDirty) continue;
+    try {
+      const res = await send(`/api/sessions/${encodeURIComponent(s.id)}`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({ date: s.date, firstFinishedAt: s.firstFinishedAt ?? null }),
+      }, true);
+      if (res.status !== 404) {
+        await db.put("sessions", { ...s, metaDirty: false });
+        result.updated += 1;
+      }
     } catch (e) {
       if (record(e)) return result;
     }

@@ -1528,3 +1528,29 @@ recorded as user-provided (source-tagged like rest 'user'), so mornings-after
 logging and this session's ~5 PM Jul-14 truth can be set BY the user —
 traceable input, not a system guess. Medium change (column + session-meta sync
 path + PATCH + UI) — deliberately not rushed into this batch.
+
+## Editable session date/time (user-provided, source-tagged) — shipped
+
+The honest fix for morning-after logs and the corrupted-stamp session: the user
+sets the date/time, recorded as THEIR input.
+- **Schema (0020, EXPECTED→21):** `workout_logs.first_finished_source` — 'user'
+  when user-set (same pattern as rest_source 'user'), null = system. While
+  generating this, found + healed **snapshot drift**: 0018/0019 were hand-written
+  without snapshots, so drizzle-kit hit an interactive rename prompt on every
+  generate. Rebuilt the 0020 snapshot from schema.ts (chain ids preserved);
+  `generate` now reports "no schema changes" — future migrations diff cleanly.
+- **Store:** `editSessionMeta(id, {date, firstFinishedAt})` → sets source
+  'user' + `metaDirty` (the occurrencesDirty pattern); a new sync loop PATCHes
+  `/api/sessions/[id]` after the creation paths (a 404 = session not on the
+  server yet → edit stays pending, retried, never an error). `pendingCount`
+  counts it; the badge reads `not synced · date/time edit`. `finishSession` (and
+  the server finish route) never overwrite a user-set — or user-CLEARED — value:
+  blank time is an honest blank and re-finishing can't re-stamp over it.
+- **UI:** tap the date in the session header → date + optional time inputs (local
+  wall-clock → UTC storage); the header and tooltip show "set by you".
+- **Verified in-app:** edited the dev session to Jul 14 5:00 PM → header
+  "2026-07-14 · 5:00 PM · set by you", server row {date 2026-07-14,
+  first_finished_at 21:00Z, first_finished_source 'user'}, sessions list
+  re-sorted to "Jul 14 · 5:00 PM", badge drained. 125 tests (4 new: edit→PATCH
+  drain, 404-retry, finish-never-overwrites, user-cleared stays null).
+- **Prod:** migrated 20→21 (additive nullable column; logs 2→2, sets 33→33).

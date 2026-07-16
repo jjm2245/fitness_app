@@ -8,6 +8,7 @@ import {
   deleteSet,
   getSessionSets,
   finishSession,
+  editSessionMeta,
   getSession,
   hydrateFromServer,
   sync,
@@ -486,6 +487,72 @@ describe("delete semantics", () => {
     const result = await sync();
     expect(result.deleted).toBe(1);
     expect(await getSessionSets(id)).toHaveLength(0); // gone for good
+  });
+});
+
+describe("editable session date/time — user-provided, source-tagged, synced", () => {
+  const metaPatches: Array<{ url: string; body: Record<string, unknown> }> = [];
+  function mockOnlineWithMeta(patchStatus: () => number) {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
+      const method = opts?.method ?? "GET";
+      if (/\/api\/sessions\/[^/]+$/.test(url) && method === "PATCH") {
+        metaPatches.push({ url, body: JSON.parse(String(opts?.body ?? "{}")) });
+        const status = patchStatus();
+        return { ok: status < 400, status, json: async () => ({ ok: status < 400 }) } as Response;
+      }
+      if (url === "/api/session-exercises" && method === "POST") return { ok: true, status: 200, json: async () => ({ ok: true, keptWithHistory: [] }) } as Response;
+      if (url === "/api/sessions/finish") return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+  }
+
+  it("edit sets source 'user' + metaDirty, counts as pending, and PATCHes on sync", async () => {
+    metaPatches.length = 0;
+    mockOnlineWithMeta(() => 200);
+    const { id } = await newSession();
+    await sync();
+
+    const edited = await editSessionMeta(id, { date: "2026-07-14", firstFinishedAt: "2026-07-14T21:00:00.000Z" });
+    expect(edited?.firstFinishedSource).toBe("user"); // traceable as the user's input
+    expect(edited?.metaDirty).toBe(true);
+    expect(edited?.date).toBe("2026-07-14");
+    expect(await pendingCount(id)).toBeGreaterThan(0); // un-pushed edit is pending
+
+    await sync();
+    const last = metaPatches[metaPatches.length - 1];
+    expect(last.url).toBe(`/api/sessions/${encodeURIComponent(id)}`);
+    expect(last.body).toMatchObject({ date: "2026-07-14", firstFinishedAt: "2026-07-14T21:00:00.000Z" });
+    expect((await getSession(id))?.metaDirty).toBe(false);
+    expect(await pendingCount(id)).toBe(0);
+  });
+
+  it("a 404 (session not on the server yet) keeps the edit pending and retries", async () => {
+    metaPatches.length = 0;
+    let status = 404;
+    mockOnlineWithMeta(() => status);
+    const { id } = await newSession();
+
+    await editSessionMeta(id, { date: "2026-07-10", firstFinishedAt: null }); // honest blank time
+    const r1 = await sync();
+    expect(r1.failed).toBe(0); // 404 is "not yet", never an error
+    expect((await getSession(id))?.metaDirty).toBe(true); // still pending
+
+    status = 200; // the log row now exists server-side
+    await sync();
+    expect((await getSession(id))?.metaDirty).toBe(false);
+    expect(metaPatches[metaPatches.length - 1].body).toMatchObject({ date: "2026-07-10", firstFinishedAt: null });
+  });
+
+  it("finishing never overwrites a user-set or user-cleared time", async () => {
+    mockOnlineWithMeta(() => 200);
+    const { id } = await newSession();
+    await editSessionMeta(id, { firstFinishedAt: "2026-07-14T21:00:00.000Z" });
+    await finishSession(id);
+    expect((await getSession(id))?.firstFinishedAt).toBe("2026-07-14T21:00:00.000Z"); // user value survives
+
+    await editSessionMeta(id, { firstFinishedAt: null }); // user clears the time
+    await finishSession(id); // re-finish must NOT re-stamp over the honest blank
+    expect((await getSession(id))?.firstFinishedAt).toBeNull();
   });
 });
 

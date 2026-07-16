@@ -17,6 +17,7 @@ import {
   getSession,
   hydrateFromServer,
   finishSession,
+  editSessionMeta,
   sync,
   pendingCount,
   addOccurrence,
@@ -245,6 +246,64 @@ function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }
     >
       {label}
     </button>
+  );
+}
+
+// Tap the session's date to correct it — a morning-after log or a corrupted
+// stamp gets the TRUE date/time from the only honest source: the user. Saved
+// with firstFinishedSource 'user' (traceable input, like a corrected rest);
+// blank time = honest blank (no fabricated value). Fully offline: the edit is
+// pending (metaDirty) until the PATCH drains.
+function SessionDateEditor({ session, onChanged }: { session: LocalSession; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [dateVal, setDateVal] = useState(session.date);
+  const [timeVal, setTimeVal] = useState("");
+
+  function open() {
+    setDateVal(session.date);
+    if (session.firstFinishedAt) {
+      const t = new Date(session.firstFinishedAt);
+      setTimeVal(`${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`);
+    } else setTimeVal("");
+    setEditing(true);
+  }
+
+  async function save() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return;
+    let firstFinishedAt: string | null = null;
+    if (timeVal) {
+      const [y, m, d] = dateVal.split("-").map(Number);
+      const [hh, mm] = timeVal.split(":").map(Number);
+      firstFinishedAt = new Date(y, m - 1, d, hh, mm).toISOString(); // local wall clock → UTC storage
+    }
+    await editSessionMeta(session.id, { date: dateVal, firstFinishedAt });
+    setEditing(false);
+    onChanged();
+  }
+
+  const timeLabel = session.firstFinishedAt
+    ? ` · ${new Date(session.firstFinishedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+    : "";
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={open}
+        className={styles.secondaryBtn}
+        style={{ fontWeight: 400, fontSize: 15 }}
+        title={`Tap to correct this session's date/time${session.firstFinishedSource === "user" ? " — currently set by you" : ""}`}
+      >
+        {session.date}{timeLabel}{session.firstFinishedSource === "user" ? " · set by you" : ""} ✎
+      </button>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 14, fontWeight: 400 }}>
+      <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} />
+      <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} title="Optional — leave blank for no time" />
+      <button type="button" onClick={save} className={styles.primary}>Save</button>
+      <button type="button" onClick={() => setEditing(false)} className={styles.secondaryBtn}>Cancel</button>
+    </span>
   );
 }
 
@@ -1447,7 +1506,10 @@ export default function LogSessionPage() {
         {syncStatus && !syncError && <span>· {syncStatus}</span>}
       </div>
 
-      <h1>{session.origin} <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 16 }}>· {date}</span></h1>
+      <h1>
+        {session.origin}{" "}
+        <SessionDateEditor session={session} onChanged={async () => { await refreshSession(); handleSync(); }} />
+      </h1>
 
       <div className={styles.addRow}>
         <button type="button" onClick={() => setPaletteOpen((o) => !o)} className={styles.primary}>

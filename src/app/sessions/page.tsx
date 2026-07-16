@@ -168,10 +168,13 @@ export default function SessionsPage() {
       // Conflict wins: the server proved it holds logged sets this device is
       // missing, so re-POSTing local is a dead end — the heal is to pull down.
       const conflict = !!s.occurrenceConflict;
+      const metaPending = !!s.metaDirty;
       const reason = conflict
         ? "this device is behind"
         : finishPending
         ? "finish"
+        : metaPending
+        ? "date/time edit"
         : listPending
         ? `list (local ${s.exerciseCount}${prev ? ` / server ${serverCount}` : ""})`
         : null;
