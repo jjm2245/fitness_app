@@ -607,19 +607,21 @@ export async function logSet(input: LogSetInput): Promise<SessionSet> {
   const setIndex = input.parentSetIndex ?? live.length + 1;
 
   const loggedAt = new Date().toISOString();
-  // Rest before this set: exact when the timer was running; otherwise derived
-  // from the gap since the last set logged in this SESSION (cross-exercise —
-  // that's the real rest); otherwise unknown (null).
+  // Rest is an EDGE between sets of the same occurrence, stored as restBefore
+  // on the later set: N sets = N−1 rests, null on set 1. The gap across an
+  // exercise boundary is an inter-exercise transition — excluded entirely, never
+  // derived from (rest between exercises may become its own thing later).
+  // Sources: timer (exact) > derived (gap heuristic) > unknown (null).
   let restSeconds: number | null = null;
   let restSource: RestSource | null = null;
-  if (input.timedRestSeconds != null && input.timedRestSeconds >= 0) {
+  const hasPriorInOccurrence = live.length > 0;
+  if (hasPriorInOccurrence && input.timedRestSeconds != null && input.timedRestSeconds >= 0) {
     restSeconds = Math.round(input.timedRestSeconds);
     restSource = "timed";
-  } else {
-    const sessionSets = await db.getAllFromIndex("sets", "by-session", input.sessionId);
+  } else if (hasPriorInOccurrence) {
     let prevMs = 0;
-    for (const s of sessionSets) {
-      if (s.syncState === "pending_delete" || !s.loggedAt) continue;
+    for (const s of live) {
+      if (!s.loggedAt) continue;
       const t = Date.parse(s.loggedAt);
       if (t > prevMs) prevMs = t;
     }

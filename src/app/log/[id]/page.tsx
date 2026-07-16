@@ -177,21 +177,22 @@ function fmtRest(sec: number): string {
   const s = Math.round(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-// Accepts "1:55" or plain seconds ("115"). Null when unparseable.
-function parseRest(input: string): number | null {
-  const t = input.trim();
-  if (!t) return null;
-  const mmss = t.match(/^(\d+):([0-5]?\d)$/);
-  if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+// Digits-only mm:ss mask (2c): the user types digits, the colon is ours.
+// "145" reads as 1:45 (fill from the right); seconds clamp to :59; bounded to
+// [0:00, 59:59] so a fat-finger can't record an hour-long rest.
+function digitsToSeconds(digits: string): number {
+  const d = digits.replace(/\D/g, "").slice(-4);
+  if (!d) return 0;
+  const secs = Math.min(59, Number(d.slice(-2)));
+  const mins = Math.min(59, Number(d.slice(0, -2) || "0"));
+  return mins * 60 + secs;
 }
 
 // The rest chip: shows the value with its honesty tag (est/timed/you/unknown) and
 // is tappable to correct — a corrected value becomes source "user".
 function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState("");
+  const [digits, setDigits] = useState(""); // raw digit buffer; the mask formats it
   const label =
     set.restSeconds != null
       ? set.restSource === "derived"
@@ -202,9 +203,8 @@ function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }
       : "rest —";
 
   async function save() {
-    const secs = parseRest(text);
-    if (secs == null) return setEditing(false);
-    await editSet(set.localId!, { restSeconds: secs, restSource: "user" });
+    if (!digits) return setEditing(false);
+    await editSet(set.localId!, { restSeconds: digitsToSeconds(digits), restSource: "user" });
     setEditing(false);
     onChanged();
   }
@@ -213,8 +213,9 @@ function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }
     return (
       <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
         <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={digits ? fmtRest(digitsToSeconds(digits)) : ""}
+          onChange={(e) => setDigits(e.target.value.replace(/\D/g, "").slice(-4))}
+          inputMode="numeric"
           placeholder="m:ss"
           autoFocus
           style={{ width: 52, fontSize: 12 }}
@@ -229,14 +230,14 @@ function RestChip({ set, onChanged }: { set: SessionSet; onChanged: () => void }
       type="button"
       className={styles.restChip}
       title={set.restSeconds == null ? "Rest unknown — tap to set" : "Tap to correct the rest"}
-      onClick={() => { setText(set.restSeconds != null ? fmtRest(set.restSeconds) : ""); setEditing(true); }}
+      onClick={() => { setDigits(set.restSeconds != null ? String(Math.floor(set.restSeconds / 60)) + String(set.restSeconds % 60).padStart(2, "0") : ""); setEditing(true); }}
     >
       {label}
     </button>
   );
 }
 
-function LoggedSetRow({ set, isDrop, onChanged, onDrop }: { set: SessionSet; isDrop: boolean; onChanged: () => void; onDrop: (parent: SessionSet) => void }) {
+function LoggedSetRow({ set, isDrop, showRest, onChanged, onDrop }: { set: SessionSet; isDrop: boolean; showRest: boolean; onChanged: () => void; onDrop: (parent: SessionSet) => void }) {
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
@@ -295,74 +296,11 @@ function LoggedSetRow({ set, isDrop, onChanged, onDrop }: { set: SessionSet; isD
         {set.effort ? ` · ${EFFORT_LABEL[set.effort]}` : ""}
         {sideTag}
       </span>
-      {!isDrop && <RestChip set={set} onChanged={onChanged} />}
+      {showRest && <RestChip set={set} onChanged={onChanged} />}
       <button type="button" onClick={() => setEditing(true)} className={styles.secondaryBtn}>Edit</button>
       <button type="button" onClick={remove} className={styles.secondaryBtn}>Delete</button>
       <button type="button" onClick={() => onDrop(set)} className={styles.secondaryBtn} title="Add a drop-set segment under this set">+ Drop</button>
     </li>
-  );
-}
-
-// Tap-to-start rest timer (a feature, not a chore): counts up after racking; the
-// NEXT set you log consumes the elapsed time as an exact, source="timed" rest.
-// Optional target fires a notification (permission-gated). Never required —
-// derivation covers untimed rests. Pure client state → works offline.
-function RestTimer({ timerRef }: { timerRef: React.MutableRefObject<number | null> }) {
-  // The shared ref is the source of truth (consumed by logSet via takeTimedRest);
-  // this state is a per-second mirror of it for display only — refs are never
-  // read during render.
-  const [view, setView] = useState<{ running: boolean; elapsed: number }>({ running: false, elapsed: 0 });
-  const [targetMin, setTargetMin] = useState("");
-  const notifyAt = useRef<number | null>(null);
-  const notified = useRef(false);
-
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const start = timerRef.current;
-      setView(start != null ? { running: true, elapsed: Math.floor((Date.now() - start) / 1000) } : { running: false, elapsed: 0 });
-      if (start != null && notifyAt.current != null && !notified.current && Date.now() >= notifyAt.current) {
-        notified.current = true;
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          new Notification("Rest done — next set");
-        }
-      }
-    }, 1000);
-    return () => clearInterval(iv);
-  }, [timerRef]);
-
-  function toggle() {
-    if (timerRef.current != null) {
-      timerRef.current = null; // cancelled — nothing recorded
-      notifyAt.current = null;
-      setView({ running: false, elapsed: 0 });
-    } else {
-      timerRef.current = Date.now();
-      notified.current = false;
-      const mins = Number(targetMin);
-      notifyAt.current = Number.isFinite(mins) && mins > 0 ? Date.now() + mins * 60_000 : null;
-      if (notifyAt.current && typeof Notification !== "undefined" && Notification.permission === "default") {
-        Notification.requestPermission().catch(() => {});
-      }
-      setView({ running: true, elapsed: 0 });
-    }
-  }
-
-  return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}>
-      <button type="button" onClick={toggle} className={styles.secondaryBtn} title="Start after racking; the next set you log records this as its exact rest">
-        {view.running ? `⏱ ${fmtRest(view.elapsed)} · cancel` : "⏱ Rest timer"}
-      </button>
-      {!view.running && (
-        <input
-          type="number"
-          value={targetMin}
-          onChange={(e) => setTargetMin(e.target.value)}
-          placeholder="min"
-          title="Optional target — notifies when your rest is up"
-          style={{ width: 44, fontSize: 12 }}
-        />
-      )}
-    </span>
   );
 }
 
@@ -393,7 +331,6 @@ function StrengthCard({
   completed,
   onSessionChanged,
   onToggleComplete,
-  takeTimedRest,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -403,7 +340,6 @@ function StrengthCard({
   completed: boolean;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
-  takeTimedRest: () => number | null;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -435,6 +371,47 @@ function StrengthCard({
   // Unilateral side (Part 4): recorded per set; auto-alternates L→R after
   // logging (tap to override; "both" stays put).
   const [side, setSide] = useState<SetSide>("left");
+  // Set-level rest timer (2b): lives with THIS exercise's sets. Tap-to-start
+  // after racking; stopping (or hitting the target) HOLDS the elapsed value,
+  // which is auto-written as the NEXT set's restBefore (source "timed") — the
+  // timer does the logging, not the user. Pure client state, offline-fine.
+  const [timerStart, setTimerStart] = useState<number | null>(null);
+  const [heldRest, setHeldRest] = useState<number | null>(null);
+  const [timerTargetMin, setTimerTargetMin] = useState("");
+  // Display mirror of the running elapsed seconds (render never reads the clock).
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const timerNotified = useRef(false);
+  useEffect(() => {
+    if (timerStart == null) return;
+    const iv = setInterval(() => {
+      setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
+      const mins = Number(timerTargetMin);
+      if (Number.isFinite(mins) && mins > 0 && Date.now() - timerStart >= mins * 60_000) {
+        // Target hit: hold the rest at the target and notify — it will be
+        // written to the next set automatically.
+        setHeldRest(Math.round((Date.now() - timerStart) / 1000));
+        setTimerStart(null);
+        if (!timerNotified.current && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          timerNotified.current = true;
+          new Notification("Rest done — next set");
+        }
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [timerStart, timerTargetMin]);
+  function takeTimedRest(): number | null {
+    if (heldRest != null) {
+      const v = heldRest;
+      setHeldRest(null);
+      return v;
+    }
+    if (timerStart != null) {
+      const v = (Date.now() - timerStart) / 1000;
+      setTimerStart(null);
+      return v;
+    }
+    return null;
+  }
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
@@ -742,10 +719,47 @@ function StrengthCard({
 
       {loggedSets.length > 0 && (
         <ul className={styles.logged}>
-          {displaySets.map(({ set: s, isDrop }) => (
-            <LoggedSetRow key={s.localId} set={s} isDrop={isDrop} onChanged={onSessionChanged} onDrop={startDrop} />
+          {displaySets.map(({ set: s, isDrop }, i) => (
+            // Rest is an edge: N sets = N−1 rests, so set 1 shows no chip at all
+            // (its "rest" would be the inter-exercise transition — excluded).
+            <LoggedSetRow key={s.localId} set={s} isDrop={isDrop} showRest={i > 0 && !isDrop} onChanged={onSessionChanged} onDrop={startDrop} />
           ))}
         </ul>
+      )}
+
+      {loggedSets.length > 0 && !completed && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 13, margin: "2px 0" }}>
+          {heldRest != null ? (
+            <span style={{ opacity: 0.9 }} title="Will be recorded automatically as the next set's rest (source: timed)">
+              ⏱ rest {fmtRest(heldRest)} → next set{" "}
+              <button type="button" onClick={() => setHeldRest(null)} className={styles.secondaryBtn} title="Discard this timed rest">✕</button>
+            </span>
+          ) : timerStart != null ? (
+            <button type="button" onClick={() => { setHeldRest(Math.round((Date.now() - timerStart) / 1000)); setTimerStart(null); }} className={styles.secondaryBtn} title="Stop — the elapsed rest is written to your next set automatically">
+              ⏱ {fmtRest(timerElapsed)} · stop
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimerStart(Date.now());
+                  setTimerElapsed(0);
+                  timerNotified.current = false;
+                  const mins = Number(timerTargetMin);
+                  if (Number.isFinite(mins) && mins > 0 && typeof Notification !== "undefined" && Notification.permission === "default") {
+                    Notification.requestPermission().catch(() => {});
+                  }
+                }}
+                className={styles.secondaryBtn}
+                title="Start after racking — stopping (or hitting the target) records the rest on your next set automatically"
+              >
+                ⏱ Start rest
+              </button>
+              <input type="number" value={timerTargetMin} onChange={(e) => setTimerTargetMin(e.target.value)} placeholder="min" title="Optional target — stops the timer and notifies" style={{ width: 44, fontSize: 12 }} />
+            </>
+          )}
+        </div>
       )}
 
       {dropFor && (
@@ -1078,16 +1092,6 @@ export default function LogSessionPage() {
   const [showFinish, setShowFinish] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
 
-  // Rest timer (shared across cards): started by RestTimer, consumed exactly once
-  // by whichever set is logged next — that set's rest becomes source "timed".
-  const restTimerRef = useRef<number | null>(null);
-  const takeTimedRest = useCallback((): number | null => {
-    if (restTimerRef.current == null) return null;
-    const secs = (Date.now() - restTimerRef.current) / 1000;
-    restTimerRef.current = null; // consumed; tap again after racking
-    return secs;
-  }, []);
-
   const refreshSession = useCallback(async () => {
     const [occ, sets, cardio, done, p, s] = await Promise.all([
       listOccurrences(sessionId), getSessionSets(sessionId), getSessionCardio(sessionId),
@@ -1275,7 +1279,6 @@ export default function LogSessionPage() {
         <button type="button" onClick={() => setPaletteOpen((o) => !o)} className={styles.primary}>
           {paletteOpen ? "Hide add panel" : "+ Add exercise"}
         </button>
-        <RestTimer timerRef={restTimerRef} />
         <span style={{ fontSize: 13, opacity: 0.65 }}>Tap to add as you go — order is kept.</span>
       </div>
 
@@ -1318,7 +1321,6 @@ export default function LogSessionPage() {
                 completed={completed.has(ex.instanceId)}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
-                takeTimedRest={takeTimedRest}
               />
             );
           })}

@@ -1385,3 +1385,30 @@ carries a side (PATCH ships the change), so a prior session's mis-tagged side is
 fixable. "L+R" renamed to **Alternating** everywhere (selector + row tag); the
 stored value stays `both` — display-only rename, no data migration. Verified
 in-app: edited a historical `· L` set to `· R`.
+
+### Part 2 — rest is an edge between sets (restBefore), set-level timer, mm:ss mask
+
+**2a — model.** `rest_seconds` now means **restBefore, scoped to the occurrence**:
+N sets = N−1 rests, null on set 1. Derivation only looks at prior sets of the
+SAME occurrence (instanceId) — the gap across an exercise boundary is an
+inter-exercise transition and is excluded entirely (never derived), which leaves
+room for explicit inter-exercise rest slots later without blocking them. UI: set
+1 of an occurrence shows no chip at all; drops still show none. Migration 0018
+(hand-written) nulls the phantom `derived` rests that had landed on the first
+set of each occurrence (min id per session_exercise_id); `user`/`timed` values
+are never touched. Stale phantom values in a device's local store are simply
+never displayed (set-1 chips are gone) and never re-synced. Boundary behavior is
+unit-tested (A→B transition in-band → null; B's second set derives from B set 1).
+
+**2b — set-level timer that does the work.** The session-level timer is gone.
+Each exercise card gets its own tap-to-start timer under its logged sets:
+stopping it (or hitting the optional minutes target, which also notifies) HOLDS
+the elapsed value — shown as "rest m:ss → next set" with a discard × — and the
+next set logged in that card records it automatically as restBefore, source
+`timed`. No manual entry. Verified in-app: start → "⏱ 0:03 · stop" → held →
+logged set reads "rest 0:03 · timed".
+
+**2c — duration mask.** Rest editing is a digits-only mm:ss mask: non-digits
+are stripped, the colon is auto-placed filling from the right ("145" → 1:45),
+seconds clamp to :59, bounded to 59:59. Verified in-app: typing "a1x4!5"
+displays "1:45" and saves 105s as source `user`.

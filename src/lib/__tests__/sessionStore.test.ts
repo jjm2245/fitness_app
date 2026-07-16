@@ -202,6 +202,36 @@ describe("rest tracking — derivation, timer, honesty tags", () => {
     expect(deriveRest(31, 20)).toEqual({ restSeconds: 0, restSource: "derived" }); // clamped ≥ 0
   });
 
+  it("rest is an edge WITHIN an occurrence — never derived across an exercise boundary", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-08-21T10:00:00Z") });
+    try {
+      mockOnline();
+      const { id, date, inst } = await newSession(); // exercise A's occurrence
+      const other: AttachExercise = { exerciseId: "skull_crusher", exerciseName: "Skullcrusher", loadType: "free_weight", portable: true, conditioningOnly: false, provenance: "curated", untagged: false };
+      const b = await addOccurrence(id, other, "Test day"); // exercise B
+
+      await logSet({ ...baseInput, sessionId: id, instanceId: inst, date }); // A set 1
+      vi.setSystemTime(new Date("2026-08-21T10:02:00Z"));
+      const a2 = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date }); // A set 2
+      expect(a2.restSeconds).toBe(120 - 28); // within-occurrence edge derives
+
+      // 90s later, first set of exercise B: the gap is an inter-exercise
+      // TRANSITION — excluded entirely, not a rest (even though it's in-band).
+      vi.setSystemTime(new Date("2026-08-21T10:03:30Z"));
+      const b1 = await logSet({ ...baseInput, sessionId: id, instanceId: b.instanceId, date, exerciseId: "skull_crusher" });
+      expect(b1.restSeconds).toBeNull();
+      expect(b1.restSource).toBeNull();
+
+      // …and B's second set derives from B's set 1, resetting at the boundary.
+      vi.setSystemTime(new Date("2026-08-21T10:05:30Z"));
+      const b2 = await logSet({ ...baseInput, sessionId: id, instanceId: b.instanceId, date, exerciseId: "skull_crusher" });
+      expect(b2.restSeconds).toBe(120 - 28);
+      expect(b2.restSource).toBe("derived");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("first set = unknown; a later set derives from the gap; timer wins as 'timed'; edit becomes 'user'", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-08-20T10:00:00Z") });
     try {
