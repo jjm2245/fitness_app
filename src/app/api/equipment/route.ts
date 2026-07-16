@@ -32,6 +32,7 @@ export async function GET() {
       model: m.model,
       builtInWeight: m.builtInWeight,
       equipmentType: m.equipmentType,
+      pulleyRatioKind: m.pulleyRatioKind ?? "unknown",
       notes: m.notes,
       exercises: refsBy.get(m.id) ?? [],
       loggedCount: usedBy.get(m.id) ?? 0,

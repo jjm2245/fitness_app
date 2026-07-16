@@ -9,7 +9,7 @@ import { nextStallIntervention } from "@/core/stallBuster";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const exerciseId = searchParams.get("exerciseId");
-  const machineId = searchParams.get("machineId"); // omit for portable free-weight/bodyweight lifts
+  const machineId = searchParams.get("lane") ?? searchParams.get("machineId"); // omit for portable free-weight/bodyweight lifts
   const repRangeMax = Number(searchParams.get("repRangeMax") ?? "12");
   const targetRir = Number(searchParams.get("targetRir") ?? "2");
   const stallSessionThreshold = Number(searchParams.get("stallSessionThreshold") ?? "3");

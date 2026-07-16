@@ -51,8 +51,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!label) return NextResponse.json({ error: "label is required" }, { status: 400 });
   const equipmentId = typeof body?.id === "string" && body.id.trim() !== "" ? body.id.trim() : label;
   const notes = typeof body?.notes === "string" && body.notes.trim() !== "" ? body.notes.trim() : null;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
 
-  await db.insert(equipment).values({ id: equipmentId, label, notes }).onConflictDoNothing();
+  await db
+    .insert(equipment)
+    .values({
+      id: equipmentId,
+      label,
+      notes,
+      equipmentType: str(body?.equipmentType),
+      gym: str(body?.gym),
+      brand: str(body?.brand),
+      builtInWeight: typeof body?.builtInWeight === "number" && Number.isFinite(body.builtInWeight) ? body.builtInWeight.toString() : null,
+      pulleyRatioKind: ["1:1", "2:1", "other", "unknown"].includes(body?.pulleyRatioKind) ? body.pulleyRatioKind : "unknown",
+    })
+    .onConflictDoNothing();
   await db.insert(exerciseEquipment).values({ exerciseId: id, equipmentId }).onConflictDoNothing();
   return NextResponse.json({ id: equipmentId, label, builtInWeight: null, notes, loggedCount: 0 }, { status: 201 });
 }

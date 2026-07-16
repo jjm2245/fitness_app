@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import styles from "../log.module.css";
 import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { prettyDayName } from "@/lib/labels";
+import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import {
   logSet,
   editSet,
@@ -120,6 +121,16 @@ function parseRepRangeMax(repRange: string | null): number {
 }
 function lastEquipmentKey(exerciseId: string) {
   return `fitness-app:last-machine:${exerciseId}`;
+}
+function lastTypeKey(exerciseId: string) {
+  return `fitness-app:last-equiptype:${exerciseId}`;
+}
+// One-time offset confirmation per (exercise, type): a keyword/type default may
+// PRE-SELECT a non-zero offset but must never silently apply it — wrong-toward-
+// zero costs nothing, wrong-toward-45 corrupts every set. Confirmed once,
+// remembered here. (Named units' stored offsets are explicit → no prompt.)
+function offsetOkKey(exerciseId: string, type: string) {
+  return `fitness-app:offset-ok:${exerciseId}:${type}`;
 }
 // The neutral default: "I'm using a machine but haven't said which" — distinct
 // from "No machine" (which asserts free/portable). Both resolve to a null
@@ -304,6 +315,75 @@ function LoggedSetRow({ set, isDrop, showRest, onChanged, onDrop }: { set: Sessi
   );
 }
 
+// Add-equipment modal (3d): full unit fields captured mid-session without
+// leaving the log. The entered offset becomes the unit's stored default.
+function AddUnitModal({ exerciseId, presetType, onClose, onCreated }: {
+  exerciseId: string;
+  presetType: EquipmentTypeId;
+  onClose: () => void;
+  onCreated: (unit: EquipmentOption) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [gym, setGym] = useState("");
+  const [brand, setBrand] = useState("");
+  const [offset, setOffset] = useState("");
+  const [ratio, setRatio] = useState("unknown");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    if (!label.trim() || busy) return;
+    setBusy(true);
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `u_${Date.now().toString(36)}`;
+    const unit: EquipmentOption = { id, label: label.trim(), builtInWeight: offset.trim() !== "" ? offset.trim() : null, notes: notes.trim() || null };
+    try {
+      await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id, label: label.trim(), equipmentType: presetType, gym: gym.trim() || null, brand: brand.trim() || null,
+          builtInWeight: offset.trim() !== "" ? Number(offset) : null, pulleyRatioKind: ratio, notes: notes.trim() || null,
+        }),
+      });
+    } catch {
+      /* offline — the next set's sync auto-registers id+label+type+offset */
+    }
+    setBusy(false);
+    onCreated(unit); // optimistic: selected immediately, offline included
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "var(--bg, #111)", border: "1px solid var(--border, #444)", borderRadius: 10, padding: 16, width: "min(420px, 92vw)", display: "flex", flexDirection: "column", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+        <strong>New {EQUIPMENT_TYPE_BY_ID.get(presetType)?.label.toLowerCase()} unit</strong>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder='label, e.g. "leg ext by the mirror"' autoFocus />
+        <div style={{ display: "flex", gap: 6 }}>
+          <input value={gym} onChange={(e) => setGym(e.target.value)} placeholder="gym / location" style={{ flex: 1 }} />
+          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="manufacturer" style={{ flex: 1 }} />
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+          <label>built-in lb{" "}
+            <input type="number" value={offset} onChange={(e) => setOffset(e.target.value)} placeholder={EQUIPMENT_TYPE_BY_ID.get(presetType)?.defaultOffset == null ? "?" : String(EQUIPMENT_TYPE_BY_ID.get(presetType)?.defaultOffset)} style={{ width: 64 }} />
+          </label>
+          <label>pulley{" "}
+            <select value={ratio} onChange={(e) => setRatio(e.target.value)} title="Captured for interpretation only — a ratio cancels out of every lane-scoped comparison, so it is NEVER folded into the logged load.">
+              <option value="unknown">unknown</option>
+              <option value="1:1">1:1</option>
+              <option value="2:1">2:1</option>
+              <option value="other">other</option>
+            </select>
+          </label>
+        </div>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="description — quirks, cam feel, serial…" rows={2} style={{ resize: "vertical", fontFamily: "inherit" }} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" onClick={onClose} className={styles.secondaryBtn}>Cancel</button>
+          <button type="button" onClick={create} disabled={busy || !label.trim()} className={styles.primary}>Add unit</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface CardControls {
   position: number;
   total: number;
@@ -354,20 +434,16 @@ function StrengthCard({
     const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
     if (res.ok) setEquipmentUnits(await res.json());
   }, [activeExercise.id]);
-  const [equipmentId, setMachineId] = useState(() => {
+  const [equipmentId, setEquipmentId] = useState(() => {
     // Default to "Unspecified machine" unless a named machine was last used here.
     if (typeof window === "undefined") return UNSPECIFIED_UNIT;
     return localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT;
   });
-  const [newEquipmentName, setNewEquipmentName] = useState("");
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
   const [setType, setSetType] = useState<"warmup" | "working">("working");
   const [load, setLoad] = useState(ex.loadType === "bodyweight" ? 0 : 45);
   const [reps, setReps] = useState(8);
   const [effort, setEffort] = useState<EffortTag | null>(null);
-  // True loads (3a): effective load = entered + a known additive offset. The
-  // offset comes from the selected machine's built-in weight, or — with no
-  // machine — an optional manual "+ bar/built-in" field. Shown transparently.
-  const [manualOffset, setManualOffset] = useState("");
   // Unilateral side (Part 4): recorded per set; auto-alternates L→R after
   // logging (tap to override; "both" stays put).
   const [side, setSide] = useState<SetSide>("left");
@@ -422,23 +498,58 @@ function StrengthCard({
   const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
 
-  // The machine field is always shown now — we never infer which exercises
-  // "should" have a machine (a dumbbell move can still be done on a machine at a
-  // different gym, etc.). Both "Unspecified machine" (the neutral default) and
-  // "No machine" resolve to null = the portable/free lane; any label = a
-  // context-bound machine. This is purely data-entry: the per-machine
-  // progression semantics (null = portable, never re-baselined; named =
-  // re-baseline on change) are unchanged — they key off this same null.
-  const resolvedMachineId =
-    equipmentId === "" || equipmentId === UNSPECIFIED_UNIT ? null : equipmentId;
-  const selectedUnit = resolvedMachineId ? equipmentUnits.find((m) => m.id === resolvedMachineId) ?? null : null;
-  // The additive offset applied to this set's effective load (3a): the selected
-  // machine's stored built-in weight, else the optional manual field. Additive
-  // numerical weight only — pulley ratios etc. stay descriptive, never folded in.
-  const unitOffset = selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight) : 0;
-  const manualOffsetNum = !selectedUnit && manualOffset.trim() !== "" ? Number(manualOffset) : 0;
-  const effOffset = Number.isFinite(unitOffset) && unitOffset !== 0 ? unitOffset : Number.isFinite(manualOffsetNum) ? manualOffsetNum : 0;
+  // Equipment model (Part 3): the TYPE is always a real answer (always shown,
+  // pre-selected from the exercise, editable); WHICH UNIT exists only for
+  // context-bound types. "No machine"/"Unspecified machine" are gone as
+  // top-level options — unspecified is a unit-level state of a context-bound
+  // type, with its own lane (never the portable lane).
+  const [equipType, setEquipType] = useState<EquipmentTypeId>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(lastTypeKey(ex.exerciseId));
+      if (stored && EQUIPMENT_TYPE_BY_ID.has(stored as EquipmentTypeId)) return stored as EquipmentTypeId;
+    }
+    return suggestEquipmentType(ex.loadType, ex.exerciseName);
+  });
+  const typeDef = EQUIPMENT_TYPE_BY_ID.get(equipType)!;
+  const contextBound = typeDef.instanceMatters;
+  const resolvedUnitId = contextBound && equipmentId !== "" && equipmentId !== UNSPECIFIED_UNIT ? equipmentId : null;
+  const selectedUnit = resolvedUnitId ? equipmentUnits.find((m) => m.id === resolvedUnitId) ?? null : null;
+  const lane = laneKey(equipType, resolvedUnitId);
+
+  // Offset (3a/3b): a named unit's stored offset pre-fills (explicit → no
+  // prompt); otherwise the type default. Editable per set — the edit is a
+  // set-level override, never a rewrite of the unit's default. Non-zero
+  // TYPE-LEVEL defaults are UNCONFIRMED until once-confirmed per exercise
+  // (effOffset stays 0 until then). plate_loaded default is unknown (null):
+  // prompted, never guessed.
+  const defaultOffset = selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight) : typeDef.defaultOffset;
+  const [offsetInput, setOffsetInput] = useState<string>(defaultOffset != null ? String(defaultOffset) : "");
+  const [offsetConfirmed, setOffsetConfirmed] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem(offsetOkKey(ex.exerciseId, equipType)) != null
+  );
+  useEffect(() => {
+    // Re-derive the pre-fill + confirmation whenever the type or unit changes.
+    (async () => {
+      setOffsetInput(defaultOffset != null ? String(defaultOffset) : "");
+      setOffsetConfirmed(localStorage.getItem(offsetOkKey(activeExercise.id, equipType)) != null);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipType, resolvedUnitId, activeExercise.id]);
+  const offsetNum = offsetInput.trim() !== "" && Number.isFinite(Number(offsetInput)) ? Number(offsetInput) : 0;
+  // Needs a one-tap confirmation: non-zero type-level default, not yet confirmed
+  // for this exercise, and no explicit unit-stored offset backing it.
+  const offsetNeedsConfirm = offsetNum !== 0 && !offsetConfirmed && selectedUnit?.builtInWeight == null;
+  const effOffset = offsetNeedsConfirm ? 0 : offsetNum;
   const totalLoad = load + effOffset;
+  function confirmOffset(value: number) {
+    localStorage.setItem(offsetOkKey(activeExercise.id, equipType), String(value));
+    setOffsetConfirmed(true);
+  }
+  function pickType(t: EquipmentTypeId) {
+    setEquipType(t);
+    localStorage.setItem(lastTypeKey(activeExercise.id), t);
+    setEquipmentId(UNSPECIFIED_UNIT); // unit selection resets with the type
+  }
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
@@ -454,20 +565,33 @@ function StrengthCard({
     let cancelled = false;
     (async () => {
       const params = new URLSearchParams();
-      if (resolvedMachineId) params.set("equipmentId", resolvedMachineId);
+      if (lane) params.set("lane", lane);
       const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?${params.toString()}`);
       const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
       if (cancelled) return;
-      if (!data.session) setPrevious("No previous session yet");
-      else {
+      if (data.session) {
         const reps = data.session.sets.map((s) => s.reps).join(", ");
         setPrevious(`Last time: ${data.session.sets[0]?.load ?? "?"} × ${reps}`);
+      } else if (lane) {
+        // Recalibrate, don't reset (3e): no history in THIS lane, but show
+        // continuity from the exercise's other lanes — effort + volume carry
+        // over; switching units is never "starting over".
+        const any = await fetch(`/api/exercises/${activeExercise.id}/last-session`);
+        const anyData: { session: { sets: Array<{ load: number; reps: number }> } | null } = await any.json();
+        if (cancelled) return;
+        if (anyData.session) {
+          setPrevious(`Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} on another unit (effort + volume carry over)`);
+        } else {
+          setPrevious("No previous session yet");
+        }
+      } else {
+        setPrevious("No previous session yet");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeExercise.id, resolvedMachineId]);
+  }, [activeExercise.id, lane]);
 
   const checkProgression = useCallback(async () => {
     setChecking(true);
@@ -477,13 +601,13 @@ function StrengthCard({
         repRangeMax: String(parseRepRangeMax(ex.target?.repRange ?? null)),
         targetRir: String(ex.target?.rirTarget ?? 2),
       });
-      if (resolvedMachineId) params.set("equipmentId", resolvedMachineId);
+      if (lane) params.set("lane", lane);
       const res = await fetch(`/api/progression?${params.toString()}`);
       setProgression(await res.json());
     } finally {
       setChecking(false);
     }
-  }, [activeExercise.id, ex.target, resolvedMachineId]);
+  }, [activeExercise.id, ex.target, lane]);
 
   async function handleAddSet(e: React.FormEvent) {
     e.preventDefault();
@@ -496,8 +620,10 @@ function StrengthCard({
       date,
       exerciseId: activeExercise.id,
       exerciseName: activeExercise.name,
-      equipmentId: resolvedMachineId,
+      equipmentId: resolvedUnitId,
       equipmentLabel: selectedUnit?.label ?? null,
+      equipmentType: equipType,
+      equipmentBuiltInWeight: selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight) : null,
       setType,
       // Effective load = entered + known offset; the components are stored too,
       // so the math stays visible ("90 + 20 = 110") and the core reads the total.
@@ -511,7 +637,7 @@ function StrengthCard({
       // If the rest timer is running, this set consumes it as an exact rest.
       timedRestSeconds: takeTimedRest(),
     });
-    if (resolvedMachineId) localStorage.setItem(lastEquipmentKey(activeExercise.id), resolvedMachineId);
+    if (resolvedUnitId) localStorage.setItem(lastEquipmentKey(activeExercise.id), resolvedUnitId);
     // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
     if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
     onSessionChanged();
@@ -591,36 +717,29 @@ function StrengthCard({
   }
   function pickSwap(c: SubstitutionCandidate) {
     setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable, unilateral: c.unilateral ?? false });
-    setMachineId(localStorage.getItem(lastEquipmentKey(c.id)) ?? UNSPECIFIED_UNIT);
+    setEquipmentId(localStorage.getItem(lastEquipmentKey(c.id)) ?? UNSPECIFIED_UNIT);
+    const storedT = localStorage.getItem(lastTypeKey(c.id));
+    setEquipType(storedT && EQUIPMENT_TYPE_BY_ID.has(storedT as EquipmentTypeId) ? (storedT as EquipmentTypeId) : suggestEquipmentType(c.loadType, c.name));
     setSwapOpen(false);
   }
   function resetSwap() {
     setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable, unilateral: ex.unilateral });
-    setMachineId(localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT);
+    setEquipmentId(localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT);
+    const storedT = localStorage.getItem(lastTypeKey(ex.exerciseId));
+    setEquipType(storedT && EQUIPMENT_TYPE_BY_ID.has(storedT as EquipmentTypeId) ? (storedT as EquipmentTypeId) : suggestEquipmentType(ex.loadType, ex.exerciseName));
     setSwapOpen(false);
   }
-  async function addEquipmentUnit() {
-    const name = newEquipmentName.trim();
-    if (!name) return;
-    // Surrogate-key model: the client owns identity (uuid); the label is display
-    // only. Optimistically add locally so it's selected even offline; the set
-    // POST auto-registers id+label on sync if this POST never lands.
-    const newIdVal = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `m_${Date.now().toString(36)}`;
-    setEquipmentUnits((ms) => [...ms, { id: newIdVal, label: name, builtInWeight: null, notes: null }]);
-    setMachineId(newIdVal);
-    setNewEquipmentName("");
-    try {
-      // Curate it under this exercise (Part 3c), so it's in the list next time.
-      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: newIdVal, label: name }),
-      });
-      if (res.ok) refreshEquipmentUnits();
-    } catch {
-      /* offline — set-logs auto-registers + associates on sync */
+  // Session-level relabel (3e): naming a unit mid-session reassigns THIS
+  // session's sets that sat in the type's unspecified lane. Local edit +
+  // pending_update; prior sessions are never touched.
+  async function relabelSessionSets(unit: EquipmentOption) {
+    const toMove = loggedSets.filter((s) => s.equipmentId == null && s.equipmentType === equipType);
+    for (const st of toMove) {
+      await editSet(st.localId!, { equipmentId: unit.id, equipmentLabel: unit.label, equipmentType: equipType });
     }
+    if (toMove.length) onSessionChanged();
   }
+
 
   return (
     <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
@@ -668,23 +787,54 @@ function StrengthCard({
       )}
 
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        <label title="'Unspecified machine' (the default) just means you're on a machine but haven't labelled which — same tracking as free/portable. 'No machine' is the free/portable lane (dumbbells, barbell, bodyweight). Only name a machine if there are two of the same, or you're at a different gym.">
-          Machine{" "}
-          <select value={equipmentId} onChange={(e) => setMachineId(e.target.value)}>
-            <option value={UNSPECIFIED_UNIT}>Unspecified machine</option>
-            <option value="">No machine</option>
-            {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)} built-in)` : ""}</option>)}
+        <label title="How resistance is applied to this set. Pre-selected from the exercise — a visible default, always editable, never hidden.">
+          Equipment{" "}
+          <select value={equipType} onChange={(e) => pickType(e.target.value as EquipmentTypeId)}>
+            {EQUIPMENT_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>
-        <input value={newEquipmentName} onChange={(e) => setNewEquipmentName(e.target.value)} placeholder='label it, e.g. "leg ext by the mirror"' style={{ width: 200 }} />
-        <button type="button" onClick={addEquipmentUnit}>+ Add</button>
-        {!selectedUnit && (
-          <label style={{ fontSize: 13, opacity: 0.85 }} title="Optional constant added weight (bar, fixed handle) applied to every set's effective load">
-            + bar/built-in{" "}
-            <input type="number" value={manualOffset} onChange={(e) => setManualOffset(e.target.value)} placeholder="lb" style={{ width: 48 }} />
+        {contextBound && (
+          <label title="Which unit — the same stack number means different resistance on different units, so each unit tracks its own lane. 'Unspecified' is a generic unit of this type (its own lane, not the free-weight lane).">
+            <select value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId} onChange={(e) => setEquipmentId(e.target.value)}>
+              <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
+              {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
+            </select>
+            <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.secondaryBtn} style={{ marginLeft: 4 }}>+ New unit…</button>
           </label>
         )}
+        <label style={{ fontSize: 13, opacity: 0.9 }} title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged.">
+          + built-in{" "}
+          <input type="number" value={offsetInput} onChange={(e) => { setOffsetInput(e.target.value); if (!offsetConfirmed) confirmOffset(Number(e.target.value) || 0); }} placeholder={typeDef.defaultOffset == null ? "?" : "lb"} style={{ width: 48 }} />
+        </label>
+        {offsetNeedsConfirm && (
+          <button type="button" onClick={() => confirmOffset(offsetNum)} className={styles.secondaryBtn} style={{ borderColor: "#a8741a", color: "#e0b566" }} title="A default offset is suggested but NOT applied until you confirm it — a wrong offset silently corrupts every set.">
+            apply +{offsetNum} {typeDef.label.toLowerCase()}? ✓
+          </button>
+        )}
+        {typeDef.defaultOffset == null && offsetInput.trim() === "" && (
+          <span style={{ fontSize: 12, color: "#e0b566" }} title="Plate-loaded carriage/handle weight is unit-specific — set it rather than guessing. Until then, loads record what you put on.">
+            carriage weight unknown — set it
+          </span>
+        )}
       </div>
+
+      {unitModalOpen && (
+        <AddUnitModal
+          exerciseId={activeExercise.id}
+          presetType={equipType}
+          onClose={() => setUnitModalOpen(false)}
+          onCreated={(unit) => {
+            setUnitModalOpen(false);
+            setEquipmentUnits((us) => [...us, unit]);
+            setEquipmentId(unit.id);
+            // Session-level relabel (3e): within one session you are demonstrably
+            // on one unit — re-point THIS session's unspecified sets of this type
+            // onto the named unit. Prior sessions are never backfilled (a guess).
+            relabelSessionSets(unit);
+            refreshEquipmentUnits();
+          }}
+        />
+      )}
 
       <form onSubmit={handleAddSet} className={styles.entryForm}>
         <select value={setType} onChange={(e) => setSetType(e.target.value as "warmup" | "working")}>
@@ -779,7 +929,7 @@ function StrengthCard({
       {progression && (
         <div style={{ fontSize: 13, marginTop: 4, opacity: 0.9 }}>
           {progression.status === "new_machine_baseline" ? (
-            <p>New machine — re-baselining, not a stall.</p>
+            <p>Recalibrating for this unit — effort + volume carry over; you&rsquo;re not starting over.</p>
           ) : (
             <>
               <p>

@@ -1412,3 +1412,57 @@ logged set reads "rest 0:03 · timed".
 are stripped, the colon is auto-placed filling from the right ("145" → 1:45),
 seconds clamp to :59, bounded to 59:59. Verified in-app: typing "a1x4!5"
 displays "1:45" and saves 105s as source `user`.
+
+### Part 3 — Equipment model (built on the approved proposal)
+
+**Definition (authoritative): equipment = how resistance is applied to a
+strength set. If it doesn't change how a load is recorded or compared, it isn't
+equipment** (belts/straps/chalk = notes; cardio keeps its own model).
+
+**Two fields.** `set_logs.equipment_type` (always a real answer, pre-selected
+from the exercise's load_type — free_weight resolved by name keyword with a
+zero-offset dumbbell fallback — and remembered per exercise) + `equipment_id`
+(WHICH unit, only for context-bound types: cable/selectorized/smith/
+plate_loaded). "No machine"/"Unspecified machine" are gone as top-level options;
+unspecified is a unit-level state of a context-bound type.
+
+**Offsets (3b registry in src/lib/equipment.ts, NOT core).** Standardized tools
+get real defaults (Olympic 45); weak typicals are FLAGGED (EZ ~20, Smith ~20);
+plate-loaded defaults to UNKNOWN (null) with a per-unit prompt — never guess.
+**Safety condition honored:** a keyword/type default may pre-select a non-zero
+offset but never silently applies — effOffset stays 0 behind an explicit
+"apply +45?" confirm, remembered per (exercise,type); named units' stored
+offsets are explicit and need no prompt. Per-set offset edits override the set
+only. Verified in-app: Olympic pre-select showed NO math until the one-tap
+confirm, then "= 45 + 45 = 90 lb".
+
+**Pulley ratio (3c).** Structured `pulley_ratio_kind` (1:1|2:1|other|unknown)
+replaced the never-used numeric (guarded drop; verified all-null local+prod
+first). NEVER in load math — an additive offset doesn't cancel out of
+percentage comparisons, a lane-scoped multiplicative ratio does; folding it in
+would also fake precision. Codified as a test: the load pipeline files contain
+no pulleyRatio reference.
+
+**Lanes (3e).** Adapter-computed opaque string handed to the core: named unit →
+its raw id (every pre-existing lane unchanged — zero re-baseline blips from the
+migration); context-bound w/o unit → "type:unspecified" (its OWN lane, not
+portable — Smith loads don't transfer); portable types → null. Recalibrate ≠
+reset: switching lanes shows "Recalibrating for this unit — you were at N on
+another unit (effort + volume carry over)" (verified in-app). Session-level
+relabel: naming a unit mid-session re-points THIS session's unspecified sets of
+that type (verified: the unspecified 130-lb set moved onto the new uuid unit);
+prior sessions never backfilled. Cross-unit conversion ratios deferred.
+
+**Core self-check, stated precisely.** The core never sees the new model: no
+registry import, no type/offset/ratio vocabulary (guard test). Nuance
+surfaced honestly: `src/core/progression.ts` has ALWAYS consumed the seed's
+load_type taxonomy for its per-load-type increment table (spec §9, Milestone 2)
+— pre-existing, untouched, and distinct from the Equipment model; the core's own
+`laneKey(exerciseId, machineId)` grouping helper is generic. The guard test
+encodes exactly this boundary so Codex inherits it.
+
+**3d modal** captures label/gym/brand/offset/pulley/description mid-session
+(offline-safe: client uuid + set-sync auto-registration carries label+type+
+offset). Migration 0019 proven (metadata-only renames; 4→4/2→2/3→3). Prod
+migrations 0017–0019 pending the batch-ship proposal. Lane param: progression +
+last-session accept `lane` (with machineId back-compat).

@@ -22,6 +22,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     restSource?: string | null;
     dropSetGroup?: string | null;
     side?: string | null;
+    equipmentId?: string | null;
+    equipmentType?: string | null;
     loadEntered?: string | null;
     builtinOffset?: string | null;
   } = {};
@@ -38,6 +40,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body?.restSource === null || ["timed", "derived", "user"].includes(body?.restSource)) updates.restSource = body.restSource;
   if (body?.dropSetGroup === null || typeof body?.dropSetGroup === "string") updates.dropSetGroup = body.dropSetGroup;
   if (body?.side === null || ["left", "right", "both"].includes(body?.side)) updates.side = body.side;
+  // Session-level relabel (3e): naming a unit re-points this session's sets.
+  if (body?.equipmentId === null || typeof body?.equipmentId === "string") updates.equipmentId = body.equipmentId;
+  if (body?.equipmentType === null || typeof body?.equipmentType === "string") updates.equipmentType = body.equipmentType;
   if (body?.loadEntered === null) updates.loadEntered = null;
   else if (typeof body?.loadEntered === "number") updates.loadEntered = body.loadEntered.toString();
   if (body?.builtinOffset === null) updates.builtinOffset = null;

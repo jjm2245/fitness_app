@@ -19,6 +19,7 @@ interface Machine {
   model: string | null;
   builtInWeight: string | null;
   equipmentType: string | null;
+  pulleyRatioKind: string;
   notes: string | null;
   exercises: Array<{ exerciseId: string; name: string }>;
   loggedCount: number;
@@ -31,6 +32,7 @@ interface EditState {
   model: string;
   builtInWeight: string;
   equipmentType: string;
+  pulleyRatioKind: string;
   notes: string;
 }
 
@@ -69,6 +71,7 @@ export default function MachinesPage() {
       model: m.model ?? "",
       builtInWeight: m.builtInWeight != null ? String(Number(m.builtInWeight)) : "",
       equipmentType: m.equipmentType ?? "",
+      pulleyRatioKind: m.pulleyRatioKind ?? "unknown",
       notes: m.notes ?? "",
     });
   }
@@ -87,6 +90,7 @@ export default function MachinesPage() {
           brand: edit.brand,
           model: edit.model,
           equipmentType: edit.equipmentType,
+          pulleyRatioKind: edit.pulleyRatioKind,
           notes: edit.notes,
           builtInWeight: edit.builtInWeight.trim() === "" ? null : Number(edit.builtInWeight),
         }),
@@ -168,6 +172,7 @@ export default function MachinesPage() {
                 <span className={styles.name}>{m.label}</span>
                 {m.equipmentType && <span className={styles.meta}>· {m.equipmentType}</span>}
                 {m.builtInWeight != null && <span className={styles.meta}>· +{Number(m.builtInWeight)} lb built-in</span>}
+                {m.pulleyRatioKind !== "unknown" && <span className={styles.meta}>· pulley {m.pulleyRatioKind}</span>}
                 {m.loggedCount > 0 && <span className={styles.meta}>· {m.loggedCount} logged</span>}
               </div>
               {(m.gym || m.brand || m.model) && (
@@ -187,6 +192,9 @@ export default function MachinesPage() {
                   <input className={styles.input} type="number" value={edit.builtInWeight} onChange={(ev) => setEdit({ ...edit, builtInWeight: ev.target.value })} placeholder="built-in lb" style={{ width: 90 }} title="Constant added weight (bar/handles/carriage) — auto-added to logged loads" />
                   <select className={styles.input} value={edit.equipmentType} onChange={(ev) => setEdit({ ...edit, equipmentType: ev.target.value })}>
                     {EQUIPMENT_UNIT_TYPES.map((t) => <option key={t} value={t}>{t === "" ? "type…" : t}</option>)}
+                  </select>
+                  <select className={styles.input} value={edit.pulleyRatioKind} onChange={(ev) => setEdit({ ...edit, pulleyRatioKind: ev.target.value })} title="Interpretation only — never folded into logged loads (a ratio cancels out of every lane-scoped comparison).">
+                    {["unknown", "1:1", "2:1", "other"].map((r) => <option key={r} value={r}>pulley {r}</option>)}
                   </select>
                   <textarea className={styles.input} value={edit.notes} onChange={(ev) => setEdit({ ...edit, notes: ev.target.value })} placeholder="description — serials, links, quirks…" rows={2} style={{ flex: "1 1 100%", resize: "vertical", fontFamily: "inherit" }} />
                   <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => save(m.id)} disabled={busy}>Save</button>

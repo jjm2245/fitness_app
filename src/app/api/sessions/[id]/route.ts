@@ -21,6 +21,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       sessionExerciseId: setLogs.sessionExerciseId,
       exerciseId: setLogs.exerciseId,
       equipmentId: setLogs.equipmentId,
+      equipmentType: setLogs.equipmentType,
       setIndex: setLogs.setIndex,
       setType: setLogs.setType,
       load: setLogs.load,

@@ -13,7 +13,7 @@ import { sessionsFromOldestToNewest } from "@/core/progression";
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: exerciseId } = await params;
   const { searchParams } = new URL(request.url);
-  const machineId = searchParams.get("machineId");
+  const machineId = searchParams.get("lane") ?? searchParams.get("machineId");
 
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId));
 

@@ -69,9 +69,14 @@ export interface SessionSet {
   side?: SetSide | null; // unilateral exercises only
   loadEntered?: number | null; // what the user set/added (load = entered + offset)
   builtinOffset?: number | null; // machine built-in / bar weight applied
-  // Display label of the referenced machine (surrogate-key model) — carried so
-  // an offline-created machine auto-registers server-side with its real label.
+  // Display label of the referenced unit (surrogate-key model) — carried so an
+  // offline-created unit auto-registers server-side with its real label.
   equipmentLabel?: string | null;
+  // The always-answered equipment TYPE (Part 3): bodyweight | dumbbell | … |
+  // smith | plate_loaded. Null = legacy row. Lanes derive from (type, unitId).
+  equipmentType?: string | null;
+  // Offset of an offline-created unit, so auto-registration lands it complete.
+  equipmentBuiltInWeight?: number | null;
 }
 
 // "Done" now marks a specific occurrence (instance), since the same exercise
@@ -422,6 +427,7 @@ export interface ServerSession {
     sessionExerciseId: number | null;
     exerciseId: string;
     equipmentId: string | null;
+    equipmentType?: string | null;
     setIndex: number;
     setType: "warmup" | "working";
     load: string;
@@ -521,6 +527,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       exerciseId: s.exerciseId,
       exerciseName: nameOf(s.exerciseId),
       equipmentId: s.equipmentId,
+      equipmentType: s.equipmentType ?? null,
       setIndex: s.setIndex,
       setType: s.setType,
       load: Number(s.load),
@@ -582,6 +589,8 @@ export interface LogSetInput {
   loadEntered?: number | null;
   builtinOffset?: number | null;
   equipmentLabel?: string | null;
+  equipmentType?: string | null;
+  equipmentBuiltInWeight?: number | null;
 }
 
 // Estimated seconds a set takes: ~3.5s per rep. Only used to back the rest
@@ -644,6 +653,8 @@ export async function logSet(input: LogSetInput): Promise<SessionSet> {
     loadEntered: input.loadEntered ?? null,
     builtinOffset: input.builtinOffset ?? null,
     equipmentLabel: input.equipmentLabel ?? null,
+    equipmentType: input.equipmentType ?? null,
+    equipmentBuiltInWeight: input.equipmentBuiltInWeight ?? null,
     serverId: null,
     syncState: "pending_create",
   };
@@ -663,6 +674,7 @@ export async function editSet(
     load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working";
     restSeconds?: number | null; restSource?: RestSource | null; dropGroupId?: string | null;
     side?: SetSide | null; loadEntered?: number | null; builtinOffset?: number | null;
+    equipmentId?: string | null; equipmentLabel?: string | null; equipmentType?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -1006,6 +1018,8 @@ async function runSync(): Promise<SyncResult> {
             exerciseId: row.exerciseId,
             equipmentId: row.equipmentId,
             equipmentLabel: row.equipmentLabel ?? null,
+            equipmentType: row.equipmentType ?? null,
+            equipmentBuiltInWeight: row.equipmentBuiltInWeight ?? null,
             setIndex: row.setIndex,
             setType: row.setType,
             load: row.load,
@@ -1032,6 +1046,7 @@ async function runSync(): Promise<SyncResult> {
             load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType,
             restSeconds: row.restSeconds ?? null, restSource: row.restSource ?? null,
             dropSetGroup: row.dropGroupId ?? null, side: row.side ?? null,
+            equipmentId: row.equipmentId ?? null, equipmentType: row.equipmentType ?? null,
             loadEntered: row.loadEntered ?? null, builtinOffset: row.builtinOffset ?? null,
           }),
         });

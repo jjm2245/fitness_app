@@ -21,6 +21,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     builtInWeight?: string | null;
     equipmentType?: string | null;
     notes?: string | null;
+    pulleyRatioKind?: string;
   } = {};
 
   const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -44,6 +45,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body?.model !== undefined) updates.model = str(body.model);
   if (body?.equipmentType !== undefined) updates.equipmentType = str(body.equipmentType);
   if (body?.notes !== undefined) updates.notes = str(body.notes);
+  if (body?.pulleyRatioKind !== undefined) {
+    if (!["1:1", "2:1", "other", "unknown"].includes(body.pulleyRatioKind)) return NextResponse.json({ error: "invalid pulleyRatioKind" }, { status: 400 });
+    updates.pulleyRatioKind = body.pulleyRatioKind;
+  }
   if (body?.builtInWeight !== undefined) {
     if (body.builtInWeight === null || body.builtInWeight === "") updates.builtInWeight = null;
     else if (typeof body.builtInWeight === "number" && Number.isFinite(body.builtInWeight)) updates.builtInWeight = body.builtInWeight.toString();
