@@ -971,6 +971,18 @@ describe("refusal path — this device is behind, pull-from-server heals it", ()
     expect(stale?.occurrencesDirty).toBe(true);
     expect(await pendingCount(id)).toBeGreaterThan(0);
 
+    // 4c — chatter gate: once conflicted, further syncs must NOT re-POST the list
+    // (re-POSTing is a dead end until Pull). Count occurrence POSTs across a sync.
+    let occPosts = 0;
+    const prev = globalThis.fetch;
+    globalThis.fetch = (async (url: string, opts?: RequestInit) => {
+      if (url === "/api/session-exercises" && (opts?.method ?? "GET") === "POST") occPosts += 1;
+      return (prev as typeof fetch)(url as never, opts);
+    }) as typeof fetch;
+    await sync();
+    globalThis.fetch = prev;
+    expect(occPosts).toBe(0); // gated — no spam
+
     // The opposite heal: pull the server's authoritative copy down.
     const server: ServerSession = {
       id, clientSessionId: id, date: "2026-08-01", programDay: "Test day", finishedAt: null,

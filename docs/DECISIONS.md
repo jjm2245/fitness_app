@@ -1685,3 +1685,26 @@ in 15 lb jumps; a Smith in 10; dumbbells in 5). Clean end state: the adapter
 passes an increment from the equipment instance into the core, so core stops
 keying on `load_type` entirely and becomes fully equipment-agnostic. Deferred
 (not lost) — do when the equipment model carries a per-unit increment field.
+
+### Part 4 — cleanup
+- **4a (dead code):** removed the legacy `completed` IndexedDB store's live refs —
+  the mirror write in `setOccurrenceCompleted` and the delete-cleanups in
+  `deleteLocalSession` + `removeOccurrence`. Completion reads come from the
+  occurrence (`getCompletedInstances`). The store *definition* is retained (empty,
+  never touched, marked deprecated) per the additive-migration rule — existing v4
+  devices keep a consistent schema; nothing reads or writes it.
+- **4c (conflict chatter):** the occurrence sync loop (both passes) now skips a
+  session already flagged `occurrenceConflict` — re-POSTing local is a dead end
+  until the user Pulls, so it no longer spams the POST every sync. First-time
+  detection still runs (flag starts false); Pull (rehydrate) clears the flag and
+  normal sync resumes. Test asserts zero occurrence POSTs on a post-conflict sync.
+- **4d (set-number gaps):** **no change needed** — the UI never renders per-set
+  numbers (rows show `load × reps` + effort/side/rest only), so `set_index` gaps
+  are invisible; `max(existing)+1` already prevents new duplicates. Adding visible
+  contiguous numbers would be a feature, not a fix — not built.
+- **4e (historical rest migration audit):** **verified, nothing wrong.** The
+  pre-fix model already stored rest *on the set being logged* (restBefore-shaped),
+  so there is no off-by-one; migration 0018 only nulled phantom first-set-of-
+  occurrence `derived` rests. On prod there were **zero** `derived` rests (rest
+  sources: 19 `user`, 14 null) — 0018 was a no-op there and no surviving rest is
+  misattributed. Confirmed `first-set derived = 0` post-0018.

@@ -182,6 +182,9 @@ export function migrateSessionDb(db: IDBPDatabase<SessionDB>, oldVersion: number
     const sets = db.createObjectStore("sets", { keyPath: "localId", autoIncrement: true });
     sets.createIndex("by-session", "sessionId");
     sets.createIndex("by-instance", "instanceId");
+    // DEPRECATED: completion now lives on the occurrence (`occurrence.completed`,
+    // synced). This store is no longer read or written; the definition is retained
+    // so existing v4 devices keep a consistent schema (additive-migration rule).
     const completed = db.createObjectStore("completed", { keyPath: "instanceId" });
     completed.createIndex("by-session", "sessionId");
     const cardio = db.createObjectStore("cardio", { keyPath: "localId", autoIncrement: true });
@@ -404,7 +407,6 @@ export async function deleteLocalSession(id: string): Promise<void> {
   for (const s of await db.getAllFromIndex("sets", "by-session", id)) if (s.localId != null) await db.delete("sets", s.localId);
   for (const c of await db.getAllFromIndex("cardio", "by-session", id)) if (c.localId != null) await db.delete("cardio", c.localId);
   for (const o of await db.getAllFromIndex("occurrences", "by-session", id)) await db.delete("occurrences", o.instanceId);
-  for (const f of await db.getAllFromIndex("completed", "by-session", id)) await db.delete("completed", f.instanceId);
 }
 
 // Offline-safe session delete (Part 3a). The local rows go immediately; a
@@ -768,7 +770,6 @@ export async function setOccurrenceCompleted(sessionId: string, instanceId: stri
   const db = await getDb();
   const occ = await db.get("occurrences", instanceId);
   if (occ) await db.put("occurrences", { ...occ, completed, synced: false });
-  await db.put("completed", { instanceId, sessionId, completed }); // legacy mirror
   await markOccurrencesDirty(sessionId); // push the checked state to the server
 }
 
@@ -852,7 +853,6 @@ export async function moveOccurrence(sessionId: string, instanceId: string, dir:
 export async function removeOccurrence(sessionId: string, instanceId: string): Promise<void> {
   const db = await getDb();
   await db.delete("occurrences", instanceId);
-  await db.delete("completed", instanceId);
   for (const s of await db.getAllFromIndex("sets", "by-instance", instanceId)) {
     // A synced set needs a server delete; an unsynced one can just vanish.
     if (s.serverId != null) await db.put("sets", { ...s, syncState: "pending_delete" });
@@ -1066,7 +1066,11 @@ async function runSync(): Promise<SyncResult> {
   }
   for (const s of allSessions) {
     const occs = occBySession.get(s.id) ?? [];
-    const needsSync = s.occurrencesDirty || occs.some((o) => !o.synced);
+    // A session in `occurrenceConflict` is a dead end for re-POSTing local (the
+    // server holds sets this device lacks) — retrying every sync just spams the
+    // POST until the user Pulls. Skip it; the badge already says "Pull from
+    // server". Pull (rehydrate) clears the flag and normal sync resumes.
+    const needsSync = (s.occurrencesDirty || occs.some((o) => !o.synced)) && !s.occurrenceConflict;
     if (!needsSync) continue;
     try {
       const clean = await pushOccurrences(s, occs);
@@ -1176,7 +1180,11 @@ async function runSync(): Promise<SyncResult> {
   // sets/cardio were just deleted above, so the row is now empty — re-POST so it
   // prunes and the flag clears (heals a legit remove-with-sets in one sync).
   for (const s of await db.getAll("sessions")) {
-    if (!s.occurrencesDirty) continue;
+    // Skip already-conflicted sessions — they've been diagnosed as stale-this-
+    // device and re-POSTing again just spams until Pull (the first pass that set
+    // the flag already ran). A fresh session (conflict still false) runs here so
+    // the conflict can be detected once.
+    if (!s.occurrencesDirty || s.occurrenceConflict) continue;
     const occs = await db.getAllFromIndex("occurrences", "by-session", s.id);
     try {
       const clean = await pushOccurrences(s, occs);
