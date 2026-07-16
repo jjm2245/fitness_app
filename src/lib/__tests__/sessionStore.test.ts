@@ -7,6 +7,7 @@ import {
   editSet,
   deleteSet,
   getSessionSets,
+  healSingletonDropGroups,
   finishSession,
   editSessionMeta,
   getSession,
@@ -290,9 +291,11 @@ describe("drop sets — linked rows, shared group + set number", () => {
     expect(drop.setIndex).toBe(1); // shares the parent's number, not 2
     expect(drop.dropGroupId).toBe("grp-1");
 
-    // A normal set after the drop still numbers from the live count.
+    // A normal set after the drop is set 2 — the drop shared set 1's number, so
+    // it must NOT consume a set slot (the old count+1 wrongly made this 3, i.e.
+    // a drop inflated every later set number). max(existing)+1 = 2, correct.
     const next = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 });
-    expect(next.setIndex).toBe(3); // three live rows exist
+    expect(next.setIndex).toBe(2); // drop didn't bump the numbering
 
     const r = await sync();
     expect(r.created).toBe(3);
@@ -679,6 +682,33 @@ describe("occurrences — ordered, repeats, reorder, aggregated name (v2)", () =
     expect(firstSets[0].setIndex).toBe(1);
     expect(secondSets).toHaveLength(1);
     expect(secondSets[0].setIndex).toBe(1);
+  });
+
+  it("heals an orphaned singleton drop group but leaves a real (>=2) group alone", async () => {
+    const { id, date, inst } = await newSession();
+    const orphan = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 });
+    await editSet(orphan.localId!, { dropGroupId: "orphan-grp" }); // legacy: tagged but no segment
+    const parent = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 120, dropGroupId: "real-grp" });
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 80, dropGroupId: "real-grp", parentSetIndex: parent.setIndex });
+
+    const healed = await healSingletonDropGroups(id);
+    expect(healed).toBe(1);
+    const sets = await getSessionSets(id);
+    expect(sets.find((s) => s.localId === orphan.localId)?.dropGroupId ?? null).toBeNull(); // orphan cleared
+    expect(sets.filter((s) => s.dropGroupId === "real-grp")).toHaveLength(2); // real drop untouched
+  });
+
+  it("does not duplicate a set index after a middle set is deleted (max+1, not count+1)", async () => {
+    const { id, date, inst } = await newSession();
+    const a = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 100 }); // idx 1
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 105 }); // idx 2
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 110 }); // idx 3
+    await deleteSet(a.localId!); // remove a MIDDLE-ish set → live count drops to 2
+    const next = await logSet({ ...baseInput, sessionId: id, instanceId: inst, date, load: 115 });
+    // count+1 would have produced 3 again (dup). max+1 gives 4 — unique.
+    expect(next.setIndex).toBe(4);
+    const indices = (await getSessionSets(id)).map((s) => s.setIndex);
+    expect(new Set(indices).size).toBe(indices.length); // no duplicates
   });
 });
 

@@ -1554,3 +1554,44 @@ sets the date/time, recorded as THEIR input.
   re-sorted to "Jul 14 · 5:00 PM", badge drained. 125 tests (4 new: edit→PATCH
   drain, 404-retry, finish-never-overwrites, user-cleared stays null).
 - **Prod:** migrated 20→21 (additive nullable column; logs 2→2, sets 33→33).
+
+## Post-session data fixes: phantom drops, offset gap, duplicate set index
+
+Three issues found in the user's real prod session (read-only diagnosis first).
+
+### Phantom drop-set tags (bug)
+`startDrop` ("+ Drop") tagged the PARENT set with a group id immediately on tap,
+before any segment was committed. Tapping "+ Drop" then not adding a segment left
+the parent alone in a group — a singleton, which the UI never renders as a drop
+(needs ≥2), so it looked normal but the stray tag persisted (3 in prod: Machine
+Bench set 3, Ab Crunch set 2, Rotary set 1). Fixes:
+- **Code:** the parent is now tagged in `addDrop`, atomically with the committed
+  segment — a singleton can no longer be created.
+- **Durability:** the set PATCH re-sends `dropSetGroup` from the local row, so a
+  stale phone could re-push the tag after a prod cleanup. Added
+  `healSingletonDropGroups(sessionId)` (runs on log-page load): nulls any
+  persisted singleton group (only legacy data can be a singleton now), syncing
+  the clear idempotently. Self-heals every device, not just prod.
+- **Prod:** nulled the 3 singletons (before/after shown).
+
+### Duplicate set index (bug)
+`setIndex = live.length + 1` collided after a middle set was deleted (delete set
+3 of 4 → count 3 → next 4 duplicates the old 4) — the Rotary torso occurrence
+read `1,2,4,4,5,6`. Now `max(existing setIndex)+1` (a harmless gap beats a
+duplicate). Incidental correctness win: a drop segment no longer inflates later
+set numbers (it shares the parent's, and max+1 continues from the real max) — the
+existing drop test updated from 3→2. Prod re-sequenced `1,2,4,4,5,6 → 1,2,3,4,5,6`
+(cosmetic; volume reads load×reps, never the index).
+
+### Built-in offset — gap, not corruption (to propose)
+"Leverage Incline Chest Press" is seeded `free_weight` → suggestEquipmentType →
+"dumbbell" (zero offset) → the "+ built-in" field is hidden. The offset field
+lives ONLY on the add-set form (affects the next set), and there is NO offset
+editor on an already-logged set — so a built-in can't be corrected after the
+fact, and changing the add-form value doesn't touch logged rows (correct, but
+confusing). Prod shows builtin_offset null / load 100 on all three sets — no
+corruption, just no way to add the carriage weight retroactively. NOT auto-fixed:
+whether an existing `load` already includes the carriage or not is the user's
+call (75+25 vs 100+25). Proposed: a built-in offset editor on the logged-set row
+that edits entered + offset with the transparent total shown, user-controlled —
+awaiting the user's confirmation of the entered-vs-total semantics before build.

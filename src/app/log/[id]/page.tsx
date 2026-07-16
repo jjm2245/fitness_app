@@ -12,6 +12,7 @@ import {
   editSet,
   deleteSet,
   getSessionSets,
+  healSingletonDropGroups,
   getCompletedInstances,
   setOccurrenceCompleted,
   getSession,
@@ -731,12 +732,11 @@ function StrengthCard({
   const [dropLoad, setDropLoad] = useState("");
   const [dropReps, setDropReps] = useState(8);
   async function startDrop(parent: SessionSet) {
-    let groupId = parent.dropGroupId ?? null;
-    if (!groupId) {
-      groupId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `g_${Date.now().toString(36)}`;
-      await editSet(parent.localId!, { dropGroupId: groupId }); // pending_update if synced
-      onSessionChanged();
-    }
+    // Assign a group id in memory only — do NOT tag the parent yet. Tagging on
+    // tap left an orphaned singleton drop group on the parent whenever "+ Drop"
+    // was tapped but no segment committed (looked normal in the UI, but the tag
+    // persisted). The parent is tagged in addDrop, atomically with the segment.
+    const groupId = parent.dropGroupId ?? (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `g_${Date.now().toString(36)}`);
     setDropFor({ ...parent, dropGroupId: groupId });
     setDropLoad(""); // weight deliberately blank — you just stripped it
     setDropReps(parent.reps);
@@ -748,6 +748,9 @@ function StrengthCard({
     if (!Number.isFinite(l) || l < 0) return setError("Drop load can't be negative.");
     if (!Number.isFinite(dropReps) || dropReps < 1) return setError("Reps must be at least 1.");
     setError(null);
+    // Tag the parent now — only once a real segment exists, so a group is never
+    // left a singleton (re-setting the same id when stacking drops is harmless).
+    if (dropFor.dropGroupId) await editSet(dropFor.localId!, { dropGroupId: dropFor.dropGroupId });
     await logSet({
       sessionId,
       instanceId: dropFor.instanceId, // drops inherit the parent's occurrence
@@ -1326,6 +1329,7 @@ export default function LogSessionPage() {
   const [paletteOpen, setPaletteOpen] = useState(true);
 
   const refreshSession = useCallback(async () => {
+    await healSingletonDropGroups(sessionId); // clear legacy stray "+ Drop" tags (idempotent)
     const [occ, sets, cardio, done, p, s] = await Promise.all([
       listOccurrences(sessionId), getSessionSets(sessionId), getSessionCardio(sessionId),
       getCompletedInstances(sessionId), pendingCount(sessionId), getSession(sessionId),

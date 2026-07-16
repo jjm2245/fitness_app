@@ -649,7 +649,10 @@ export async function logSet(input: LogSetInput): Promise<SessionSet> {
   // number their sets from 1. Drop segments share the parent's number instead.
   const existing = await db.getAllFromIndex("sets", "by-instance", input.instanceId);
   const live = existing.filter((s) => s.syncState !== "pending_delete");
-  const setIndex = input.parentSetIndex ?? live.length + 1;
+  // One past the highest existing index — NOT live.length+1, which collides when
+  // a middle set was deleted (delete set 3 of 4 → count 3 → next 4 duplicates the
+  // old 4). max+1 leaves a harmless gap instead of a duplicate set number.
+  const setIndex = input.parentSetIndex ?? live.reduce((m, s) => Math.max(m, s.setIndex), 0) + 1;
 
   const loggedAt = new Date().toISOString();
   // Rest is an EDGE between sets of the same occurrence, stored as restBefore
@@ -702,6 +705,27 @@ export async function getSessionSets(sessionId: string): Promise<SessionSet[]> {
   const db = await getDb();
   const rows = await db.getAllFromIndex("sets", "by-session", sessionId);
   return rows.filter((s) => s.syncState !== "pending_delete").sort((a, b) => (a.localId ?? 0) - (b.localId ?? 0));
+}
+
+// Self-heal orphaned singleton drop groups (a drop set needs ≥2 members). The
+// old "+ Drop" flow tagged the parent on tap, so tapping without committing a
+// segment left the parent alone in a group — invisible in the UI but a stray
+// tag that the set PATCH would re-push. With the fixed flow a persisted
+// singleton can only be legacy data, so nulling it on load is always safe; the
+// cleared tag syncs (idempotently) to the server. Returns how many it healed.
+export async function healSingletonDropGroups(sessionId: string): Promise<number> {
+  const db = await getDb();
+  const rows = (await db.getAllFromIndex("sets", "by-session", sessionId)).filter((s) => s.syncState !== "pending_delete");
+  const count = new Map<string, number>();
+  for (const s of rows) if (s.dropGroupId) count.set(s.dropGroupId, (count.get(s.dropGroupId) ?? 0) + 1);
+  let healed = 0;
+  for (const s of rows) {
+    if (s.dropGroupId && count.get(s.dropGroupId) === 1 && s.localId != null) {
+      await editSet(s.localId, { dropGroupId: null });
+      healed += 1;
+    }
+  }
+  return healed;
 }
 
 export async function editSet(
