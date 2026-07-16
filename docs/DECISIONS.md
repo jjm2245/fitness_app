@@ -1516,3 +1516,15 @@ load input, untouched. Verified per-type in-app.
 "machines" copy fully renamed in /equipment + the exercises panel (type labels
 like "Smith machine" are correct and kept); the add-unit modal fits at 375px
 (flex inputs got min-width:0 / wrap; verified 0 overflowing elements).
+
+### Prod time correction executed (approved) + follow-up flagged
+Prod: exactly 1 row — session 3 first_finished_at "Jul 15 10:47 PM" → NULL
+(rule B; its original sets predate logged_at so rule A had nothing). The list
+now shows "Jul 14" with no time — an honest blank, never an invented value.
+Local dev run also surfaced the UTC date-shift bug live in old dev data (an
+8 PM session filed to the next day) — the todayIso fix stops new occurrences.
+**Flagged for next batch (user-accepted):** editable session date/time,
+recorded as user-provided (source-tagged like rest 'user'), so mornings-after
+logging and this session's ~5 PM Jul-14 truth can be set BY the user —
+traceable input, not a system guess. Medium change (column + session-meta sync
+path + PATCH + UI) — deliberately not rushed into this batch.
