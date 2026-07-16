@@ -1595,3 +1595,29 @@ whether an existing `load` already includes the carriage or not is the user's
 call (75+25 vs 100+25). Proposed: a built-in offset editor on the logged-set row
 that edits entered + offset with the transparent total shown, user-controlled —
 awaiting the user's confirmation of the entered-vs-total semantics before build.
+
+## Built-in offset: persistence + one-machine-one-offset (user's model)
+
+Two related offset issues from real use, now fixed per the user's decision (an
+exercise is one machine with one offset; the offset adds on top and applies to
+every set — you don't change units mid-exercise).
+
+- **Persistence (unspecified units went blank):** the offset field only ever
+  re-derived from the unit/type default, so for an UNSPECIFIED unit (no unit row
+  to store it) it reset to blank on re-entry. Now it reads the offset back from
+  the occurrence's own logged sets (`builtin_offset`), preferring: named unit's
+  stored weight → the occurrence's stored offset → the type default. An
+  `offsetTouched` guard stops the async re-derive from clobbering a value you're
+  mid-edit.
+- **Apply across the board:** a new "apply +N to all M sets" button pushes the
+  current offset onto every set of the exercise — total = entered + offset, with
+  the ENTERED value preserved (back-derived from an existing total for legacy
+  sets, so `100` becomes `entered 100 + offset 25 = 125`). Explicit tap (it
+  rewrites logged totals, never silent); for a named unit it also stores the
+  offset as that unit's default. The arithmetic is a shared pure helper
+  (`offsetPatch`, `equipment.ts`) used by the UI AND its tests so it can't drift.
+- **Not browser-click-verified this round:** the in-app browser tool can't take
+  the dev auth cookie (httpOnly) and the passcode isn't entered into a login
+  field (credential rule), so the offset flow is covered by unit tests
+  (`offsetPatch` add/re-apply/clear) + typecheck/build rather than a driven
+  click-through. Flagged for the user to eyeball on the phone.

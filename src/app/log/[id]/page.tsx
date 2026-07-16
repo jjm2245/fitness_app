@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import styles from "../log.module.css";
 import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { prettyDayName } from "@/lib/labels";
-import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
+import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import {
   logSet,
   editSet,
@@ -583,19 +583,31 @@ function StrengthCard({
   // TYPE-LEVEL defaults are UNCONFIRMED until once-confirmed per exercise
   // (effOffset stays 0 until then). plate_loaded default is unknown (null):
   // prompted, never guessed.
-  const defaultOffset = selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight) : typeDef.defaultOffset;
+  // The offset persists ON the occurrence's sets (builtin_offset). Read it back
+  // so re-entering the session shows what you set — critical for an UNSPECIFIED
+  // unit, which has no unit row to store it (the field had been resetting blank).
+  const occStoredOffset = (() => {
+    const st = sessionSets.find((x) => x.instanceId === ex.instanceId && x.builtinOffset != null);
+    return st?.builtinOffset ?? null;
+  })();
+  const defaultOffset = selectedUnit?.builtInWeight != null ? Number(selectedUnit.builtInWeight)
+    : occStoredOffset != null ? occStoredOffset
+    : typeDef.defaultOffset;
   const [offsetInput, setOffsetInput] = useState<string>(defaultOffset != null ? String(defaultOffset) : "");
+  const [offsetTouched, setOffsetTouched] = useState(false);
   const [offsetConfirmed, setOffsetConfirmed] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem(offsetOkKey(ex.exerciseId, equipType)) != null
   );
   useEffect(() => {
-    // Re-derive the pre-fill + confirmation whenever the type or unit changes.
+    // Re-derive the pre-fill when the type/unit changes OR the stored offset
+    // arrives (async set-load) — but never clobber a value you're mid-edit.
     (async () => {
+      if (offsetTouched) return;
       setOffsetInput(defaultOffset != null ? String(defaultOffset) : "");
       setOffsetConfirmed(localStorage.getItem(offsetOkKey(activeExercise.id, equipType)) != null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equipType, resolvedUnitId, activeExercise.id]);
+  }, [equipType, resolvedUnitId, activeExercise.id, occStoredOffset]);
   const offsetRelevant =
     typeDef.defaultOffset !== 0 || (selectedUnit?.builtInWeight != null && Number(selectedUnit.builtInWeight) !== 0);
   const offsetNum = offsetInput.trim() !== "" && Number.isFinite(Number(offsetInput)) ? Number(offsetInput) : 0;
@@ -612,6 +624,7 @@ function StrengthCard({
     setEquipType(t);
     localStorage.setItem(lastTypeKey(activeExercise.id), t);
     setEquipmentId(UNSPECIFIED_UNIT); // unit selection resets with the type
+    setOffsetTouched(false); // let the new type's default/stored offset pre-fill
   }
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
@@ -722,6 +735,34 @@ function StrengthCard({
     if (resolvedUnitId) localStorage.setItem(lastEquipmentKey(activeExercise.id), resolvedUnitId);
     // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
     if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
+    onSessionChanged();
+  }
+
+  // Apply the current built-in offset to EVERY logged set of this exercise — one
+  // machine, one offset (the user's model: not changing units mid-exercise). Each
+  // set's total = its entered value + the offset; the entered value is preserved
+  // (back-derived from an existing total on first application). Explicit, never
+  // silent — this rewrites logged totals, so it's a deliberate tap. For a named
+  // unit it also becomes that unit's stored default (remembered next time).
+  async function applyOffsetToOccurrence() {
+    const off = offsetNum;
+    for (const st of loggedSets) {
+      await editSet(st.localId!, {
+        ...offsetPatch(st, off), // shared with tests — the arithmetic can't drift
+        equipmentId: resolvedUnitId,
+        equipmentLabel: selectedUnit?.label ?? null,
+        equipmentType: equipType,
+      });
+    }
+    if (selectedUnit) {
+      try {
+        await fetch(`/api/machines/${encodeURIComponent(selectedUnit.id)}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ builtInWeight: off }),
+        });
+      } catch { /* offline — each set still carries the offset */ }
+    }
+    confirmOffset(off);
     onSessionChanged();
   }
 
@@ -879,7 +920,7 @@ function StrengthCard({
         </label>
         {contextBound && (
           <label title="Which unit — the same stack number means different resistance on different units, so each unit tracks its own lane. 'Unspecified' is a generic unit of this type (its own lane, not the free-weight lane).">
-            <select value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId} onChange={(e) => setEquipmentId(e.target.value)}>
+            <select value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId} onChange={(e) => { setEquipmentId(e.target.value); setOffsetTouched(false); }}>
               <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
               {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
             </select>
@@ -889,12 +930,17 @@ function StrengthCard({
         {offsetRelevant && (
         <label style={{ fontSize: 13, opacity: 0.9 }} title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged. Weight YOU add (belt, vest) goes in the normal load input.">
           + built-in{" "}
-          <input type="number" value={offsetInput} onChange={(e) => { setOffsetInput(e.target.value); if (!offsetConfirmed) confirmOffset(Number(e.target.value) || 0); }} placeholder={typeDef.defaultOffset == null ? "?" : "lb"} style={{ width: 48 }} />
+          <input type="number" value={offsetInput} onChange={(e) => { setOffsetTouched(true); setOffsetInput(e.target.value); if (!offsetConfirmed) confirmOffset(Number(e.target.value) || 0); }} placeholder={typeDef.defaultOffset == null ? "?" : "lb"} style={{ width: 48 }} />
         </label>
         )}
         {offsetNeedsConfirm && (
           <button type="button" onClick={() => confirmOffset(offsetNum)} className={styles.secondaryBtn} style={{ borderColor: "#a8741a", color: "#e0b566" }} title="A default offset is suggested but NOT applied until you confirm it — a wrong offset silently corrupts every set.">
             apply +{offsetNum} {typeDef.label.toLowerCase()}? ✓
+          </button>
+        )}
+        {offsetRelevant && !offsetNeedsConfirm && loggedSets.length > 0 && offsetNum !== (occStoredOffset ?? 0) && (
+          <button type="button" onClick={applyOffsetToOccurrence} className={styles.secondaryBtn} style={{ borderColor: "#6ea8fe", color: "#9bc0ff" }} title="One machine, one offset: apply this built-in to every set of this exercise. Each total becomes entered + offset (your entered numbers are kept).">
+            apply +{offsetNum} to all {loggedSets.length} set{loggedSets.length === 1 ? "" : "s"}
           </button>
         )}
         {offsetRelevant && typeDef.defaultOffset == null && offsetInput.trim() === "" && (

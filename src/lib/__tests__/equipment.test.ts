@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, suggestEquipmentType } from "../equipment";
+import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType } from "../equipment";
 
 describe("equipment registry (3b) — never invent precision", () => {
   it("standardized tools have real defaults; unit-specific ones are unknown or weak-flagged", () => {
@@ -78,5 +78,20 @@ describe("core generality + pulley-never-in-math (structural guards)", () => {
     for (const p of ["src/lib/coreAdapters.ts", "src/app/api/progression/route.ts", "src/app/api/exercises/[id]/last-session/route.ts"]) {
       expect(read(p).includes("pulleyRatio")).toBe(false);
     }
+  });
+});
+
+describe("offsetPatch — one machine, one offset applied across the occurrence", () => {
+  it("adds the offset on top, preserving the entered value (back-derived for legacy sets)", () => {
+    // A pre-offset set (loadEntered null): the stored 100 was what the user keyed.
+    expect(offsetPatch({ load: 100 }, 25)).toEqual({ load: 125, loadEntered: 100, builtinOffset: 25 });
+  });
+  it("re-applying a new offset keeps the entered value, only the total moves (no drift)", () => {
+    const once = offsetPatch({ load: 100 }, 25); // {125, 100, 25}
+    const twice = offsetPatch({ load: once.load, loadEntered: once.loadEntered, builtinOffset: once.builtinOffset }, 30);
+    expect(twice).toEqual({ load: 130, loadEntered: 100, builtinOffset: 30 });
+  });
+  it("off=0 clears the offset back to the entered value", () => {
+    expect(offsetPatch({ load: 125, loadEntered: 100, builtinOffset: 25 }, 0)).toEqual({ load: 100, loadEntered: null, builtinOffset: null });
   });
 });

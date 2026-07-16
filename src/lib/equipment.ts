@@ -85,3 +85,22 @@ export function suggestEquipmentType(loadType: string, exerciseName: string): Eq
     }
   }
 }
+
+// Recompute a set's stored fields when a built-in offset is applied to the whole
+// occurrence (one machine, one offset). The ENTERED value (what the user keys —
+// stack/plate number) is preserved: for a set that predates offsets it's
+// back-derived from its existing total (total − current offset). The stored
+// total the core reads becomes entered + offset. off=0 clears the offset,
+// leaving the total at the entered value. Shared by the log UI and its tests so
+// the arithmetic can't drift between them.
+export function offsetPatch(
+  set: { load: number; loadEntered?: number | null; builtinOffset?: number | null },
+  off: number
+): { load: number; loadEntered: number | null; builtinOffset: number | null } {
+  const entered = set.loadEntered ?? set.load - (set.builtinOffset ?? 0);
+  return {
+    builtinOffset: off !== 0 ? off : null,
+    loadEntered: off !== 0 ? entered : null,
+    load: entered + off,
+  };
+}
