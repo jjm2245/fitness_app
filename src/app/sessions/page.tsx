@@ -26,6 +26,7 @@ interface ServerSession {
   id: string;
   date: string;
   finishedAt: string | null;
+  firstFinishedAt: string | null;
   programDay: string | null;
   exerciseCount: number;
   description: string;
@@ -36,6 +37,8 @@ interface Row {
   id: string;
   date: string;
   finishedAt: string | null;
+  // Stable first-finish instant — display/sort anchor (never re-stamped).
+  firstFinishedAt: string | null;
   label: string;
   exerciseCount: number;
   inProgress: boolean;
@@ -54,14 +57,19 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// The displayed date comes from the STABLE anchors: the session's `date`
+// (creation day, never rewritten) + the time-of-day of the FIRST finish.
+// `finishedAt` re-stamps on every re-finish and must never move a session in
+// the list — editing yesterday's session had been jumping it to "today".
 function whenLabel(row: Row): string {
   if (row.inProgress) return "In progress";
-  if (!row.finishedAt) return row.date;
-  const d = new Date(row.finishedAt);
-  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${d.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  })}`;
+  // Parse the ISO date as LOCAL calendar parts (new Date("YYYY-MM-DD") is UTC
+  // midnight, which renders as the previous day in negative-offset timezones).
+  const [y, m, d] = row.date.split("-").map(Number);
+  const dateLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (!row.firstFinishedAt) return dateLabel;
+  const t = new Date(row.firstFinishedAt);
+  return `${dateLabel} · ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function describe(label: string, n: number): string {
@@ -133,6 +141,7 @@ export default function SessionsPage() {
         id: s.id,
         date: s.date,
         finishedAt: s.finishedAt,
+        firstFinishedAt: s.firstFinishedAt ?? null,
         label: s.programDay ?? "Ad-hoc",
         exerciseCount: s.exerciseCount,
         inProgress: !s.finishedAt,
@@ -166,6 +175,7 @@ export default function SessionsPage() {
         id: s.id,
         date: s.date,
         finishedAt: s.finishedAt,
+        firstFinishedAt: s.firstFinishedAt ?? prev?.firstFinishedAt ?? null,
         label: s.origin,
         exerciseCount: s.exerciseCount,
         inProgress: !s.finishedAt,
@@ -177,11 +187,13 @@ export default function SessionsPage() {
       });
     }
     const all = Array.from(byId.values());
-    // In-progress first, then finished newest-first.
+    // In-progress first, then finished newest-first — by the STABLE anchors
+    // (session date, then first-finish time), never the re-stampable finishedAt.
     return all.sort((a, b) => {
       if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
-      const at = a.finishedAt ?? a.date;
-      const bt = b.finishedAt ?? b.date;
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      const at = a.firstFinishedAt ?? "";
+      const bt = b.firstFinishedAt ?? "";
       return at < bt ? 1 : at > bt ? -1 : 0;
     });
   }, [local, server]);

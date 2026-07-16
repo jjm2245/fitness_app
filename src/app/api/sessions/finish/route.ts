@@ -21,6 +21,9 @@ export async function POST(request: NextRequest) {
   }
 
   const finishedAt = typeof body?.finishedAt === "string" ? new Date(body.finishedAt) : new Date();
+  // The client's original first-finish survives even if that first POST was
+  // lost and only a later re-finish reaches us.
+  const clientFirst = typeof body?.firstFinishedAt === "string" ? new Date(body.firstFinishedAt) : finishedAt;
   const programDay: string | null = typeof body?.programDay === "string" ? body.programDay : null;
 
   const [existing] = clientSessionId
@@ -31,13 +34,18 @@ export async function POST(request: NextRequest) {
   if (existing) {
     [row] = await db
       .update(workoutLogs)
-      .set({ finishedAt, ...(programDay != null ? { programDay } : {}) })
+      .set({
+        finishedAt,
+        // Stamped exactly once — re-finishes never move a session in history.
+        ...(existing.firstFinishedAt == null ? { firstFinishedAt: clientFirst } : {}),
+        ...(programDay != null ? { programDay } : {}),
+      })
       .where(eq(workoutLogs.id, existing.id))
       .returning();
   } else {
     [row] = await db
       .insert(workoutLogs)
-      .values({ date, finishedAt, clientSessionId, programDay })
+      .values({ date, finishedAt, firstFinishedAt: clientFirst, clientSessionId, programDay })
       .returning();
   }
 

@@ -295,6 +295,11 @@ export const workoutLogs = pgTable("workout_logs", {
   // a session in progress has no finish time. Not a one-way door — re-finishing
   // re-stamps it. withTimezone since it's compared/displayed as a real instant.
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  // The FIRST finish instant — stamped once, never rewritten by edits or
+  // re-finishes. The sessions list displays/sorts by `date` + this, so a
+  // session's place in history is stable (re-stamping finished_at had been
+  // jumping edited sessions to "today" — a real-data bug).
+  firstFinishedAt: timestamp("first_finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

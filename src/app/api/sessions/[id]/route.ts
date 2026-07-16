@@ -125,6 +125,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     date: log.date,
     programDay: log.programDay,
     finishedAt: log.finishedAt,
+    firstFinishedAt: log.firstFinishedAt,
     exercises: exercisesOut,
     sets,
     cardio,

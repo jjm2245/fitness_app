@@ -27,6 +27,10 @@ export interface LocalSession {
   programId: number | null;
   createdAt: string; // ISO
   finishedAt: string | null; // ISO instant, stamped on "Finish session"
+  // First finish — stamped once, NEVER rewritten by edits/re-finishes. The
+  // sessions list displays/sorts by `date` + this, so editing an old session
+  // can't move it to "today" (a real-data bug that hit the user's history).
+  firstFinishedAt?: string | null;
   finishSynced: boolean;
   // The ordered occurrence list has an un-pushed change (add/remove/reorder).
   // Dirtiness is a property of the *list*, not of any single occurrence — so it
@@ -302,12 +306,14 @@ export async function listLocalSessionSummaries(): Promise<LocalSessionSummary[]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
-/** Stamp finished. Re-callable — re-stamps, never locks. */
+/** Stamp finished. Re-callable — re-stamps `finishedAt`, never locks; the
+ * stable `firstFinishedAt` is stamped exactly once. */
 export async function finishSession(id: string): Promise<LocalSession | null> {
   const db = await getDb();
   const s = await db.get("sessions", id);
   if (!s) return null;
-  const updated: LocalSession = { ...s, finishedAt: new Date().toISOString(), finishSynced: false };
+  const now = new Date().toISOString();
+  const updated: LocalSession = { ...s, finishedAt: now, firstFinishedAt: s.firstFinishedAt ?? now, finishSynced: false };
   await db.put("sessions", updated);
   return updated;
 }
@@ -393,6 +399,7 @@ export interface ServerSession {
   date: string;
   programDay: string | null;
   finishedAt: string | null;
+  firstFinishedAt?: string | null;
   // Ordered performed occurrences (session_exercises). For a legacy session with
   // no rows, the API synthesizes one occurrence per distinct logged exercise.
   exercises: Array<{
@@ -462,6 +469,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
     programId: null,
     createdAt: server.finishedAt ?? new Date().toISOString(),
     finishedAt: server.finishedAt,
+    firstFinishedAt: server.firstFinishedAt ?? server.finishedAt,
     finishSynced: true,
     occurrencesDirty: false, // hydrated straight from the server = already in sync
   };
@@ -1102,6 +1110,7 @@ async function runSync(): Promise<SyncResult> {
           date: s.date,
           programDay: s.origin,
           finishedAt: s.finishedAt,
+          firstFinishedAt: s.firstFinishedAt ?? s.finishedAt,
         }),
       });
       await db.put("sessions", { ...s, finishSynced: true });

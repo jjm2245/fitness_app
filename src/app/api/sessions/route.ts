@@ -17,10 +17,13 @@ export async function GET() {
       date: workoutLogs.date,
       programDay: workoutLogs.programDay,
       finishedAt: workoutLogs.finishedAt,
+      // The stable first-finish instant — display/sort anchor. finished_at
+      // re-stamps on every re-finish and must never place a session in history.
+      firstFinishedAt: workoutLogs.firstFinishedAt,
     })
     .from(workoutLogs)
     .where(isNotNull(workoutLogs.finishedAt))
-    .orderBy(desc(workoutLogs.finishedAt));
+    .orderBy(desc(workoutLogs.date), desc(workoutLogs.firstFinishedAt));
 
   if (logs.length === 0) return NextResponse.json([]);
 
@@ -66,6 +69,7 @@ export async function GET() {
       clientSessionId: l.clientSessionId,
       date: l.date,
       finishedAt: l.finishedAt,
+      firstFinishedAt: l.firstFinishedAt,
       programDay: l.programDay,
       exerciseCount,
       description: describeSession(l.programDay, exerciseCount),

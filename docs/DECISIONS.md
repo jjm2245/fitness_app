@@ -1359,3 +1359,29 @@ set_logs 30 (7 with machine), exercise_machines 4, **labels backfilled 7/7, 0
 null, 0 orphaned machine refs**} — zero rows touched beyond the label backfill.
 Pushed `2c361de` to main (Vercel auto-deploy); /api/health confirmed on the live
 URL after deploy. (Neon credential rotation remains the user's task.)
+
+## Batch: rests, sides, dates, Equipment model
+
+### 1a — stable session date (real-data bug)
+Editing+re-finishing an old session had been jumping it to "today": the list
+displayed/sorted by `finished_at`, which deliberately re-stamps. Fix: new
+`workout_logs.first_finished_at` (migration 0017, EXPECTED→18), stamped exactly
+once (server keeps `coalesce(existing, clientFirst)`; client `finishSession`
+stamps `firstFinishedAt` once and sends it with every finish POST so a lost
+first POST can't corrupt it). The sessions list now displays **`date` (creation
+day, parsed as local calendar parts) + first-finish time-of-day** and sorts by
+`date` then `firstFinishedAt` — `finished_at` keeps re-stamping for its own
+purposes but nothing user-facing moves. Backfill: `first_finished_at =
+finished_at` where null; the corrupted session's display self-heals because the
+date anchor is `date`, which was never rewritten. **Item B (finishSynced
+re-finish blind spot) is now moot for display**: the only consumer of the exact
+`finished_at` instant was the list, which no longer reads it. Verified in-app:
+re-finished the Jul-13 session (finished_at → Jul 16), list before/after
+identical, still "Jul 13".
+
+### 1b — sides retroactively editable; "L+R" → "Alternating"
+The set editor now shows the L / R / Alternating selector on any set that
+carries a side (PATCH ships the change), so a prior session's mis-tagged side is
+fixable. "L+R" renamed to **Alternating** everywhere (selector + row tag); the
+stored value stays `both` — display-only rename, no data migration. Verified
+in-app: edited a historical `· L` set to `· R`.

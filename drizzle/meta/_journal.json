@@ -120,6 +120,13 @@
       "when": 1784140222685,
       "tag": "0016_gray_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784175216815,
+      "tag": "0017_minor_spot",
+      "breakpoints": true
     }
   ]
 }

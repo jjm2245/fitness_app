@@ -241,11 +241,12 @@ function LoggedSetRow({ set, isDrop, onChanged, onDrop }: { set: SessionSet; isD
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
   const [effort, setEffort] = useState<EffortTag | null>(set.effort);
+  const [side, setSide] = useState<SetSide | null>(set.side ?? null);
   const pending = set.syncState !== "synced";
 
   async function save() {
     if (reps < 1 || load < 0) return;
-    await editSet(set.localId!, { load, reps, effort });
+    await editSet(set.localId!, { load, reps, effort, ...(set.side != null ? { side } : {}) });
     setEditing(false);
     onChanged();
   }
@@ -261,12 +262,23 @@ function LoggedSetRow({ set, isDrop, onChanged, onDrop }: { set: SessionSet; isD
         <span>×</span>
         <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 44 }} />
         <EffortPicker value={effort} onChange={setEffort} />
+        {set.side != null && (
+          // Retroactively correctable — a mis-tagged side from a prior session
+          // is fixable here (the selector shows on any set that carries a side).
+          <span className={styles.effortPicker}>
+            {(["left", "right", "both"] as const).map((s) => (
+              <button key={s} type="button" onClick={() => setSide(s)} className={side === s ? styles.effortActive : styles.effortBtn}>
+                {s === "left" ? "L" : s === "right" ? "R" : "Alternating"}
+              </button>
+            ))}
+          </span>
+        )}
         <button type="button" onClick={save}>Save</button>
         <button type="button" onClick={() => setEditing(false)}>Cancel</button>
       </li>
     );
   }
-  const sideTag = set.side === "left" ? " · L" : set.side === "right" ? " · R" : set.side === "both" ? " · L+R" : "";
+  const sideTag = set.side === "left" ? " · L" : set.side === "right" ? " · R" : set.side === "both" ? " · Alternating" : "";
   // Transparent load math when a built-in offset applied: "90 + 20 = 110 lb".
   const loadText =
     set.builtinOffset != null && set.builtinOffset !== 0 && set.loadEntered != null
@@ -710,7 +722,7 @@ function StrengthCard({
           <span className={styles.effortPicker} title="Unilateral — which side is this set? Auto-alternates after each set.">
             {(["left", "right", "both"] as const).map((s) => (
               <button key={s} type="button" onClick={() => setSide(s)} className={side === s ? styles.effortActive : styles.effortBtn}>
-                {s === "left" ? "L" : s === "right" ? "R" : "L+R"}
+                {s === "left" ? "L" : s === "right" ? "R" : "Alternating"}
               </button>
             ))}
           </span>

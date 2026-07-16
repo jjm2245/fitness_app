@@ -459,6 +459,20 @@ describe("delete semantics", () => {
   });
 });
 
+describe("stable session date (1a) — firstFinishedAt never moves", () => {
+  it("re-finishing re-stamps finishedAt but NOT firstFinishedAt", async () => {
+    mockOnline();
+    const { id } = await newSession();
+    const first = await finishSession(id);
+    expect(first?.firstFinishedAt).toBe(first?.finishedAt); // stamped once, together
+
+    await new Promise((r) => setTimeout(r, 10));
+    const again = await finishSession(id); // the edit-then-re-finish flow
+    expect(again?.finishedAt).not.toBe(first?.finishedAt); // re-stamped (by design)
+    expect(again?.firstFinishedAt).toBe(first?.firstFinishedAt); // STABLE — the list anchor
+  });
+});
+
 describe("finish session", () => {
   it("stamps finish offline and syncs it when back online; re-finishing re-stamps", async () => {
     const { id } = await newSession();
