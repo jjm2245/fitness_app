@@ -1871,3 +1871,31 @@ load-type table remains the one documented impurity). Committed per screen.
   dev server, logged a set, hard-reloaded the dead page — both sets survived
   in IndexedDB and auto-drained green on server restart. 136 tests, clean
   build, docs:check green.
+
+## Shell polish — phase 1.5 (2026-07-17)
+
+Six phone-testing items; five built (one commit each), item 6 proposed only.
+UI-only: no schema/API/sync changes; `src/core/*` untouched.
+
+- **1 — nav overlap (the real bug):** both bars (GlobalNav, SessionBar) went
+  fully opaque (base token + hairline; the 88%-translucent + blur look let
+  content blend through while scrolling) and the in-flow spacers grew
+  64px→80px (+safe-area) — the old spacer was 1px SHORT of the 65px bar. The
+  spacer is the layout-level clearance: in normal flow after {children}, so
+  legacy phase-2/3 screens get it with no per-page padding. Verified on the
+  program editor: last row clear at true bottom, clean clip mid-scroll.
+- **2 — Home card:** dropped "Up next" and the "of N" week target (and the
+  /api/program fetch with them); now "N this week" + "Last · <name>" with no
+  counts. The "Training ›" header row is a real button to /train — Home's
+  card and the Train tab are one thing. Train hub's own card unchanged.
+- **3 — More de-dup (owner call):** Exercises/Equipment rows removed (they
+  live under Train); More keeps the settings placeholder + app version.
+- **4 — session back:** router.back() so the chevron returns to the entry
+  point (Home/Train/History), falling back to History when history.length<=1
+  (fresh load / deep link / standalone PWA). All three round-trips verified.
+  Note: in dev, the Next.js dev-overlay badge sits over the chevron and eats
+  taps — dev-only, absent in prod.
+- **5 — passcode eye toggle:** hidden default, tap-reveal/tap-rehide, 44px,
+  aria-pressed; auth flow untouched.
+- **6 — empty-session husks: proposed, not built** (behavior change, awaiting
+  owner approval — see the session report / next batch).
