@@ -108,6 +108,17 @@
   outline: none;
   border-bottom-color: var(--accent);
 }
+/* Revealed state: the big dot styling (1.6rem + 0.45em tracking + symmetric
+   44px pads that center the dots around the eye) is tuned for masking and
+   clips real text. Revealed text drops to a normal reading size/spacing and
+   reclaims the left pad (only the right pad is load-bearing — the eye sits
+   there), so a reasonable passcode fits fully. */
+.passcodeRow .passcodeRevealed {
+  font-size: 0.95rem;
+  letter-spacing: normal;
+  padding-left: 8px;
+  text-overflow: ellipsis;
+}
 
 .unlock {
   min-height: 50px;

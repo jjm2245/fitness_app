@@ -82,7 +82,7 @@ function LoginForm() {
             autoFocus
             autoComplete="current-password"
             placeholder="••••"
-            className={styles.passcode}
+            className={`${styles.passcode} ${show ? styles.passcodeRevealed : ""}`}
           />
           <button
             type="button"
