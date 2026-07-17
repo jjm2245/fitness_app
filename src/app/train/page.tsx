@@ -6,9 +6,12 @@ import styles from "./train.module.css";
 import { ListCard, ListRow } from "@/components/shell/ListRow";
 import { createSession, listLocalSessionSummaries } from "@/lib/sessionStore";
 
-// Train — the training zone's hub. A compact start card, then navigation rows
-// into the existing pages (History/Programs/Blocks/Exercises/Equipment) with
-// live counts. Pure shell: every destination is a page that already exists.
+// Train — the training zone's hub. A stable start card (no predictive "Up
+// next" — same call as Home, polish round 2), then navigation rows into the
+// existing pages with live counts. Counts load without layout shift: each
+// row keeps a skeleton in its count slot until its own source resolves, the
+// sources are fetched in parallel, and the local store (fast IndexedDB)
+// fills the sessions count ahead of the network.
 
 function todayIso() {
   const d = new Date();
@@ -21,7 +24,6 @@ interface Counts {
   blocks: number | null;
   exercisesTagged: number | null;
   equipment: number | null;
-  upNext: string | null;
 }
 
 export default function TrainPage() {
@@ -32,65 +34,64 @@ export default function TrainPage() {
     blocks: null,
     exercisesTagged: null,
     equipment: null,
-    upNext: null,
   });
   const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
-    // Sessions count merges local (offline-complete) with the server list.
-    const local = await listLocalSessionSummaries().catch(() => []);
-    const ids = new Set(local.filter((s) => s.finishedAt).map((s) => s.id));
-    let lastLabel = "";
-    let dayNames: string[] = [];
-    try {
-      const res = await fetch("/api/sessions");
-      if (res.ok) {
-        const rows: Array<{ id: string; finishedAt: string | null; programDay: string | null }> = await res.json();
-        for (const r of rows) if (r.finishedAt) ids.add(r.id);
-        lastLabel = rows.find((r) => r.finishedAt)?.programDay ?? "";
-      }
-    } catch { /* offline */ }
-    const localLast = local.find((s) => s.finishedAt);
-    if (localLast) lastLabel = localLast.origin || lastLabel;
+    const patch = (p: Partial<Counts>) => setCounts((prev) => ({ ...prev, ...p }));
 
-    let program: string | null = null;
-    try {
-      const res = await fetch("/api/programs");
-      if (res.ok) {
-        const rows: Array<{ splitType: string; active: boolean }> = await res.json();
-        program = rows.find((p) => p.active)?.splitType ?? null;
-      }
-    } catch { /* offline */ }
-    try {
-      const res = await fetch("/api/program");
-      if (res.ok) dayNames = ((await res.json()).days ?? []).map((d: { name: string }) => d.name);
-    } catch { /* offline */ }
+    // Local store first — it answers in milliseconds, so the sessions count
+    // renders ahead of any network response. The server list then unions in
+    // sessions this device doesn't hold (rare; the number only ever grows).
+    const localIds = new Set<string>();
+    const localDone = listLocalSessionSummaries()
+      .then((local) => {
+        for (const s of local) if (s.finishedAt) localIds.add(s.id);
+        patch({ sessions: localIds.size });
+      })
+      .catch(() => {});
 
-    let blocks: number | null = null;
-    try {
-      const res = await fetch("/api/blocks");
-      if (res.ok) blocks = ((await res.json()) as unknown[]).length;
-    } catch { /* offline */ }
-
-    let exercisesTagged: number | null = null;
-    try {
-      const res = await fetch("/api/exercises/manage");
-      if (res.ok) exercisesTagged = ((await res.json()) as Array<{ untagged: boolean }>).filter((e) => !e.untagged).length;
-    } catch { /* offline */ }
-
-    let equipment: number | null = null;
-    try {
-      const res = await fetch("/api/equipment");
-      if (res.ok) equipment = ((await res.json()) as unknown[]).length;
-    } catch { /* offline */ }
-
-    let upNext: string | null = null;
-    if (dayNames.length) {
-      const idx = dayNames.findIndex((n) => (lastLabel ?? "").includes(n));
-      upNext = dayNames[(idx + 1) % dayNames.length] ?? dayNames[0];
-    }
-
-    setCounts({ sessions: ids.size, program, blocks, exercisesTagged, equipment, upNext });
+    // Server sources in parallel; each fills its own row as it lands.
+    await Promise.all([
+      (async () => {
+        try {
+          const res = await fetch("/api/sessions");
+          if (!res.ok) return;
+          const rows: Array<{ id: string; finishedAt: string | null }> = await res.json();
+          await localDone; // union with the local ids, never replace them
+          const ids = new Set(localIds);
+          for (const r of rows) if (r.finishedAt) ids.add(r.id);
+          patch({ sessions: ids.size });
+        } catch { /* offline — local count stands */ }
+      })(),
+      (async () => {
+        try {
+          const res = await fetch("/api/programs");
+          if (!res.ok) return;
+          const rows: Array<{ splitType: string; active: boolean }> = await res.json();
+          patch({ program: rows.find((p) => p.active)?.splitType ?? null });
+        } catch { /* offline */ }
+      })(),
+      (async () => {
+        try {
+          const res = await fetch("/api/blocks");
+          if (res.ok) patch({ blocks: ((await res.json()) as unknown[]).length });
+        } catch { /* offline */ }
+      })(),
+      (async () => {
+        try {
+          const res = await fetch("/api/exercises/manage");
+          if (res.ok)
+            patch({ exercisesTagged: ((await res.json()) as Array<{ untagged: boolean }>).filter((e) => !e.untagged).length });
+        } catch { /* offline */ }
+      })(),
+      (async () => {
+        try {
+          const res = await fetch("/api/equipment");
+          if (res.ok) patch({ equipment: ((await res.json()) as unknown[]).length });
+        } catch { /* offline */ }
+      })(),
+    ]);
   }, []);
 
   useEffect(() => {
@@ -115,15 +116,7 @@ export default function TrainPage() {
       <h1 className={styles.title}>Train</h1>
 
       <section className={styles.startCard}>
-        <span className={styles.upNext}>
-          {counts.upNext ? (
-            <>
-              Up next · <strong>{counts.upNext}</strong>
-            </>
-          ) : (
-            "Ready when you are"
-          )}
-        </span>
+        <span className={styles.upNext}>Ready when you are</span>
         <button type="button" className={styles.startBtn} onClick={start} disabled={starting}>
           {starting ? "Starting…" : "Start session"}
         </button>
@@ -134,6 +127,7 @@ export default function TrainPage() {
           href="/sessions"
           name="History"
           count={n(counts.sessions, "session")}
+          pending={counts.sessions == null}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
@@ -145,6 +139,7 @@ export default function TrainPage() {
           href="/program"
           name="Programs"
           count={counts.program}
+          pending={counts.program == null}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
@@ -156,6 +151,7 @@ export default function TrainPage() {
           href="/blocks"
           name="Blocks"
           count={n(counts.blocks, "block")}
+          pending={counts.blocks == null}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.4" fill="none" />
@@ -169,6 +165,7 @@ export default function TrainPage() {
           href="/exercises"
           name="Exercises"
           count={counts.exercisesTagged == null ? null : `${counts.exercisesTagged} tagged`}
+          pending={counts.exercisesTagged == null}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="1.5" y="5.5" width="2.5" height="5" rx="1" fill="currentColor" />
@@ -181,6 +178,7 @@ export default function TrainPage() {
           href="/equipment"
           name="Equipment"
           count={n(counts.equipment, "unit")}
+          pending={counts.equipment == null}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M8 2v3M8 11v3M2 8h3M11 8h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

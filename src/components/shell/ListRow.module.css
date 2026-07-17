@@ -56,6 +56,31 @@
   white-space: nowrap;
 }
 
+/* Holds the count slot while its source loads — same footprint as a typical
+   count, subtle pulse, so the value landing causes no layout shift. */
+.countSkeleton {
+  width: 64px;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  animation: skeleton 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes skeleton {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .countSkeleton {
+    animation: none;
+  }
+}
+
 .chevron {
   color: var(--text-3);
   flex-shrink: 0;
