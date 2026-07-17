@@ -1946,3 +1946,38 @@ maintenance query (delete unfinished logs with zero occurrences+sets+cardio,
 older than a day) can purge them whenever we next touch prod, rather than
 adding a server sweep now (an API behavior change this session's rules
 exclude).
+
+## Empty-session discard shipped (item 6, 2026-07-17)
+
+Built exactly as approved: `discardSessionIfEmpty` (zero occurrences + zero
+sets + zero cardio + not finished + no metaDirty + no occurrenceConflict →
+route through the existing offline-safe `deleteSession`; anything with
+content is never touched) + `sweepEmptySessions` backstop on History load
+(unfinished, passes the rule, older than 5 min). **One deliberate deviation
+from the proposal:** the primary trigger is the session bar's *back action*,
+not component unmount — React StrictMode's dev double-invoke fires
+unmount+remount on entry, and an unmount discard would eat the session the
+user just started. The back action is the only in-app exit while the nav is
+hidden (finish sets finishedAt → excluded), and gesture/kill exits fall to
+the sweep. 6 regression tests, including the required **"one set = never
+discarded"** (holds even with the sweep's age guard disabled). Verified live
+in-browser: back-out husks vanish; an aged orphan husk swept on History
+load; a fresh session survives the sweep; the finished 0-exercise session
+("Legs + shoulders") survives every sweep.
+
+### Follow-up recorded for the NEXT batch (owner-directed, not yet built)
+Fix husk creation at the source rather than purging on a schedule:
+1. **No-op on empty (API change):** `/api/session-exercises` must NOT create
+   the workout_log row when the posted occurrence list is empty and no row
+   exists — an empty list means nothing can ever reference the row, so
+   creating it is pointless by definition. Same structural-guarantee pattern
+   as cardio-in-its-own-table and the set-bearing prune guard. Kills the
+   add-then-remove server husk at birth.
+2. **One-shot prod purge, once:** with the source fixed, delete existing
+   dormant rows (unfinished + zero occurrences/sets/cardio + older than a
+   day) — a prod write, to be PROPOSED with before/after counts per the
+   standing rule.
+Also carried forward: CSS-specificity conventions added to DESIGN.md (the
+silently-losing single-class override); Train flicker/skeleton accepted
+as-is — no further optimization unless it bothers the owner (then: cache
+last-known counts + revalidate).

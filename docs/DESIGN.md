@@ -83,6 +83,18 @@ tokens in `globals.css`. That's why the old screens already sit on the new
 palette without structural restyle. As each screen gets its phase-2/3 pass,
 move it to the v1 names; when nothing consumes the aliases, delete them.
 
+## CSS module conventions — specificity
+
+Prefer **single-class selectors**. When a compound parent-child rule exists
+(`.passcodeRow .passcode`), a later single-class override (`.passcodeRevealed`)
+**silently loses** — specificity 0-2-0 beats 0-1-0, no error, no warning; the
+fix just doesn't apply (this burned real time in polish round 2). Rules:
+- State/variant overrides must **match the specificity** of the rule they
+  override — if the base is compound, make the override compound too.
+- After adding an override, verify the computed style actually changed
+  (`getComputedStyle` in the console), not just that the class is present.
+This matters most in the phase-2/3 card rebuilds, which will be variant-heavy.
+
 ## Shared shell components (`src/components/shell/`)
 
 `GlobalNav` · `SessionBar` (+ `restTimerBus`, the display-only timer bridge) ·
