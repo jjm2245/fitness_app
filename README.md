@@ -12,7 +12,7 @@ library), and custom-exercise + per-exercise machine management. No LLM/vision,
 no nutrition/recovery/photos yet (deliberately deferred).
 
 **Docs live in [`docs/`](docs/)** — read them at session start:
-[`fitness-agent-spec.md`](docs/fitness-agent-spec.md) (v0.5, source of truth),
+[`fitness-agent-spec.md`](docs/fitness-agent-spec.md) (v0.6, source of truth),
 [`CODEX-ONBOARDING.md`](docs/CODEX-ONBOARDING.md) (vision/philosophy/process),
 [`DECISIONS.md`](docs/DECISIONS.md) (decision log),
 [`CURRENT_STATE.md`](docs/CURRENT_STATE.md) (actual repo state — schema, modules,

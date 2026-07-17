@@ -1803,3 +1803,20 @@ a build-step migration that fails mid-deploy is hard to roll back and leaves pro
 half-migrated with no operator in the loop; with one operator, a supervised
 manual sequence is safer than unsupervisable automation. Referenced from
 CURRENT_STATE §2 and the AGENTS.md doc table.
+
+### Spec v0.6 landed (owner-authored) + drift reconciled
+The owner wrote **v0.6** of `fitness-agent-spec.md` from the drift report and
+handed it over to install (explicitly approved — the "don't touch the spec
+yourself" rule is about never *auto-syncing* intent to code, not about installing
+owner-authored spec text). Committed v0.6 verbatim, then reconciled downstream:
+- **`SPEC-DRIFT.md` reset to a clean slate** — every item it tracked is now folded
+  into v0.6's "What changed in v0.6" section, so there is **no open drift**. The
+  file now documents the clean state + how to append new drift as the build next
+  outruns the spec. (Deferred-but-recorded items — agent layer, recovery/nutrition,
+  form analysis, per-unit increment — are intent, not drift.)
+- **Version pointers bumped v0.5 → v0.6** in `AGENTS.md`, `CODEX-ONBOARDING.md`,
+  `README.md`. DECISIONS' own historical "spec v0.5 §7a" / "diverged from spec
+  v0.5" references were left as accurate history (they describe work done against
+  v0.5 at the time).
+The spec stays human-owned; the drift ritual continues (build outruns spec →
+record in SPEC-DRIFT → owner folds into the next revision → reset).

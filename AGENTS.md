@@ -11,7 +11,7 @@ They live in `docs/`:
 
 | Doc | What it is |
 |---|---|
-| [`docs/fitness-agent-spec.md`](docs/fitness-agent-spec.md) | **The authoritative spec (v0.5) — source of truth.** If your instinct contradicts it, the spec wins; raise it, don't silently deviate. |
+| [`docs/fitness-agent-spec.md`](docs/fitness-agent-spec.md) | **The authoritative spec (v0.6) — source of truth.** If your instinct contradicts it, the spec wins; raise it, don't silently deviate. |
 | [`docs/CODEX-ONBOARDING.md`](docs/CODEX-ONBOARDING.md) | Product vision, architectural philosophy, domain context, and the working process. The *why* that isn't in the code. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Running log of every implementation decision and deviation — the shared contract between agents. **Read at session start; append at session end.** |
 | [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) | The actual repo state (stack, schema, modules, API surface, offline/sync internals, tests, traps). Mechanical facts are auto-generated (`npm run docs:refresh`); re-verify judgment sections if the other agent shipped since. |
