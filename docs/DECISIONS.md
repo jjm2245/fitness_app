@@ -1708,3 +1708,22 @@ keying on `load_type` entirely and becomes fully equipment-agnostic. Deferred
   occurrence `derived` rests. On prod there were **zero** `derived` rests (rest
   sources: 19 `user`, 14 null) — 0018 was a no-op there and no surviving rest is
   misattributed. Confirmed `first-set derived = 0` post-0018.
+
+## Maintenance batch — approvals (2026-07-16)
+
+Owner approved the default batch with two adjustments (2a storage location, 2b
+data-vs-tie-break split). Order below matches the parts.
+
+### 2a — substitution judgment → durable docs (not the table)
+The hand-curated `exercise_substitutions` table is inert (71 rows, 0 resolved;
+the engine computes candidates from pattern+muscle+equipment). Owner's call:
+**don't wire it into the engine** (a second, stale substitution source is the
+drift trap) and **don't leave the judgment in the table** — the table references
+exercises *by name*, and names change (split/merge/rename), so it would silently
+rot. Extracted the only irreproducible asset — the **back-friendly substitution
+judgment** (leg press if the back flares, Pallof as the lumbar-safe rotation,
+bird-dog/glute bridge for back extension, chest-supported row, split-the-hinge
+hamstring work) — into [`SUBSTITUTION-JUDGMENT.md`](SUBSTITUTION-JUDGMENT.md) as
+prose. Recorded there and in CURRENT_STATE §9 that this is **soft preference**;
+hard exclusion is already enforced by the engine's `affectedStructures` +
+`injury_flags` filter. Table retained as documentation-only.

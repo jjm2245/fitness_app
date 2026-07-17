@@ -242,12 +242,15 @@ modules have focused unit tests. No browser/E2E runner.
 
 ## 9. Known gaps / in-flight (hand-written — keep honest)
 
-- **Hand-curated substitutions are mostly inert.** `exercise_substitutions`
+- **Hand-curated substitutions are documentation-only.** `exercise_substitutions`
   carries ~71 candidates but `candidate_exercise_id` is null; the live engine
-  computes candidates from pattern+muscle+equipment instead. The **judgment
-  notes** attached (e.g. "leg press if back flares", Pallof as lumbar-safe
-  rotation) are the real asset and are LLM-material, not core-material. Proposal
-  pending (see DECISIONS).
+  computes candidates from pattern+muscle+equipment instead. The **judgment** in
+  it (back-friendly stand-ins: leg press if back flares, Pallof as the
+  lumbar-safe rotation) was the only irreproducible asset and is now extracted to
+  durable prose in [`SUBSTITUTION-JUDGMENT.md`](SUBSTITUTION-JUDGMENT.md) — the
+  table references exercises by name (which change), so the judgment lives in
+  docs, not the decaying table. Table retained as documentation-only; not wired
+  into the engine (that would create a second, stale substitution source).
 - **`skill_level` is a silent no-op.** The substitution tie-break reads it, but
   no exercise has a value (not seeded) — a permanently-inert ranking term.
   Proposal pending.
