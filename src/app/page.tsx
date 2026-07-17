@@ -23,9 +23,7 @@ interface ServerSessionRow {
 
 interface TrainingSnapshot {
   weekDone: number;
-  weekTarget: number | null; // program day count, if a program exists
-  upNext: string | null;
-  last: { label: string; detail: string } | null;
+  last: string | null; // last finished session's name — no counts (kept honest & quiet)
 }
 
 // LOCAL calendar date (never UTC — evening sessions must not file to tomorrow).
@@ -53,31 +51,22 @@ export default function HomePage() {
   const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
-    // Local store first (offline-complete), server list + program best-effort.
+    // Local store first (offline-complete), server list best-effort.
     const local = await listLocalSessionSummaries().catch(() => []);
     let server: ServerSessionRow[] = [];
-    let dayNames: string[] = [];
     try {
       const res = await fetch("/api/sessions");
       if (res.ok) server = await res.json();
     } catch { /* offline — local is enough */ }
-    try {
-      const res = await fetch("/api/program");
-      if (res.ok) {
-        const p = await res.json();
-        dayNames = (p.days ?? []).map((d: { name: string }) => d.name);
-      }
-    } catch { /* offline */ }
 
     // Merge finished sessions by id — local wins (fresher), server fills gaps.
-    const byId = new Map<string, { date: string; label: string; finishedAt: string | null; detail: string }>();
+    const byId = new Map<string, { date: string; label: string; finishedAt: string | null }>();
     for (const s of server) {
       if (!s.finishedAt) continue;
       byId.set(s.id, {
         date: s.date,
         label: s.programDay?.trim() || "Ad-hoc",
         finishedAt: s.firstFinishedAt ?? s.finishedAt,
-        detail: `${s.exerciseCount} exercise${s.exerciseCount === 1 ? "" : "s"}`,
       });
     }
     for (const s of local) {
@@ -86,7 +75,6 @@ export default function HomePage() {
         date: s.date,
         label: s.origin.trim() || "Ad-hoc",
         finishedAt: s.firstFinishedAt ?? s.finishedAt,
-        detail: s.setCount > 0 ? `${s.setCount} set${s.setCount === 1 ? "" : "s"}` : `${s.exerciseCount} exercise${s.exerciseCount === 1 ? "" : "s"}`,
       });
     }
     const finished = [...byId.values()].sort((a, b) =>
@@ -95,19 +83,7 @@ export default function HomePage() {
 
     const weekStart = weekStartIso();
     const weekDone = finished.filter((s) => s.date >= weekStart).length;
-
-    // "Up next": the program day after the last session's day (cyclic). The
-    // session label can be composite ("Chest + triceps + Abs"), so match by
-    // containment; if nothing matches, the first program day is next.
-    let upNext: string | null = null;
-    if (dayNames.length) {
-      const lastLabel = finished[0]?.label ?? "";
-      const idx = dayNames.findIndex((n) => lastLabel.includes(n));
-      upNext = dayNames[(idx + 1) % dayNames.length] ?? dayNames[0];
-    }
-
-    const last = finished[0] ? { label: finished[0].label, detail: finished[0].detail } : null;
-    setSnap({ weekDone, weekTarget: dayNames.length || null, upNext, last });
+    setSnap({ weekDone, last: finished[0]?.label ?? null });
   }, []);
 
   useEffect(() => {
@@ -135,24 +111,25 @@ export default function HomePage() {
       </header>
 
       <section className={styles.trainingCard}>
-        <div className={styles.trainingHead}>
-          <span className={styles.zoneLabel}>Training</span>
+        {/* The header IS the doorway: Home's training card and the Train tab
+            are one thing, not two features — tapping it goes there. */}
+        <button type="button" className={styles.trainingHead} onClick={() => router.push("/train")}>
+          <span className={styles.zoneLabel}>
+            Training
+            <svg width="6" height="10" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+              <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </span>
           <span className={styles.weekProgress}>
             {snap ? (
-              snap.weekTarget ? (
-                <>
-                  <strong>{snap.weekDone}</strong> of {snap.weekTarget} this week
-                </>
-              ) : (
-                <>
-                  <strong>{snap.weekDone}</strong> this week
-                </>
-              )
+              <>
+                <strong>{snap.weekDone}</strong> this week
+              </>
             ) : (
               "…"
             )}
           </span>
-        </div>
+        </button>
 
         <div className={styles.startWrap}>
           <div className={styles.startGlow} />
@@ -161,18 +138,13 @@ export default function HomePage() {
           </button>
         </div>
 
-        <div className={styles.trainingMeta}>
-          {snap?.upNext && (
+        {snap?.last && (
+          <div className={styles.trainingMeta}>
             <span>
-              Up next · <strong>{snap.upNext}</strong>
+              Last · <strong>{snap.last}</strong>
             </span>
-          )}
-          {snap?.last && (
-            <span>
-              Last · <strong>{snap.last.label}</strong>, {snap.last.detail}
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       <section className={styles.tileGrid}>
