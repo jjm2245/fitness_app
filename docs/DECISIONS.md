@@ -1738,3 +1738,39 @@ unresolvable. **After:** 7 updated, 0 remaining. No load/reps/history touched;
 only the display type tag. The remaining 29 null `equipment_type` rows are
 correctly null (bodyweight / no-equipment sets). Post-backfill distribution:
 selectorized 33, plate_loaded 6, cable 6, dumbbell 3, bodyweight 3, null 29.
+
+### 2b — skill_level: populate the data, keep the tie-break
+Owner override of the earlier "remove the tie-break" recommendation: the inert
+*tie-break* was never the problem — the empty *field* was. Separated the two.
+**Kept** the substitution tie-break (`skillMatchScore` in `core/substitution.ts`,
+unchanged — still neutral on null, so no penalty for unrated pairs). **Populated**
+`exercises.skill_level`:
+- **Library-paired (automated, reproducible):** `seedLibrary.ts` now sets
+  `skillLevel` from free-exercise-db's `level` on every library row + inherits it
+  onto merged curated rows. Prod backfill by `library_id`: **873 rows**.
+- **Curated hand-tags (reproducible):** `seed.ts` gains an optional `skill_level`
+  on `SeedExercise` (COALESCE-guarded on conflict so `db:seed` never wipes a
+  library-inherited value); tagged the obvious simple movements `beginner`
+  (rotary torso, cable bicep/Bayesian curl, cable lateral raise, back extension)
+  in the seed JSON / net-new arrays.
+- **Final prod distribution:** beginner 526, intermediate 293, expert 57, null 4
+  (the 4 are 3 junk test rows + 1 duplicate — correctly neutral).
+
+**Weak-provenance caveat (recorded per owner):** free-exercise-db's `level` is
+**unverified** third-party grading. The tie-break is now *functional* but
+possibly *noisy*. It's low-stakes (only a tie-break, neutral on null). **Watch
+item:** if substitution ranking gets visibly worse, revisit the source rather
+than trust the grade. The real value is future: skill is coaching signal the
+agent layer will want ("don't suggest a Bulgarian split squat to a novice"),
+so populating now beats deleting-and-re-adding.
+
+### Watch item — derived rests have produced nothing on prod
+Surfaced by the 4e audit: prod rest sources are **19 user, 14 null, 0 derived**.
+The rest *derivation* (the plausibility-filtered gap-timer inference) is an entire
+feature that has produced zero real rows — most likely because actual logging
+behavior never generates a derivable gap (batch-logging → <15s → unknown; logging
+after the fact → >8min → unknown), so the plausibility filter correctly fires
+never and the **set-level timer is the real feature**. **No action now** — the
+set-level timer is new; give it real use. **Trigger:** if derived rests are still
+zero after ~2 weeks of logging *with the timer* (~2026-07-30), drop the derivation
+rather than maintain a filter that never fires.

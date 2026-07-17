@@ -251,9 +251,12 @@ modules have focused unit tests. No browser/E2E runner.
   table references exercises by name (which change), so the judgment lives in
   docs, not the decaying table. Table retained as documentation-only; not wired
   into the engine (that would create a second, stale substitution source).
-- **`skill_level` is a silent no-op.** The substitution tie-break reads it, but
-  no exercise has a value (not seeded) — a permanently-inert ranking term.
-  Proposal pending.
+- **`skill_level` populated (provenance is weak).** The substitution tie-break
+  reads it; it's now backfilled from free-exercise-db's `level`
+  (beginner/intermediate/expert) for every library-paired exercise + a few
+  obvious hand-tags (526/293/57; 4 junk/dup rows left null). The tie-break is now
+  functional but the library grading is **unverified** — treat as noisy. Watch:
+  if substitution ranking gets visibly worse, revisit the source (see DECISIONS).
 - **Multi-device divergence.** `hydrateFromServer` no-ops when a local copy
   exists, so the same session open on two devices can diverge; only manual
   Reconcile/Pull heals it. Detect-and-warn design pending (never auto-heal).

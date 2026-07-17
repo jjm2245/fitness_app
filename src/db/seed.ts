@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { muscles, exercises, exerciseMuscles, exerciseSubstitutions, loadTypeEnum, movementPatternEnum } from "./schema";
 import {
@@ -42,6 +42,7 @@ type SeedExercise = {
   rep_range_default?: string;
   in_current_routine?: boolean;
   conditioning_only?: boolean;
+  skill_level?: string;
   notes?: string;
   params?: Record<string, unknown>;
   substitutions?: SeedSubstitution[];
@@ -116,7 +117,7 @@ const SPLIT_VARIANTS: SeedExercise[] = [
     secondary_muscles: [{ muscle: "upper_traps", emphasis: 0.3 }],
     equipment_required: ["cable"], load_type: "cable",
     portable: false, affected_structures: [], unilateral: false, stretch_emphasis: false,
-    in_current_routine: false,
+    in_current_routine: false, skill_level: "beginner",
   },
 ];
 
@@ -181,7 +182,7 @@ const NEW_EXERCISES: SeedExercise[] = [
     secondary_muscles: [{ muscle: "forearms", emphasis: 0.3 }],
     equipment_required: ["cable"], load_type: "cable",
     portable: false, affected_structures: [], unilateral: false, stretch_emphasis: true,
-    in_current_routine: false,
+    in_current_routine: false, skill_level: "beginner",
   },
 ];
 
@@ -217,6 +218,7 @@ async function loadSeed() {
         repRangeDefault: ex.rep_range_default ?? null,
         inCurrentRoutine: ex.in_current_routine ?? false,
         conditioningOnly: ex.conditioning_only ?? false,
+        skillLevel: ex.skill_level ?? null,
         source: (ex.source ?? "curated") as "curated" | "custom",
         notes: ex.notes ?? null,
         params: ex.params ?? null,
@@ -237,6 +239,10 @@ async function loadSeed() {
           repRangeDefault: ex.rep_range_default ?? null,
           inCurrentRoutine: ex.in_current_routine ?? false,
           conditioningOnly: ex.conditioning_only ?? false,
+          // Only overwrite when this seed row carries a skill tag; otherwise keep
+          // whatever's there (e.g. a level inherited from a library merge, which
+          // runs after this seed in `release`). Prevents db:seed from wiping it.
+          skillLevel: ex.skill_level ? ex.skill_level : sql`${exercises.skillLevel}`,
           source: (ex.source ?? "curated") as "curated" | "custom",
           notes: ex.notes ?? null,
           params: ex.params ?? null,

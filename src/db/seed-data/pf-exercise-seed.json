@@ -304,6 +304,7 @@
       "equipment_required": ["cable"], "load_type": "cable",
       "portable": false, "unilateral": false, "stretch_emphasis": true, "affected_structures": [],
       "in_current_routine": true,
+      "skill_level": "beginner",
       "notes": "Bayesian (behind-the-body cable) biases the stretched position of the biceps.",
       "substitutions": [
         {"name": "DB incline curl", "equipment": ["dumbbell", "incline_bench"], "load_type": "free_weight", "when": "free-weight stretch bias", "portable": true},
@@ -359,6 +360,7 @@
       "equipment_required": ["back_extension_bench"], "load_type": "bodyweight",
       "portable": false, "unilateral": false, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
       "in_current_routine": true,
+      "skill_level": "beginner",
       "notes": "Directly loads the lower back — keep controlled, avoid hyperextension; first candidate to lighten/swap if back discomfort rises.",
       "substitutions": [
         {"name": "Bird-dog / dead-bug (anti-extension core)", "equipment": ["bodyweight"], "load_type": "bodyweight", "when": "back-friendly"},
@@ -415,6 +417,7 @@
       "equipment_required": ["rotary_torso_machine"], "load_type": "machine_selectorized",
       "portable": false, "unilateral": true, "stretch_emphasis": false, "affected_structures": ["lumbar_spine"],
       "in_current_routine": true,
+      "skill_level": "beginner",
       "notes": "Loaded lumbar rotation — go light/controlled given back discomfort; consider anti-rotation (Pallof) as a safer alternative.",
       "substitutions": [
         {"name": "Russian twist (20 lb)", "equipment": ["dumbbell"], "load_type": "free_weight", "when": "no machine", "in_routine": true},

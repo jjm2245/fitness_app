@@ -20,6 +20,9 @@ interface LibraryExercise {
   equipment: string | null;
   primaryMuscles: string[];
   secondaryMuscles: string[];
+  // free-exercise-db grades every entry beginner|intermediate|expert. Used as an
+  // unverified skill signal (a soft substitution tie-break; see DECISIONS 2b).
+  level?: string;
 }
 
 // Library muscle vocabulary -> our finer-grained slugs. "neck" has no
@@ -164,6 +167,7 @@ async function run() {
         source: "library",
         libraryId: e.id,
         canonicalName: e.name,
+        skillLevel: e.level ?? null,
         // Library rows carry no movement pattern, so they read as "untagged"
         // (not substitutable) until the movement-pattern-on-add flow graduates
         // one. This keeps `untagged` a reliable proxy for "no movement pattern".
@@ -180,6 +184,7 @@ async function run() {
           source: "library",
           libraryId: e.id,
           canonicalName: e.name,
+          skillLevel: e.level ?? null,
           // Don't clobber a pattern a user has since assigned via the add flow.
           untagged: sql`case when ${exercises.movementPattern} is null then true else false end`,
           updatedAt: new Date(),
@@ -215,6 +220,7 @@ async function run() {
         name: display ?? canonical,
         canonicalName: canonical,
         libraryId: libEx.id,
+        skillLevel: libEx.level ?? null,
         untagged: false,
         updatedAt: new Date(),
       })
