@@ -1,0 +1,103 @@
+/* Home — the whole-life aggregator (spec §12), shell edition: one live zone
+   (Training) + honestly-locked tiles that later phases light up in place. */
+
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px calc(84px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.greeting {
+  padding: 4px 2px 0;
+}
+.greetLine {
+  font-size: 1.45rem;
+  font-weight: 500;
+}
+.dateLine {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+
+/* Training — the only live zone. Card on base; the Start CTA carries the
+   gradient + a soft radial glow behind it (accent on the interactive hero). */
+.trainingCard {
+  position: relative;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+.trainingHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.zoneLabel {
+  font-size: 0.8rem;
+  color: color-mix(in srgb, var(--hue-training) 80%, var(--text-2));
+  letter-spacing: 0.04em;
+}
+.weekProgress {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.weekProgress strong {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.startWrap {
+  position: relative;
+}
+.startGlow {
+  position: absolute;
+  inset: -30px -60px;
+  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.22), transparent 65%);
+  pointer-events: none;
+}
+.startBtn {
+  position: relative;
+  width: 100%;
+  min-height: 54px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+.startBtn:hover:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(1.08);
+}
+
+.trainingMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+.trainingMeta strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Locked zones — 2×2 grid. */
+.tileGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}

@@ -1,0 +1,68 @@
+/* Locked zone tile — muted, small lock, section hue at low intensity.
+   Future phases light these up in place; the shell never remodels. */
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 96px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+.tile:hover {
+  background: var(--card);
+}
+.tile:active {
+  transform: scale(0.98);
+}
+
+/* The section hue, at low intensity: a small tinted icon chip. */
+.chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--tile-hue) 14%, transparent);
+  color: color-mix(in srgb, var(--tile-hue) 72%, var(--text-3));
+}
+
+.name {
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text-2);
+}
+.sub {
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+
+.lock {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--text-3);
+  opacity: 0.8;
+}
+
+.note {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  text-align: center;
+}
