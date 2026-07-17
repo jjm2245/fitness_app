@@ -1899,3 +1899,50 @@ UI-only: no schema/API/sync changes; `src/core/*` untouched.
   aria-pressed; auth flow untouched.
 - **6 — empty-session husks: proposed, not built** (behavior change, awaiting
   owner approval — see the session report / next batch).
+
+## Shell polish — round 2 (2026-07-17)
+
+Five UI items built (one commit each); item 6 (empty-session discard) NOT
+built — gated on the husk-sync question, answered below. No schema/API/sync
+changes; `src/core/*` untouched.
+
+- **2-1 History counts:** every row now shows the exercise count; the
+  set-count-with-fallback (local rows had sets, server-only rows didn't) made
+  the list ragged. Dead setCount plumbing removed from the row model.
+- **2-2/2-3 Train:** "Up next" removed (same predictive-framing call as Home;
+  the /api/program fetch went with it — start card reads a stable "Ready when
+  you are"); counts fill with NO layout shift: fixed-footprint skeleton per
+  count slot (ListRow `pending` prop; reduced-motion honored), the five
+  sources fetch in parallel (was a sequential await chain), and the local
+  IndexedDB sessions count renders ahead of the network, server ids unioned
+  in on arrival.
+- **2-4 revealed passcode:** revealed state drops to 0.95rem/normal tracking
+  and reclaims the left pad (the right pad holds the eye) — 29 chars fit,
+  verified via scrollWidth. Caught a CSS-specificity trap: the compound
+  `.passcodeRow .passcode` beat the single-class override; the revealed rule
+  is compound too now. Masked look unchanged.
+- **2-5 Training› affordance:** full-size 500-weight hue-colored label,
+  chevron attached, press state on the whole 44px row.
+
+### Empty-session discard — the husk-sync answer (item 6, not built)
+**Answer: yes, an empty session CAN reach the server — but only via
+add-then-remove.** Facts from code: `createSession` is local-only and starts
+`occurrencesDirty: false`, so a pure husk (Start → back out) has nothing to
+POST — no occurrences, no sets, no cardio, finish not drained while
+unfinished, and the meta PATCH both requires `metaDirty` and 404s until a log
+row exists. It genuinely cannot sync. BUT `removeOccurrence` marks the list
+dirty, the drain POSTs the (now possibly empty) list, and
+`/api/session-exercises` **creates the workout_log row if absent** — so
+"add an exercise, remove it, back out" can leave a server-side workout_log
+with zero occurrences/sets. Two mitigating facts: (1) while THIS device still
+holds the session, the approved local discard's queued `deleteSession` DELETE
+also removes the server row — covered; (2) a server-only husk (local copy
+wiped) is **invisible**: `GET /api/sessions` returns finished sessions only,
+so it can never render in History, be resumed, or resurface — it's a dormant
+row in Postgres, not a UX bug. Recommendation recorded for the owner: ship
+the approved local discard as proposed (it covers every visible husk), and
+accept dormant server rows as harmless at single-user scale — a one-shot
+maintenance query (delete unfinished logs with zero occurrences+sets+cardio,
+older than a day) can purge them whenever we next touch prod, rather than
+adding a server sweep now (an API behavior change this session's rules
+exclude).
