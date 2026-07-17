@@ -28,7 +28,19 @@ export function SessionBar({ finishCount, onFinish }: { finishCount: number; onF
     <>
       <div className={styles.spacer} aria-hidden="true" />
       <div className={styles.bar}>
-        <button type="button" className={styles.back} aria-label="Back to sessions" onClick={() => router.push("/sessions")}>
+        <button
+          type="button"
+          className={styles.back}
+          aria-label="Back"
+          // Return to wherever the session was entered from (Home / Train /
+          // History). Fresh loads and deep links have no in-app history
+          // (history.length <= 1 in a new tab / standalone PWA launch) — fall
+          // back to History so back never dead-ends.
+          onClick={() => {
+            if (window.history.length > 1) router.back();
+            else router.push("/sessions");
+          }}
+        >
           <svg width="11" height="18" viewBox="0 0 11 18" fill="none" aria-hidden="true">
             <path d="M9.5 1.5L2 9l7.5 7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
