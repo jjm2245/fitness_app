@@ -1727,3 +1727,14 @@ hamstring work) — into [`SUBSTITUTION-JUDGMENT.md`](SUBSTITUTION-JUDGMENT.md) 
 prose. Recorded there and in CURRENT_STATE §9 that this is **soft preference**;
 hard exclusion is already enforced by the engine's `affectedStructures` +
 `injury_flags` filter. Table retained as documentation-only.
+
+### 4b — equipment_type backfill (prod write, owner-approved)
+`set_logs.equipment_type` was null on some named-equipment sets (the type is
+recoverable from the linked `equipment` row). Ran an additive backfill on prod:
+`UPDATE set_logs SET equipment_type = equipment.equipment_type FROM equipment
+WHERE equipment.id = set_logs.equipment_id AND set_logs.equipment_type IS NULL
+AND equipment.equipment_type IS NOT NULL`. **Before:** 7 sets backfillable, 0
+unresolvable. **After:** 7 updated, 0 remaining. No load/reps/history touched;
+only the display type tag. The remaining 29 null `equipment_type` rows are
+correctly null (bodyweight / no-equipment sets). Post-backfill distribution:
+selectorized 33, plate_loaded 6, cable 6, dumbbell 3, bodyweight 3, null 29.
