@@ -42,7 +42,6 @@ interface Row {
   firstFinishedAt: string | null;
   label: string;
   exerciseCount: number;
-  setCount: number | null; // local store only — server rows fall back to exercises
   createdAt: string | null; // local store only — drives the duration readout
   inProgress: boolean;
   onServer: boolean;
@@ -150,7 +149,6 @@ export default function SessionsPage() {
         firstFinishedAt: s.firstFinishedAt ?? null,
         label: s.programDay ?? "Ad-hoc",
         exerciseCount: s.exerciseCount,
-        setCount: null,
         createdAt: null,
         inProgress: !s.finishedAt,
         onServer: true,
@@ -208,7 +206,6 @@ export default function SessionsPage() {
         firstFinishedAt: s.firstFinishedAt ?? prev?.firstFinishedAt ?? null,
         label: s.origin,
         exerciseCount: s.exerciseCount,
-        setCount: s.setCount,
         createdAt: s.createdAt ?? null,
         inProgress: !s.finishedAt,
         onServer: prev?.onServer ?? false,
@@ -396,10 +393,10 @@ function SessionRow({
     ? "Keep THIS device's version instead: re-push the local exercise list to the server. The server keeps any occurrence that still has logged sets (history-safe), so this can't delete logged data."
     : "This session's exercise list disagrees with the server (a pre-fix stale sync). Re-push your local list; the server keeps any occurrence that still has logged sets.";
 
-  const sets =
-    row.setCount != null && row.setCount > 0
-      ? `${row.setCount} set${row.setCount === 1 ? "" : "s"}`
-      : `${row.exerciseCount} exercise${row.exerciseCount === 1 ? "" : "s"}`;
+  // Always the exercise count — it exists for every row (local AND
+  // server-only), so the list reads consistently. Set counts only exist on
+  // local copies and made the list look ragged (owner call, polish round 2).
+  const count = `${row.exerciseCount} exercise${row.exerciseCount === 1 ? "" : "s"}`;
 
   return (
     <li className={styles.rowWrap}>
@@ -412,7 +409,7 @@ function SessionRow({
           <div className={styles.rowSub}>
             <span>{row.inProgress ? "In progress" : whenLabel(row)}</span>
             <span>·</span>
-            <span>{sets}</span>
+            <span>{count}</span>
           </div>
         </button>
         <button
