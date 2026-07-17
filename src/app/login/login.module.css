@@ -59,7 +59,39 @@
 }
 
 /* The passcode field renders as centered dots (native password masking,
-   styled big) — no visible box, just the dots and a caret. */
+   styled big) — no visible box, just the dots, a caret, and the eye toggle. */
+.passcodeRow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.passcodeRow .passcode {
+  flex: 1;
+  min-width: 0;
+  /* keep the dots visually centered despite the eye on the right */
+  padding-left: 44px;
+  padding-right: 44px;
+}
+.eye {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.eye:hover {
+  background: transparent;
+  color: var(--text-2);
+}
+
 .passcode {
   background: transparent;
   border: none;

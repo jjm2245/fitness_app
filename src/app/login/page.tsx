@@ -31,6 +31,7 @@ function BarbellMark() {
 
 function LoginForm() {
   const [passcode, setPasscode] = useState("");
+  const [show, setShow] = useState(false); // eye toggle — hidden by default
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -72,16 +73,40 @@ function LoginForm() {
         >
           Device passcode
         </label>
-        <input
-          id="passcode"
-          type="password"
-          value={passcode}
-          onChange={(e) => setPasscode(e.target.value)}
-          autoFocus
-          autoComplete="current-password"
-          placeholder="••••"
-          className={styles.passcode}
-        />
+        <div className={styles.passcodeRow}>
+          <input
+            id="passcode"
+            type={show ? "text" : "password"}
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            autoFocus
+            autoComplete="current-password"
+            placeholder="••••"
+            className={styles.passcode}
+          />
+          <button
+            type="button"
+            className={styles.eye}
+            aria-label={show ? "Hide passcode" : "Show passcode"}
+            aria-pressed={show}
+            onClick={() => setShow((s) => !s)}
+          >
+            {show ? (
+              // eye-off
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                <path d="M10.6 5.1A9.8 9.8 0 0 1 12 5c5 0 8.6 4.2 9.8 6.3.2.4.2.9 0 1.3-.5.9-1.6 2.4-3.2 3.7M6.6 6.7C4.6 8 3.1 9.9 2.2 11.4c-.2.4-.2.9 0 1.3C3.4 14.8 7 19 12 19c1.5 0 2.9-.4 4.1-1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" />
+                <path d="M9.9 10a3 3 0 0 0 4.1 4.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" />
+              </svg>
+            ) : (
+              // eye
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M2.2 11.4C3.4 9.2 7 5 12 5s8.6 4.2 9.8 6.4c.2.4.2.9 0 1.3C20.6 14.8 17 19 12 19s-8.6-4.2-9.8-6.4a1.4 1.4 0 0 1 0-1.2z" stroke="currentColor" strokeWidth="1.7" fill="none" />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" fill="none" />
+              </svg>
+            )}
+          </button>
+        </div>
         <button type="submit" className={styles.unlock}>
           Unlock
         </button>
