@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import styles from "../exercises/exercises.module.css";
 
 // Equipment section (Part 3) — mirrors the Exercises section. Units are
@@ -151,10 +150,6 @@ export default function EquipmentPage() {
     <main className={styles.page}>
       <div className={styles.head}>
         <h1>Equipment</h1>
-        <span style={{ display: "inline-flex", gap: 8 }}>
-          <Link href="/exercises" className={styles.btn}>Exercises</Link>
-          <Link href="/sessions" className={styles.btn}>← Sessions</Link>
-        </span>
       </div>
       <p className={styles.hint}>
         Equipment units are labelled for you, not for the data — gym, brand, type, and <strong>built-in weight</strong> live in
@@ -244,12 +239,6 @@ export default function EquipmentPage() {
         </ul>
       )}
 
-      <div className={styles.links}>
-        <Link href="/sessions">Sessions</Link>
-        <Link href="/exercises">Exercises</Link>
-        <Link href="/program">Program</Link>
-        <Link href="/blocks">Blocks</Link>
-      </div>
     </main>
   );
 }

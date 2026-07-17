@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import styles from "../log.module.css";
 import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { prettyDayName } from "@/lib/labels";
+import { SessionBar } from "@/components/shell/SessionBar";
+import { publishRestTimer } from "@/lib/restTimerBus";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import {
   logSet,
@@ -543,6 +545,12 @@ function StrengthCard({
     }, 1000);
     return () => clearInterval(iv);
   }, [timerStart, timerTargetMin]);
+  // Mirror the running timer into the session bar (display-only bus — the bar
+  // renders it; this card still owns start/stop and the rest write).
+  useEffect(() => {
+    publishRestTimer(timerStart);
+    return () => publishRestTimer(null);
+  }, [timerStart]);
   function takeTimedRest(): number | null {
     if (heldRest != null) {
       const v = heldRest;
@@ -1558,7 +1566,6 @@ export default function LogSessionPage() {
   return (
     <main className={styles.page}>
       <div className={styles.statusBar}>
-        <Link href="/sessions" className={styles.secondaryBtn}>← Sessions</Link>
         <span>{pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}</span>
         <button onClick={handleSync} className={styles.secondaryBtn}>Sync now</button>
         {syncError === "auth" ? (
@@ -1632,16 +1639,9 @@ export default function LogSessionPage() {
         </ol>
       )}
 
-      <div className={styles.finishBar}>
-        <span className={styles.links}>
-          <Link href="/sessions">Sessions</Link>
-          <Link href="/program">Program</Link>
-          <Link href="/blocks">Blocks</Link>
-        </span>
-        <button type="button" onClick={() => setShowFinish(true)} className={styles.primary}>
-          Finish session ({totalLogged})
-        </button>
-      </div>
+      {/* Session bar — replaces the global nav while logging (mode switch).
+          Back chevron · live rest timer (mirrors the in-card timer) · Finish. */}
+      <SessionBar finishCount={totalLogged} onFinish={() => setShowFinish(true)} />
 
       {showFinish && (
         <FinishSummary

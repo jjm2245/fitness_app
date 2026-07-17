@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { api, DayEditor, type ProgramDayDetail } from "@/components/DayEditor";
 import styles from "@/components/DayEditor.module.css";
 
@@ -94,9 +93,6 @@ export default function ProgramEditorPage() {
 
   return (
     <main className={styles.page}>
-      <p>
-        <Link href="/log">Back to logging</Link>
-      </p>
       <h1>Program editor</h1>
 
       <section className={styles.section}>

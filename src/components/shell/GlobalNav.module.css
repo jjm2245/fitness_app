@@ -1,0 +1,49 @@
+/* Global bottom nav — persistent on every non-session screen. During an
+   active logging session the log page renders the SessionBar instead
+   (deliberate mode switch: navigating vs. training). */
+
+.spacer {
+  height: calc(64px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+}
+
+.nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.item {
+  flex: 1;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-3);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+.item:hover {
+  background: transparent;
+}
+.item:active {
+  transform: none;
+}
+.active {
+  color: var(--accent);
+}

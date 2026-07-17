@@ -1,0 +1,84 @@
+/* Session bar — replaces the global nav during an active logging session.
+   Back chevron · live rest timer (mono, accent, gentle pulse) · Finish (n). */
+
+.spacer {
+  height: calc(64px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+}
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--hairline);
+}
+
+.back {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.back:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+/* The live rest timer: big mono numerals, accent, gently pulsing while it
+   runs. Hidden entirely when idle — the center just stays quiet. */
+.timer {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  color: var(--accent);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.timerIdle {
+  flex: 1;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .timer {
+    animation: none;
+  }
+}
+
+.finish {
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-weight: 500;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+.finish:hover:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(1.08);
+}

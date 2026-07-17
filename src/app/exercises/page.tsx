@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import styles from "./exercises.module.css";
 import { ExerciseSearch } from "@/components/ExerciseSearch";
 
@@ -180,10 +179,6 @@ export default function ExercisesPage() {
     <main className={styles.page}>
       <div className={styles.head}>
         <h1>My exercises</h1>
-        <span style={{ display: "inline-flex", gap: 8 }}>
-          <Link href="/equipment" className={styles.btn}>Equipment</Link>
-          <Link href="/sessions" className={styles.btn}>← Sessions</Link>
-        </span>
       </div>
       <p className={styles.hint}>
         Your named + custom exercises. <strong>library name</strong> uses the library&rsquo;s own name;{" "}
@@ -305,11 +300,6 @@ export default function ExercisesPage() {
         </ul>
       )}
 
-      <div className={styles.links}>
-        <Link href="/sessions">Sessions</Link>
-        <Link href="/program">Program</Link>
-        <Link href="/blocks">Blocks</Link>
-      </div>
     </main>
   );
 }
