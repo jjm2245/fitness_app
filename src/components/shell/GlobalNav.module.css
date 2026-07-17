@@ -2,8 +2,12 @@
    active logging session the log page renders the SessionBar instead
    (deliberate mode switch: navigating vs. training). */
 
+/* Layout-level clearance: an IN-FLOW spacer after {children}, ≥ the bar's
+   height + safe-area + breathing room, so every page — including the legacy
+   phase-2/3 screens — can scroll its last row fully clear of the bar without
+   per-page padding. */
 .spacer {
-  height: calc(64px + env(safe-area-inset-bottom));
+  height: calc(80px + env(safe-area-inset-bottom));
   flex-shrink: 0;
 }
 
@@ -16,9 +20,8 @@
   display: flex;
   justify-content: space-around;
   align-items: stretch;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* Fully opaque — content must never blend through the bar. */
+  background: var(--bg);
   border-top: 1px solid var(--hairline);
   padding-bottom: env(safe-area-inset-bottom);
 }

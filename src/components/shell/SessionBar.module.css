@@ -1,8 +1,9 @@
 /* Session bar — replaces the global nav during an active logging session.
    Back chevron · live rest timer (mono, accent, gentle pulse) · Finish (n). */
 
+/* In-flow clearance matching the fixed bar (see GlobalNav.module.css). */
 .spacer {
-  height: calc(64px + env(safe-area-inset-bottom));
+  height: calc(80px + env(safe-area-inset-bottom));
   flex-shrink: 0;
 }
 
@@ -17,9 +18,8 @@
   gap: 10px;
   min-height: 64px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* Fully opaque — sets must never blend through the bar. */
+  background: var(--bg);
   border-top: 1px solid var(--hairline);
 }
 
