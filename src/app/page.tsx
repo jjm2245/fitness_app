@@ -116,8 +116,8 @@ export default function HomePage() {
         <button type="button" className={styles.trainingHead} onClick={() => router.push("/train")}>
           <span className={styles.zoneLabel}>
             Training
-            <svg width="6" height="10" viewBox="0 0 7 12" fill="none" aria-hidden="true">
-              <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <svg width="8" height="13" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+              <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
             </svg>
           </span>
           <span className={styles.weekProgress}>

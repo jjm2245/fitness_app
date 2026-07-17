@@ -38,30 +38,37 @@
   gap: 14px;
   overflow: hidden;
 }
-/* The header row is a real button (the doorway to /train) — full-width tap
-   target, styled flat inside the card. */
+/* The header row is a real button (the doorway to /train): a proper label
+   with an attached chevron and a press state, so it reads as tappable, not
+   as decoration. Full-width target; the week count stays right-aligned. */
 .trainingHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: transparent;
   border: none;
-  border-radius: 0;
-  padding: 0;
+  border-radius: var(--radius);
+  padding: 0 2px;
+  margin: -2px;
   min-height: 44px;
   cursor: pointer;
   text-align: left;
+  transition: transform 0.08s ease, opacity 0.08s ease;
 }
 .trainingHead:hover {
   background: transparent;
 }
+.trainingHead:active {
+  transform: scale(0.98);
+  opacity: 0.85;
+}
 .zoneLabel {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-  color: color-mix(in srgb, var(--hue-training) 80%, var(--text-2));
-  letter-spacing: 0.04em;
+  gap: 5px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--hue-training) 82%, var(--text));
 }
 .weekProgress {
   font-size: 0.85rem;
