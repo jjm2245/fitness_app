@@ -18,6 +18,7 @@ They live in `docs/`:
 | [`docs/SPEC-DRIFT.md`](docs/SPEC-DRIFT.md) | Where the built system has diverged from the spec's intent — section by section. A signal for the spec owner to fold into the next version, **not** something to auto-correct. |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | How to ship a schema change / backfill to production safely — migrate-before-deploy order, Neon direct-vs-pooled endpoints, before/after counts, the health/`db:check` gates. Read before any prod migration. |
 | [`docs/SUBSTITUTION-JUDGMENT.md`](docs/SUBSTITUTION-JUDGMENT.md) | The back-friendly substitution judgment the deterministic engine can't derive (soft preference; hard exclusion is code). Extracted from the otherwise-inert curated substitutions table. |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | The UI design language (tokens, accent rules, nav model, shell components). Any UI work builds on these tokens — don't invent new chrome; phases 2–3 restyle the remaining screens against this contract. |
 
 **At session end, update the docs (standing rule):** run `npm run docs:refresh`
 (regenerates the mechanical facts) and hand-edit the judgment sections of

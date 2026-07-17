@@ -1820,3 +1820,54 @@ owner-authored spec text). Committed v0.6 verbatim, then reconciled downstream:
   v0.5 at the time).
 The spec stays human-owned; the drift ritual continues (build outruns spec →
 record in SPEC-DRIFT → owner folds into the next revision → reset).
+
+## UI redesign — phase 1: the shell (2026-07-17)
+
+UI-structure session, zero functional/data changes (no schema/API/sync/LLM;
+`src/core/*` untouched — self-check passed; the `defaultLoadIncrement`
+load-type table remains the one documented impurity). Committed per screen.
+
+- **Design language as tokens** (`docs/DESIGN.md` is the contract): the new
+  palette/radii/hues live as CSS custom properties in `globals.css`, and the
+  OLD token names (`--background`, `--surface`, …) are kept as **aliases of the
+  new values** — so the pre-redesign screens (log, program, blocks, exercises,
+  equipment) sit on the new surfaces without structural restyle. Phases 2–3
+  migrate each screen to the v1 names; the aliases die when unconsumed.
+- **Login = title screen** — cosmetic only; the auth POST + `?next=` return
+  flow are byte-identical. Passcode renders as native password dots (a fixed
+  dot-count row would assume the passcode's length).
+- **Home replaces the dev index** — the spec-§12 aggregator built shell-first:
+  live Training card (week progress = merged local+server finished sessions
+  since local Monday; "Up next" inferred by cyclic containment-match of the
+  last session's label against the active program's day order — honest
+  fallback to the first day) + 2×2 honestly-locked tiles (LockedTile) that
+  later phases light up in place. No new APIs.
+- **Train hub** — start card + ListRow navigation with live counts from
+  existing endpoints. **History** (was /sessions): month group headers
+  (stable session date, local calendar parts), rows name · date · time ·
+  duration · sets — duration only when the local createdAt→firstFinished span
+  is plausible (1 min–6 h; hydrated/server rows omit rather than guess);
+  set count falls back to exercise count for server-only rows. **Per-row sync
+  dot** (green synced / amber pending-will-drain / red needs-action:
+  conflict/behind/sync-error) expanding detail + the directional heals on tap —
+  replaces the status-bar text. Merge/drain/heal/delete logic untouched.
+  Starting a session moved to Home/Train (still one tap from anywhere).
+- **Nav model** — global bottom nav (Home/Train/Stats/More) in the root
+  layout, hidden on /login and /log/[id]; the log page renders a
+  **SessionBar** instead (back · live rest timer · Finish(n)) — deliberate
+  navigating-vs-training mode switch. The bar mirrors the in-card timer via
+  `restTimerBus`, a **display-only** pub/sub: the card still owns start/stop
+  and the rest write; the bus publishes null on card unmount so the bar can't
+  show a phantom timer. Stats/More are placeholders in the locked-tile
+  language ("Lock app" row was cut — navigating to /login doesn't clear the
+  cookie, and a logout API is a functional change).
+- **Killed every ad-hoc link row** on touched screens (log's ← Sessions +
+  bottom links; program's "Back to logging"; blocks' link row;
+  exercises/equipment header + footer piles) — the nav owns navigation.
+- **Verified at 375px in-browser:** login title screen; Home with real data;
+  Train counts; History month groups + dot detail expand + delete confirm;
+  nav on every non-session screen incl. legacy pages; session bar swap with
+  live mono timer mirrored from the card; **offline end-to-end**: killed the
+  dev server, logged a set, hard-reloaded the dead page — both sets survived
+  in IndexedDB and auto-drained green on server restart. 136 tests, clean
+  build, docs:check green.

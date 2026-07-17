@@ -126,9 +126,18 @@ endpoint split, before/after counts, the health/db:check gates).
 - **`src/db/*`** — `schema.ts`, `seed.ts` (curated graph, non-destructive),
   `seedLibrary.ts` (library ingest + curated↔library merges + custom renames),
   `seed-data/pf-exercise-seed.json` (authoritative curated graph).
-- **`src/app/*`** — pages: `/sessions` (home), `/log/[id]` (the logging screen —
+- **`src/app/*`** — pages: `/` (Home — the aggregator shell, spec §12), `/train`
+  (training hub), `/sessions` (History), `/log/[id]` (the logging screen —
   biggest component), `/program`, `/blocks`, `/exercises`, `/equipment`,
-  `/login`. API routes: see the AUTOGEN table.
+  `/stats` + `/more` (nav placeholders), `/login` (title screen). API routes:
+  see the AUTOGEN table.
+- **`src/components/shell/*`** — the UI shell (redesign phase 1, see
+  [`DESIGN.md`](DESIGN.md)): `GlobalNav` (bottom nav, hidden on /login +
+  /log/[id]), `SessionBar` (replaces the nav while logging; mirrors the in-card
+  rest timer via `src/lib/restTimerBus.ts`, display-only), `LockedTile`,
+  `ListCard`/`ListRow`. Design tokens live in `src/app/globals.css`; the
+  pre-redesign screens consume legacy aliases remapped to the new palette
+  (their structural restyle is phases 2–3).
 
 ## 4. Data model (current — migration count in the AUTOGEN block)
 
