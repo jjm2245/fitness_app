@@ -1,88 +1,187 @@
+/* History — the sessions list, shell edition. Month groups, quiet rows, and a
+   per-row sync status dot that expands detail on tap. */
+
 .page {
-  max-width: 640px;
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px 96px;
-  font-family: var(--font-geist-sans), sans-serif;
-}
-
-.header {
+  padding: 20px 16px calc(84px + env(safe-area-inset-bottom));
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.header h1 {
-  margin: 0;
-  font-size: 22px;
+.title {
+  font-size: 1.45rem;
+  font-weight: 500;
+  padding: 4px 2px 0;
 }
 
-.statusBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  opacity: 0.75;
-  margin: 8px 0 16px;
+/* Slim banner reserved for the one global sync state that needs action. */
+.authBanner {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.authBanner a {
+  color: var(--warning);
+}
+
+.sectionLabel {
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 6px 2px 0;
 }
 
 .list {
   list-style: none;
-  padding: 0;
-  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.sectionLabel {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.55;
-  margin: 16px 0 4px;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
 }
 
 .rowWrap {
   display: flex;
-  align-items: stretch;
-  gap: 8px;
+  flex-direction: column;
 }
-.rowReconcile {
-  flex: 0 0 auto;
-  align-self: stretch;
-  background: transparent;
-  border: 1px solid var(--accent, #6ea8fe);
-  border-radius: 6px;
-  color: var(--accent, #6ea8fe);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 4px 10px;
-}
-.rowReconcile:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.rowDelete {
-  flex: 0 0 auto;
-  align-self: stretch;
-  background: transparent;
-  border: 1px solid var(--border, #444);
-  border-radius: 6px;
-  color: var(--muted, #9aa0a6);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 4px 10px;
-}
-.rowDelete:hover {
-  color: #e6a3a3;
-  border-color: #6b3333;
+.rowWrap + .rowWrap {
+  border-top: 1px solid var(--hairline);
 }
 
+.rowLine {
+  display: flex;
+  align-items: center;
+}
+
+.row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 0 12px 14px;
+  min-height: 56px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover {
+  background: transparent;
+}
+
+.rowTop {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.rowTitle {
+  font-weight: 500;
+  font-size: 0.98rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badgeProgress {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+
+.rowSub {
+  display: flex;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sync status dot — the row's sync state, expandable on tap. ≥44px target. */
+.dotBtn {
+  min-height: 44px;
+  min-width: 36px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dotBtn:hover {
+  background: transparent;
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.dotGreen {
+  background: var(--success);
+}
+.dotAmber {
+  background: var(--warning);
+}
+.dotRed {
+  background: var(--danger);
+}
+
+.delete {
+  min-height: 44px;
+  min-width: 40px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+.delete:hover {
+  background: transparent;
+  color: var(--danger);
+}
+
+/* Expanded sync detail under a row (dot tap). */
+.syncDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 12px;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.syncActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.syncActions button {
+  min-height: 38px;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+}
+
+.empty {
+  color: var(--text-3);
+  padding: 24px 2px;
+  text-align: center;
+}
+
+/* Delete confirm modal (unchanged behavior). */
 .modalBackdrop {
   position: fixed;
   inset: 0;
@@ -90,175 +189,30 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  z-index: 20;
+  padding: 24px;
+  z-index: 60;
 }
 .modal {
-  background: var(--surface, #1a1c20);
-  border: 1px solid var(--border, #333);
-  border-radius: 12px;
-  padding: 20px;
-  max-width: 420px;
   width: 100%;
+  max-width: 360px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .modalActions {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .dangerBtn {
-  border: none;
-  border-radius: 8px;
-  padding: 9px 16px;
-  background: #b4442f;
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
 }
-.dangerBtn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.row {
-  display: block;
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--border, #333);
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-
-.row:hover {
-  border-color: var(--accent, #6ea8fe);
-}
-
-.rowTop {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.rowTitle {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.rowWhen {
-  font-size: 12px;
-  opacity: 0.6;
-  white-space: nowrap;
-}
-
-.rowSub {
-  font-size: 13px;
-  opacity: 0.75;
-  margin-top: 3px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.badge {
-  font-size: 11px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--border, #444);
-  opacity: 0.85;
-}
-
-.badgeProgress {
-  border-color: var(--accent, #6ea8fe);
-  color: var(--accent, #6ea8fe);
-}
-
-.badgePending {
-  border-color: #d9a441;
-  color: #d9a441;
-}
-
-.empty {
-  opacity: 0.6;
-  font-size: 14px;
-  padding: 24px 0;
-  text-align: center;
-}
-
-.syncErr {
-  color: #e6a3a3;
-  font-weight: 600;
-}
-.reloginLink {
-  color: #ffd27a;
-  text-decoration: underline;
-}
-
-.startBtn {
-  border: none;
-  border-radius: 10px;
-  padding: 10px 16px;
-  background: var(--accent, #6ea8fe);
-  color: #06111f;
-  font-weight: 700;
-  cursor: pointer;
-  font-size: 15px;
-}
-
 .secondaryBtn {
-  background: transparent;
-  border: 1px solid var(--border, #444);
-  border-radius: 8px;
-  padding: 4px 10px;
-  color: inherit;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.links {
-  display: flex;
-  gap: 14px;
-  font-size: 14px;
-  margin-top: 20px;
-}
-
-.picker {
-  border: 1px solid var(--border, #333);
-  border-radius: 10px;
-  padding: 12px;
-  margin: 12px 0;
-}
-
-.pickerHint {
-  font-size: 13px;
-  opacity: 0.7;
-  margin: 0 0 8px;
-}
-
-.dayChoice {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.dayChoiceBtn {
-  border: 1px solid var(--border, #444);
-  border-radius: 8px;
-  padding: 8px 12px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.dayChoiceBtn:hover {
-  border-color: var(--accent, #6ea8fe);
+  background: var(--raised);
 }

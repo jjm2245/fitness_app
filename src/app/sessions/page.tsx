@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import styles from "./sessions.module.css";
 import {
-  createSession,
   listLocalSessionSummaries,
   deleteSession,
   reconcileFinishedFromServer,
@@ -17,11 +15,13 @@ import {
   type LocalSessionSummary,
 } from "@/lib/sessionStore";
 
-// The sessions list is the app's home base: this is where sessions live. A
-// session is a thing you start (Start a new session), do on /log/[id], and
-// finish — which returns here with the new row visible. The list merges the
-// durable local store with the server's finished sessions, keyed by session id,
-// so it renders fully offline (no network round-trip to see your sessions).
+// History — where finished sessions live (in-progress ones surface on top so
+// nothing active is buried). The list merges the durable local store with the
+// server's finished sessions, keyed by session id, so it renders fully
+// offline. Shell restyle: month groups, quieter rows, and a per-row sync
+// status dot (green synced / amber pending / red needs-action) that expands
+// detail — including the directional heals — on tap. Starting a session moved
+// to Home and Train; open/delete/sync behavior is unchanged.
 
 interface ServerSession {
   id: string;
@@ -42,60 +42,57 @@ interface Row {
   firstFinishedAt: string | null;
   label: string;
   exerciseCount: number;
+  setCount: number | null; // local store only — server rows fall back to exercises
+  createdAt: string | null; // local store only — drives the duration readout
   inProgress: boolean;
   onServer: boolean;
   local: boolean;
   pendingSync: boolean;
-  // Why it's pending — surfaced in the badge so "not synced" is never a mystery
-  // (esp. on a phone, where we can't open the store). null when fully synced.
+  // Why it's pending — surfaced in the dot's expanded detail so "not synced"
+  // is never a mystery. null when fully synced.
   pendingReason: string | null;
-  // This device is the stale side (server has sets it lacks) — offer "pull from
-  // server" instead of "Reconcile" (which would be a no-op here).
+  // This device is the stale side (server has sets it lacks) — offer "pull
+  // from server" instead of "Reconcile" (which would be a no-op here).
   conflict: boolean;
-  // Multi-device divergence: the server has occurrences this device never saw and
-  // local has nothing pending (Part 3). Detect-and-warn — offer BOTH directions
-  // (Pull to adopt the server, Reconcile to push local up); never auto-heal.
+  // Multi-device divergence: the server has occurrences this device never saw
+  // and local has nothing pending. Detect-and-warn — offer BOTH directions.
   behind: boolean;
 }
 
-// LOCAL calendar date, never UTC: toISOString() flips to tomorrow after ~8 PM
-// Eastern, filing an evening session to the wrong day. Date-boundary logic is
-// always local; only storage is UTC.
-function todayIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Month bucket key/label from the STABLE session date (local calendar parts —
+// new Date("YYYY-MM-DD") is UTC midnight and would shift the month).
+function monthLabel(dateIso: string): string {
+  const [y, m] = dateIso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-// The displayed date comes from the STABLE anchors: the session's `date`
-// (creation day, never rewritten) + the time-of-day of the FIRST finish.
-// `finishedAt` re-stamps on every re-finish and must never move a session in
-// the list — editing yesterday's session had been jumping it to "today".
+// date · time · duration — from the stable anchors only. Duration is shown
+// when the local copy carries a plausible createdAt→firstFinishedAt span
+// (1 min – 6 h); hydrated/server rows omit it rather than guess.
 function whenLabel(row: Row): string {
-  if (row.inProgress) return "In progress";
-  // Parse the ISO date as LOCAL calendar parts (new Date("YYYY-MM-DD") is UTC
-  // midnight, which renders as the previous day in negative-offset timezones).
   const [y, m, d] = row.date.split("-").map(Number);
   const dateLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  if (!row.firstFinishedAt) return dateLabel;
-  const t = new Date(row.firstFinishedAt);
-  return `${dateLabel} · ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-}
-
-function describe(label: string, n: number): string {
-  const l = label.trim() || "Ad-hoc";
-  return `${l} · ${n === 1 ? "1 exercise" : `${n} exercises`}`;
+  const parts = [dateLabel];
+  if (row.firstFinishedAt) {
+    parts.push(new Date(row.firstFinishedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    if (row.createdAt) {
+      const mins = Math.round((new Date(row.firstFinishedAt).getTime() - new Date(row.createdAt).getTime()) / 60_000);
+      if (mins >= 1 && mins <= 360) parts.push(`${mins} min`);
+    }
+  }
+  return parts.join(" · ");
 }
 
 export default function SessionsPage() {
   const router = useRouter();
   const [local, setLocal] = useState<LocalSessionSummary[]>([]);
   const [server, setServer] = useState<ServerSession[]>([]);
-  const [pending, setPending] = useState(0);
+  const [, setPending] = useState(0);
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [confirm, setConfirm] = useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [openDetail, setOpenDetail] = useState<string | null>(null);
 
   const drain = useCallback(async () => {
     const r = await sync().catch(() => null);
@@ -153,6 +150,8 @@ export default function SessionsPage() {
         firstFinishedAt: s.firstFinishedAt ?? null,
         label: s.programDay ?? "Ad-hoc",
         exerciseCount: s.exerciseCount,
+        setCount: null,
+        createdAt: null,
         inProgress: !s.finishedAt,
         onServer: true,
         local: false,
@@ -209,6 +208,8 @@ export default function SessionsPage() {
         firstFinishedAt: s.firstFinishedAt ?? prev?.firstFinishedAt ?? null,
         label: s.origin,
         exerciseCount: s.exerciseCount,
+        setCount: s.setCount,
+        createdAt: s.createdAt ?? null,
         inProgress: !s.finishedAt,
         onServer: prev?.onServer ?? false,
         local: true,
@@ -232,6 +233,18 @@ export default function SessionsPage() {
 
   const inProgress = rows.filter((r) => r.inProgress);
   const finished = rows.filter((r) => !r.inProgress);
+
+  // Finished rows bucketed by month of the stable session date.
+  const months = useMemo(() => {
+    const out: Array<{ label: string; rows: Row[] }> = [];
+    for (const r of finished) {
+      const label = monthLabel(r.date);
+      const bucket = out.at(-1);
+      if (bucket && bucket.label === label) bucket.rows.push(r);
+      else out.push({ label, rows: [r] });
+    }
+    return out;
+  }, [finished]);
 
   function open(id: string) {
     router.push(`/log/${id}`);
@@ -272,50 +285,33 @@ export default function SessionsPage() {
       setConfirm(null);
       await refresh();
       await drain(); // server delete drains when online; queued offline
-      await refresh();
     } finally {
       setDeleting(false);
     }
   }
 
-  // Start an empty session and go straight to logging — you build the ordered
-  // list incrementally there (the program is a quick-add palette, not a
-  // pre-loaded day). The session name aggregates from what you add.
-  async function start() {
-    if (starting) return;
-    setStarting(true);
-    try {
-      const session = await createSession({ date: todayIso(), origin: "New session", programId: null });
-      router.push(`/log/${session.id}`);
-    } finally {
-      setStarting(false);
-    }
-  }
+  const rowProps = {
+    onOpen: open,
+    onDelete: (id: string, label: string) => setConfirm({ id, label }),
+    onReconcile: reconcile,
+    onPull: pullFromServer,
+    onToggleDetail: (id: string) => setOpenDetail((cur) => (cur === id ? null : id)),
+  };
 
   return (
     <main className={styles.page}>
-      <div className={styles.header}>
-        <h1>Sessions</h1>
-        <button className={styles.startBtn} onClick={start} disabled={starting}>
-          {starting ? "Starting…" : "Start a new session"}
-        </button>
-      </div>
+      <h1 className={styles.title}>History</h1>
 
-      <div className={styles.statusBar}>
-        <span>{pending > 0 ? `${pending} change(s) pending sync` : "All changes synced"}</span>
-        {syncError === "auth" && (
-          <span className={styles.syncErr}>
-            · Session expired — <a href="/login?next=/sessions" className={styles.reloginLink}>re-login to sync</a>
-          </span>
-        )}
-        {syncError === "network" && pending > 0 && <span className={styles.syncErr}>· offline, will retry</span>}
-        {syncError === "server" && <span className={styles.syncErr}>· sync error, will retry</span>}
-      </div>
+      {syncError === "auth" && (
+        <div className={styles.authBanner}>
+          Session expired — <a href="/login?next=/sessions">re-login to sync</a>
+        </div>
+      )}
 
       {!loaded ? (
         <p className={styles.empty}>Loading…</p>
       ) : rows.length === 0 ? (
-        <p className={styles.empty}>No sessions yet. Start one above.</p>
+        <p className={styles.empty}>No sessions yet. Start one from Home.</p>
       ) : (
         <>
           {inProgress.length > 0 && (
@@ -323,30 +319,23 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>In progress</div>
               <ul className={styles.list}>
                 {inProgress.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} onPull={pullFromServer} reconciling={reconciling === r.id} />
+                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} />
                 ))}
               </ul>
             </>
           )}
-          {finished.length > 0 && (
-            <>
-              <div className={styles.sectionLabel}>Finished</div>
+          {months.map((m) => (
+            <div key={m.label}>
+              <div className={styles.sectionLabel}>{m.label}</div>
               <ul className={styles.list}>
-                {finished.map((r) => (
-                  <SessionRow key={r.id} row={r} onOpen={open} onDelete={(id, label) => setConfirm({ id, label })} onReconcile={reconcile} onPull={pullFromServer} reconciling={reconciling === r.id} />
+                {m.rows.map((r) => (
+                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} />
                 ))}
               </ul>
-            </>
-          )}
+            </div>
+          ))}
         </>
       )}
-
-      <div className={styles.links}>
-        <Link href="/program">Program</Link>
-        <Link href="/blocks">Blocks</Link>
-        <Link href="/exercises">Exercises</Link>
-        <Link href="/equipment">Equipment</Link>
-      </div>
 
       {confirm && (
         <div className={styles.modalBackdrop}>
@@ -366,9 +355,38 @@ export default function SessionsPage() {
   );
 }
 
-function SessionRow({ row, onOpen, onDelete, onReconcile, onPull, reconciling }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void; onReconcile: (id: string) => void; onPull: (id: string) => void; reconciling: boolean }) {
+function SessionRow({
+  row,
+  onOpen,
+  onDelete,
+  onReconcile,
+  onPull,
+  onToggleDetail,
+  reconciling,
+  detailOpen,
+  syncError,
+}: {
+  row: Row;
+  onOpen: (id: string) => void;
+  onDelete: (id: string, label: string) => void;
+  onReconcile: (id: string) => void;
+  onPull: (id: string) => void;
+  onToggleDetail: (id: string) => void;
+  reconciling: boolean;
+  detailOpen: boolean;
+  syncError: "auth" | "network" | "server" | null;
+}) {
+  // Dot semantics: green = in sync; amber = pending, drains on its own;
+  // red = needs a decision (divergence) or sync is erroring.
+  const needsAction = row.conflict || row.behind;
+  const dotClass = needsAction || (row.pendingSync && syncError && syncError !== "network")
+    ? styles.dotRed
+    : row.pendingSync
+    ? styles.dotAmber
+    : styles.dotGreen;
+  const dotLabel = needsAction ? "Needs attention" : row.pendingSync ? "Pending sync" : "Synced";
+
   const listMismatch = row.pendingSync && !row.conflict && !row.behind && !!row.pendingReason?.startsWith("list");
-  // A behind row is a clean multi-device divergence: offer BOTH directions.
   const showPull = row.conflict || row.behind;
   const showReconcile = listMismatch || row.behind;
   const pullTitle = row.behind
@@ -377,54 +395,71 @@ function SessionRow({ row, onOpen, onDelete, onReconcile, onPull, reconciling }:
   const reconcileTitle = row.behind
     ? "Keep THIS device's version instead: re-push the local exercise list to the server. The server keeps any occurrence that still has logged sets (history-safe), so this can't delete logged data."
     : "This session's exercise list disagrees with the server (a pre-fix stale sync). Re-push your local list; the server keeps any occurrence that still has logged sets.";
+
+  const sets =
+    row.setCount != null && row.setCount > 0
+      ? `${row.setCount} set${row.setCount === 1 ? "" : "s"}`
+      : `${row.exerciseCount} exercise${row.exerciseCount === 1 ? "" : "s"}`;
+
   return (
     <li className={styles.rowWrap}>
-      <button className={styles.row} onClick={() => onOpen(row.id)}>
-        <div className={styles.rowTop}>
-          <span className={styles.rowTitle}>{row.label.trim() || "Ad-hoc"}</span>
-          <span className={styles.rowWhen}>{whenLabel(row)}</span>
-        </div>
-        <div className={styles.rowSub}>
-          <span>{describe(row.label, row.exerciseCount)}</span>
-          {row.inProgress && <span className={`${styles.badge} ${styles.badgeProgress}`}>resume</span>}
-          {row.pendingSync && (
-            <span className={`${styles.badge} ${styles.badgePending}`} title={`Pending: ${row.pendingReason}`}>
-              not synced · {row.pendingReason}
-            </span>
+      <div className={styles.rowLine}>
+        <button className={styles.row} onClick={() => onOpen(row.id)}>
+          <div className={styles.rowTop}>
+            <span className={styles.rowTitle}>{row.label.trim() || "Ad-hoc"}</span>
+            {row.inProgress && <span className={styles.badgeProgress}>resume</span>}
+          </div>
+          <div className={styles.rowSub}>
+            <span>{row.inProgress ? "In progress" : whenLabel(row)}</span>
+            <span>·</span>
+            <span>{sets}</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          className={styles.dotBtn}
+          title={dotLabel}
+          aria-label={`Sync: ${dotLabel}`}
+          onClick={() => onToggleDetail(row.id)}
+        >
+          <span className={`${styles.dot} ${dotClass}`} />
+        </button>
+        <button
+          type="button"
+          className={styles.delete}
+          title="Delete session"
+          aria-label="Delete session"
+          onClick={() => onDelete(row.id, row.label)}
+        >
+          ✕
+        </button>
+      </div>
+
+      {detailOpen && (
+        <div className={styles.syncDetail}>
+          <span>
+            {needsAction
+              ? row.pendingReason
+              : row.pendingSync
+              ? `Pending: ${row.pendingReason} — syncs automatically when online.`
+              : "Synced with the server."}
+          </span>
+          {(showPull || showReconcile) && (
+            <div className={styles.syncActions}>
+              {showReconcile && (
+                <button type="button" title={reconcileTitle} onClick={() => onReconcile(row.id)} disabled={reconciling}>
+                  {reconciling ? "…" : row.behind ? "Keep this device" : "Reconcile"}
+                </button>
+              )}
+              {showPull && (
+                <button type="button" title={pullTitle} onClick={() => onPull(row.id)} disabled={reconciling}>
+                  {reconciling ? "…" : "Pull from server"}
+                </button>
+              )}
+            </div>
           )}
         </div>
-      </button>
-      {showReconcile && (
-        <button
-          type="button"
-          className={styles.rowReconcile}
-          title={reconcileTitle}
-          onClick={() => onReconcile(row.id)}
-          disabled={reconciling}
-        >
-          {reconciling ? "…" : row.behind ? "Keep this device" : "Reconcile"}
-        </button>
       )}
-      {showPull && (
-        <button
-          type="button"
-          className={styles.rowReconcile}
-          title={pullTitle}
-          onClick={() => onPull(row.id)}
-          disabled={reconciling}
-        >
-          {reconciling ? "…" : "Pull from server"}
-        </button>
-      )}
-      <button
-        type="button"
-        className={styles.rowDelete}
-        title="Delete session"
-        aria-label="Delete session"
-        onClick={() => onDelete(row.id, row.label)}
-      >
-        ✕
-      </button>
     </li>
   );
 }

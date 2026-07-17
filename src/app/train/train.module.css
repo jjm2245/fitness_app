@@ -1,0 +1,54 @@
+/* Train — the training zone's landing. Compact start card + navigation rows. */
+
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px calc(84px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  font-size: 1.45rem;
+  font-weight: 500;
+  padding: 4px 2px 0;
+}
+
+.startCard {
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.upNext {
+  font-size: 0.92rem;
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upNext strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.startBtn {
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-weight: 500;
+  padding: 10px 18px;
+  flex-shrink: 0;
+}
+.startBtn:hover:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(1.08);
+}
