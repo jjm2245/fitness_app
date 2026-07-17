@@ -1774,3 +1774,22 @@ never and the **set-level timer is the real feature**. **No action now** — the
 set-level timer is new; give it real use. **Trigger:** if derived rests are still
 zero after ~2 weeks of logging *with the timer* (~2026-07-30), drop the derivation
 rather than maintain a filter that never fires.
+
+### Part 3 — multi-device divergence: detect-and-warn (built)
+Extends the existing directional-heal machinery rather than adding a new one.
+`hydrateFromServer` still no-ops when a local copy exists (never clobbers local
+edits) — that's the *source* of divergence, kept intact. New pure detector
+`isDeviceBehind()` (`sessionStore.ts`, unit-tested, 5 cases) answers "is THIS
+device purely behind?": true only when the session is on the server, the server
+has **more occurrences** than local, AND local is provably clean (finishSynced &&
+!occurrencesDirty && !metaDirty && !occurrenceConflict). The sessions list
+consumes it: a `behind` row warns plainly (`changed on another device · server N
+/ local M`) and offers **both** directions — **Pull from server** (adopt the
+newer copy) and **Keep this device** (Reconcile — history-safe re-push). **Never
+auto-heals**; the user chooses. Refuses to claim "behind" on any two-sided edit
+(any local dirtiness routes to the existing push path instead of a silent
+overwrite), honoring the owner's standing prior that after a wipe local is not
+the source of truth. Detection is occurrence-count level (cheap, from the list
+payload already fetched); set-level divergence inside equal occurrence counts is
+not surfaced here (would need a per-session fetch) — acceptable, the common case
+is a whole occurrence added on another device.

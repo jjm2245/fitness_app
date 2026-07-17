@@ -11,6 +11,7 @@ import {
   reconcileFinishedFromServer,
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
+  isDeviceBehind,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -51,6 +52,10 @@ interface Row {
   // This device is the stale side (server has sets it lacks) — offer "pull from
   // server" instead of "Reconcile" (which would be a no-op here).
   conflict: boolean;
+  // Multi-device divergence: the server has occurrences this device never saw and
+  // local has nothing pending (Part 3). Detect-and-warn — offer BOTH directions
+  // (Pull to adopt the server, Reconcile to push local up); never auto-heal.
+  behind: boolean;
 }
 
 // LOCAL calendar date, never UTC: toISOString() flips to tomorrow after ~8 PM
@@ -154,6 +159,7 @@ export default function SessionsPage() {
         pendingSync: false,
         pendingReason: null,
         conflict: false,
+        behind: false,
       });
     }
     for (const s of local) {
@@ -164,13 +170,31 @@ export default function SessionsPage() {
       // count disagrees with the server's — a genuinely pending list change.
       const finishPending = !!s.finishedAt && !s.finishSynced && !prev?.finishedAt;
       const serverCount = prev?.exerciseCount ?? s.exerciseCount;
-      const listPending = s.exerciseCount !== serverCount;
+      // Multi-device divergence (Part 3): the server holds occurrences this device
+      // never saw AND local is clean → this device is purely behind. Detected here
+      // so it routes to Pull, not the no-op Reconcile that a raw count mismatch
+      // would otherwise imply. Never auto-heals — the row offers both directions.
+      const behind = isDeviceBehind({
+        onServer: !!prev?.onServer,
+        localExerciseCount: s.exerciseCount,
+        serverExerciseCount: serverCount,
+        finishSynced: s.finishSynced,
+        occurrencesDirty: s.occurrencesDirty,
+        metaDirty: s.metaDirty,
+        occurrenceConflict: s.occurrenceConflict,
+      });
+      // A count mismatch that ISN'T a clean server-ahead divergence is a local
+      // list change waiting to push (Reconcile). `behind` peels off the other
+      // direction first so we don't mislabel it.
+      const listPending = !behind && s.exerciseCount !== serverCount;
       // Conflict wins: the server proved it holds logged sets this device is
       // missing, so re-POSTing local is a dead end — the heal is to pull down.
       const conflict = !!s.occurrenceConflict;
       const metaPending = !!s.metaDirty;
       const reason = conflict
         ? "this device is behind"
+        : behind
+        ? `changed on another device · server ${serverCount} / local ${s.exerciseCount}`
         : finishPending
         ? "finish"
         : metaPending
@@ -191,6 +215,7 @@ export default function SessionsPage() {
         pendingSync: reason !== null,
         pendingReason: reason,
         conflict,
+        behind,
       });
     }
     const all = Array.from(byId.values());
@@ -342,7 +367,16 @@ export default function SessionsPage() {
 }
 
 function SessionRow({ row, onOpen, onDelete, onReconcile, onPull, reconciling }: { row: Row; onOpen: (id: string) => void; onDelete: (id: string, label: string) => void; onReconcile: (id: string) => void; onPull: (id: string) => void; reconciling: boolean }) {
-  const listMismatch = row.pendingSync && !row.conflict && !!row.pendingReason?.startsWith("list");
+  const listMismatch = row.pendingSync && !row.conflict && !row.behind && !!row.pendingReason?.startsWith("list");
+  // A behind row is a clean multi-device divergence: offer BOTH directions.
+  const showPull = row.conflict || row.behind;
+  const showReconcile = listMismatch || row.behind;
+  const pullTitle = row.behind
+    ? "This session was changed on another device — it has exercises this device doesn't. Pull the server's copy down to adopt those changes (replaces the local copy; nothing on the server is lost)."
+    : "The server has logged sets this device doesn't have — this device is the stale side. Pull the server's copy down to replace the local one (safe: your logged sets on the server are kept).";
+  const reconcileTitle = row.behind
+    ? "Keep THIS device's version instead: re-push the local exercise list to the server. The server keeps any occurrence that still has logged sets (history-safe), so this can't delete logged data."
+    : "This session's exercise list disagrees with the server (a pre-fix stale sync). Re-push your local list; the server keeps any occurrence that still has logged sets.";
   return (
     <li className={styles.rowWrap}>
       <button className={styles.row} onClick={() => onOpen(row.id)}>
@@ -360,22 +394,22 @@ function SessionRow({ row, onOpen, onDelete, onReconcile, onPull, reconciling }:
           )}
         </div>
       </button>
-      {listMismatch && (
+      {showReconcile && (
         <button
           type="button"
           className={styles.rowReconcile}
-          title="This session's exercise list disagrees with the server (a pre-fix stale sync). Re-push your local list; the server keeps any occurrence that still has logged sets."
+          title={reconcileTitle}
           onClick={() => onReconcile(row.id)}
           disabled={reconciling}
         >
-          {reconciling ? "…" : "Reconcile"}
+          {reconciling ? "…" : row.behind ? "Keep this device" : "Reconcile"}
         </button>
       )}
-      {row.conflict && (
+      {showPull && (
         <button
           type="button"
           className={styles.rowReconcile}
-          title="The server has logged sets this device doesn't have — this device is the stale side. Pull the server's copy down to replace the local one (safe: your logged sets on the server are kept)."
+          title={pullTitle}
           onClick={() => onPull(row.id)}
           disabled={reconciling}
         >

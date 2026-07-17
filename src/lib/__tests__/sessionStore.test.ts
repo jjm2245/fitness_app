@@ -28,6 +28,7 @@ import {
   reconcileFinishedFromServer,
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
+  isDeviceBehind,
   migrateSessionDb,
   deriveRest,
   _resetDbForTests,
@@ -1124,5 +1125,42 @@ describe("hydrate a server-only session (opening a past session)", () => {
     const summaries = await listLocalSessionSummaries();
     const summary = summaries.find((x) => x.id === "srv-session-1");
     expect(summary?.exerciseCount).toBe(1);
+  });
+});
+
+// Part 3 — multi-device divergence detector. Pure classification: "is THIS
+// device purely behind the server?" It must warn only when local is provably
+// clean and the server is strictly ahead (never auto-heal a two-sided edit).
+describe("isDeviceBehind — multi-device divergence detection (Part 3)", () => {
+  const clean = {
+    onServer: true,
+    finishSynced: true,
+    occurrencesDirty: false,
+    metaDirty: false,
+    occurrenceConflict: false,
+  };
+
+  it("flags a clean local copy when the server has more occurrences", () => {
+    expect(isDeviceBehind({ ...clean, localExerciseCount: 2, serverExerciseCount: 3 })).toBe(true);
+  });
+
+  it("does not flag when counts match", () => {
+    expect(isDeviceBehind({ ...clean, localExerciseCount: 3, serverExerciseCount: 3 })).toBe(false);
+  });
+
+  it("does not flag when local is AHEAD (that's a push, not a pull)", () => {
+    expect(isDeviceBehind({ ...clean, localExerciseCount: 4, serverExerciseCount: 2 })).toBe(false);
+  });
+
+  it("never flags when the session isn't on the server yet", () => {
+    expect(isDeviceBehind({ ...clean, onServer: false, localExerciseCount: 0, serverExerciseCount: 3 })).toBe(false);
+  });
+
+  it("refuses to claim 'behind' when local has ANY un-pushed change (two-sided edit → push path, not silent overwrite)", () => {
+    const ahead = { localExerciseCount: 2, serverExerciseCount: 3 };
+    expect(isDeviceBehind({ ...clean, ...ahead, occurrencesDirty: true })).toBe(false);
+    expect(isDeviceBehind({ ...clean, ...ahead, metaDirty: true })).toBe(false);
+    expect(isDeviceBehind({ ...clean, ...ahead, finishSynced: false })).toBe(false);
+    expect(isDeviceBehind({ ...clean, ...ahead, occurrenceConflict: true })).toBe(false);
   });
 });

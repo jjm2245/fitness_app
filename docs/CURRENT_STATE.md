@@ -257,9 +257,16 @@ modules have focused unit tests. No browser/E2E runner.
   obvious hand-tags (526/293/57; 4 junk/dup rows left null). The tie-break is now
   functional but the library grading is **unverified** — treat as noisy. Watch:
   if substitution ranking gets visibly worse, revisit the source (see DECISIONS).
-- **Multi-device divergence.** `hydrateFromServer` no-ops when a local copy
-  exists, so the same session open on two devices can diverge; only manual
-  Reconcile/Pull heals it. Detect-and-warn design pending (never auto-heal).
+- **Multi-device divergence — detect-and-warn (Part 3, built).**
+  `hydrateFromServer` still no-ops when a local copy exists (never clobbers local
+  edits), but the sessions list now *detects* the server-ahead case:
+  `isDeviceBehind()` flags a session when the server has more occurrences than
+  this device AND local is provably clean (finishSynced, no dirty list/meta/
+  conflict). It routes to **Pull** (adopt the server) and still offers **Keep this
+  device** (Reconcile, history-safe push) — the user picks the direction; never
+  auto-heals. Refuses to claim "behind" on any two-sided edit (falls to the push
+  path). Detection is occurrence-count level (cheap, from the list payload);
+  set-level divergence within equal occurrence counts isn't surfaced here.
 - **Program target chips don't survive a reinstall** — occurrence
   `targetSets/repRange/rirTarget` hydrate as null (program metadata, not logged
   input). **Closed by owner decision** — targets stay at the program level.

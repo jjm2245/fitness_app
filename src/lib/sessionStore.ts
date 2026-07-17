@@ -378,6 +378,33 @@ export async function rehydrateLocalFromServer(server: ServerSession): Promise<L
   return hydrateFromServer(server); // local now absent → rebuilds clean (dirty/conflict false)
 }
 
+// Multi-device divergence detector (Part 3): the same session, edited on another
+// device, now has MORE occurrences on the server than this device's local copy —
+// and this device has nothing un-pushed. That means this device is purely BEHIND
+// (it never saw the other device's additions). `hydrateFromServer` no-ops when a
+// local copy exists, so without this the server-ahead state is invisible and the
+// list would offer "Reconcile" (a no-op push) instead of "Pull".
+//
+// DETECT-AND-WARN ONLY — never auto-heal. Returns false the moment local has ANY
+// un-pushed change (dirty list, pending meta, unsynced finish, or a sync-proven
+// occurrenceConflict), so a genuine two-sided edit is left to the history-safe
+// push path rather than silently overwritten by a pull. When true, the UI warns
+// and lets the user choose the direction (Pull the server's copy, or Reconcile
+// to push local up). We only claim "behind" when this device is provably clean.
+export function isDeviceBehind(args: {
+  onServer: boolean;
+  localExerciseCount: number;
+  serverExerciseCount: number;
+  finishSynced: boolean;
+  occurrencesDirty?: boolean;
+  metaDirty?: boolean;
+  occurrenceConflict?: boolean;
+}): boolean {
+  const localClean =
+    args.finishSynced && !args.occurrencesDirty && !args.metaDirty && !args.occurrenceConflict;
+  return args.onServer && localClean && args.serverExerciseCount > args.localExerciseCount;
+}
+
 // Edit a session's date and/or first-finish time — USER-PROVIDED, source
 // 'user' (traceable, like a corrected rest). Null time = honest blank. The
 // change is a pending sync (metaDirty) drained via PATCH /api/sessions/[id];
