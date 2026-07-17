@@ -16,6 +16,8 @@ They live in `docs/`:
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Running log of every implementation decision and deviation — the shared contract between agents. **Read at session start; append at session end.** |
 | [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) | The actual repo state (stack, schema, modules, API surface, offline/sync internals, tests, traps). Mechanical facts are auto-generated (`npm run docs:refresh`); re-verify judgment sections if the other agent shipped since. |
 | [`docs/SPEC-DRIFT.md`](docs/SPEC-DRIFT.md) | Where the built system has diverged from the spec's intent — section by section. A signal for the spec owner to fold into the next version, **not** something to auto-correct. |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | How to ship a schema change / backfill to production safely — migrate-before-deploy order, Neon direct-vs-pooled endpoints, before/after counts, the health/`db:check` gates. Read before any prod migration. |
+| [`docs/SUBSTITUTION-JUDGMENT.md`](docs/SUBSTITUTION-JUDGMENT.md) | The back-friendly substitution judgment the deterministic engine can't derive (soft preference; hard exclusion is code). Extracted from the otherwise-inert curated substitutions table. |
 
 **At session end, update the docs (standing rule):** run `npm run docs:refresh`
 (regenerates the mechanical facts) and hand-edit the judgment sections of

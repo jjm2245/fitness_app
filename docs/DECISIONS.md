@@ -1793,3 +1793,13 @@ the source of truth. Detection is occurrence-count level (cheap, from the list
 payload already fetched); set-level divergence inside equal occurrence counts is
 not surfaced here (would need a per-session fetch) — acceptable, the common case
 is a whole occurrence added on another device.
+
+### Part 5 — production migration runbook (built)
+Added [`RUNBOOK.md`](RUNBOOK.md): the deliberate migrate-before-deploy sequence,
+the Neon direct-vs-pooled endpoint split (drizzle-kit needs the direct host),
+the before/after-counts habit, and the `/api/health` (503-when-behind) +
+`db:check` gates. **Chose a runbook over an automated migrate-on-deploy step:**
+a build-step migration that fails mid-deploy is hard to roll back and leaves prod
+half-migrated with no operator in the loop; with one operator, a supervised
+manual sequence is safer than unsupervisable automation. Referenced from
+CURRENT_STATE §2 and the AGENTS.md doc table.
