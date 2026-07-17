@@ -29,6 +29,8 @@ import {
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
   isDeviceBehind,
+  discardSessionIfEmpty,
+  sweepEmptySessions,
   migrateSessionDb,
   deriveRest,
   _resetDbForTests,
@@ -1162,5 +1164,65 @@ describe("isDeviceBehind — multi-device divergence detection (Part 3)", () => 
     expect(isDeviceBehind({ ...clean, ...ahead, metaDirty: true })).toBe(false);
     expect(isDeviceBehind({ ...clean, ...ahead, finishSynced: false })).toBe(false);
     expect(isDeviceBehind({ ...clean, ...ahead, occurrenceConflict: true })).toBe(false);
+  });
+});
+
+// Empty-session discard (polish round 2, owner-approved): backing out of
+// Start must leave no husk, and a session with ANY content must never be
+// touched. The rule reads IndexedDB directly; deletion routes through the
+// existing offline-safe deleteSession.
+describe("empty-session discard — husks die, content is sacred", () => {
+  it("discards a pure husk (Start → back out, nothing logged)", async () => {
+    const s = await createSession({ date: freshDate(), origin: "New session", programId: null });
+    expect(await discardSessionIfEmpty(s.id)).toBe(true);
+    expect(await getSession(s.id)).toBeNull();
+  });
+
+  it("one set = never discarded (the regression guard)", async () => {
+    mockOffline();
+    const { id, inst } = await newSession(); // has one occurrence
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date: "x" as never });
+    expect(await discardSessionIfEmpty(id)).toBe(false);
+    expect(await getSession(id)).toBeTruthy();
+    expect(await getSessionSets(id)).toHaveLength(1);
+    // The sweep must refuse it too, even with the age guard disabled.
+    expect(await sweepEmptySessions(0)).toBe(0);
+    expect(await getSession(id)).toBeTruthy();
+  });
+
+  it("an attached occurrence alone (no sets) protects the session", async () => {
+    const { id } = await newSession();
+    expect(await discardSessionIfEmpty(id)).toBe(false);
+    expect(await getSession(id)).toBeTruthy();
+  });
+
+  it("a user date/time edit (metaDirty) protects an otherwise-empty session", async () => {
+    const s = await createSession({ date: freshDate(), origin: "New session", programId: null });
+    await editSessionMeta(s.id, { firstFinishedAt: null });
+    expect(await discardSessionIfEmpty(s.id)).toBe(false);
+    expect(await getSession(s.id)).toBeTruthy();
+  });
+
+  it("a finished session is never discarded", async () => {
+    mockOffline();
+    const s = await createSession({ date: freshDate(), origin: "New session", programId: null });
+    await finishSession(s.id);
+    expect(await discardSessionIfEmpty(s.id)).toBe(false);
+    expect(await getSession(s.id)).toBeTruthy();
+  });
+
+  it("sweep: a FRESH empty session survives (age guard); an old one is collected", async () => {
+    const fresh = await createSession({ date: freshDate(), origin: "New session", programId: null });
+    expect(await sweepEmptySessions()).toBe(0); // just created — inside the 5-min guard
+    expect(await getSession(fresh.id)).toBeTruthy();
+
+    // Age it past the guard by rewriting createdAt (test-only surgery).
+    const db = await (await import("idb")).openDB("fitness-app-session", 4);
+    const row = await db.get("sessions", fresh.id);
+    await db.put("sessions", { ...row!, createdAt: new Date(Date.now() - 10 * 60_000).toISOString() });
+    db.close();
+
+    expect(await sweepEmptySessions()).toBe(1);
+    expect(await getSession(fresh.id)).toBeNull();
   });
 });

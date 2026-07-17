@@ -10,6 +10,7 @@ import {
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
   isDeviceBehind,
+  sweepEmptySessions,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -99,6 +100,12 @@ export default function SessionsPage() {
   }, []);
 
   const refresh = useCallback(async () => {
+    // Backstop husk sweep: discard local unfinished sessions that are still
+    // completely empty (zero occurrences/sets/cardio, no user intent) and
+    // older than ~5 min — the exits the session-bar back handler can't see
+    // (PWA swiped away, browser back-gesture). Content-bearing sessions are
+    // never touched; see discardSessionIfEmpty.
+    await sweepEmptySessions().catch(() => {});
     // Server list is best-effort: offline, we still render the local store.
     let serverSessions: ServerSession[] | null = null;
     try {

@@ -8,6 +8,7 @@ import { ExerciseSearch, ProvenanceBadge, type ExerciseSearchResult } from "@/co
 import { prettyDayName } from "@/lib/labels";
 import { SessionBar } from "@/components/shell/SessionBar";
 import { publishRestTimer } from "@/lib/restTimerBus";
+import { discardSessionIfEmpty } from "@/lib/sessionStore";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import {
   logSet,
@@ -1640,8 +1641,24 @@ export default function LogSessionPage() {
       )}
 
       {/* Session bar — replaces the global nav while logging (mode switch).
-          Back chevron · live rest timer (mirrors the in-card timer) · Finish. */}
-      <SessionBar finishCount={totalLogged} onFinish={() => setShowFinish(true)} />
+          Back chevron · live rest timer (mirrors the in-card timer) · Finish.
+          Back first discards the session if it's still empty (zero
+          occurrences/sets/cardio, unfinished, no user intent) so backing out
+          of Start leaves no husk — the discard reads IndexedDB directly, so
+          it can't act on stale React state. Deliberately wired to the back
+          action, not component unmount: React StrictMode's dev double-invoke
+          would fire an unmount discard on ENTRY and eat the session the user
+          just started. Gesture/kill exits are covered by the History-load
+          sweep instead. */}
+      <SessionBar
+        finishCount={totalLogged}
+        onFinish={() => setShowFinish(true)}
+        onBack={async () => {
+          await discardSessionIfEmpty(sessionId).catch(() => {});
+          if (window.history.length > 1) router.back();
+          else router.push("/sessions");
+        }}
+      />
 
       {showFinish && (
         <FinishSummary

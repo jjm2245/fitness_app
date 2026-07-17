@@ -8,7 +8,17 @@ import { subscribeRestTimer } from "@/lib/restTimerBus";
 // The session bar — replaces the global nav while logging (mode switch:
 // navigating vs. training). Back chevron · live rest timer (mirrors the
 // in-card timer via the display-only bus; hidden when idle) · Finish (n).
-export function SessionBar({ finishCount, onFinish }: { finishCount: number; onFinish: () => void }) {
+export function SessionBar({
+  finishCount,
+  onFinish,
+  onBack,
+}: {
+  finishCount: number;
+  onFinish: () => void;
+  // Optional back override — the log page uses it to discard an empty
+  // session before leaving. Defaults to plain back-with-fallback.
+  onBack?: () => void;
+}) {
   const router = useRouter();
   const [startMs, setStartMs] = useState<number | null>(null);
   const [, force] = useState(0);
@@ -37,6 +47,7 @@ export function SessionBar({ finishCount, onFinish }: { finishCount: number; onF
           // (history.length <= 1 in a new tab / standalone PWA launch) — fall
           // back to History so back never dead-ends.
           onClick={() => {
+            if (onBack) return onBack();
             if (window.history.length > 1) router.back();
             else router.push("/sessions");
           }}

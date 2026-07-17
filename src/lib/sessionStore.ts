@@ -460,6 +460,46 @@ export async function deleteSession(id: string): Promise<void> {
   writeDeleteQueue([...readDeleteQueue(), id]);
 }
 
+// Empty-session discard (owner-approved, polish round 2): tapping Start and
+// backing out must not leave a "New session · 0 exercises" husk in History.
+// Discardable ONLY when the session has zero occurrences, zero sets, zero
+// cardio, isn't finished, and carries no user intent (`metaDirty` — a
+// date/time edit is deliberate) or divergence flag (`occurrenceConflict`).
+// Anything with content is never touched. Routes through the existing
+// offline-safe deleteSession (local wipe + queued idempotent server DELETE),
+// which also cleans the server-side workout_log row the add-then-remove sync
+// path can create for an emptied session.
+export async function discardSessionIfEmpty(id: string): Promise<boolean> {
+  const db = await getDb();
+  const s = await db.get("sessions", id);
+  if (!s) return false;
+  if (s.finishedAt || s.metaDirty || s.occurrenceConflict) return false;
+  if ((await db.getAllFromIndex("occurrences", "by-session", id)).length > 0) return false;
+  if ((await db.getAllFromIndex("sets", "by-session", id)).length > 0) return false;
+  if ((await db.getAllFromIndex("cardio", "by-session", id)).length > 0) return false;
+  await deleteSession(id);
+  return true;
+}
+
+// Backstop for the exits the back button can't see (PWA swiped away, tab
+// killed, browser back-gesture): on History load, sweep local UNFINISHED
+// sessions that pass the discard rule and are older than ~5 minutes. The age
+// guard is what makes the sweep safe — a session the user just started is
+// never eaten mid-entry.
+export async function sweepEmptySessions(maxAgeMs = 5 * 60_000): Promise<number> {
+  const db = await getDb();
+  const sessions = await db.getAll("sessions");
+  const cutoff = Date.now() - maxAgeMs;
+  let discarded = 0;
+  for (const s of sessions) {
+    if (s.finishedAt) continue;
+    const created = Date.parse(s.createdAt);
+    if (!Number.isFinite(created) || created > cutoff) continue;
+    if (await discardSessionIfEmpty(s.id)) discarded += 1;
+  }
+  return discarded;
+}
+
 // Shape returned by GET /api/sessions/[id] — a whole server-side session.
 export interface ServerSession {
   id: string;
