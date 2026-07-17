@@ -1,18 +1,52 @@
 :root {
-  /* Fixed dark theme — this is a personal gym app used one-handed on a phone,
-     so a single high-contrast dark palette is the right call (no light-mode
-     flash, consistent with the logging UI). */
-  --background: #0a0a0a;
-  --surface: #141414;
-  --surface-2: #1c1c1c;
-  --foreground: #ededed;
-  --muted: #9a9a9a;
-  --border: #2c2c2c;
-  --accent: #4f8cff;
+  /* Design language v1 (docs/DESIGN.md) — dark-first, single fixed theme.
+     Personal gym app used one-handed on a phone: no light mode, no flash.
+     LEGACY ALIASES (--background/--surface/--surface-2/--foreground/--muted/
+     --border/--accent/...) are kept and remapped to the new palette so the
+     pre-redesign screens (log, program, blocks, exercises, equipment) pick up
+     the new base surfaces without structural restyling — they get their own
+     pass in phases 2–3. New shell components use the v1 names only. */
+
+  /* Surfaces */
+  --bg: #0a0a0c; /* base */
+  --card: #141418; /* cards on base */
+  --raised: #1c1c22; /* raised / sheets */
+  /* Text */
+  --text: #f4f4f5;
+  --text-2: #a1a1aa;
+  --text-3: #6b7280;
+  /* Hairlines, not boxes */
+  --hairline: rgba(255, 255, 255, 0.08);
+  /* One accent family: indigo → violet. Gradients only on live/interactive. */
+  --accent: #6366f1;
+  --accent-2: #8b5cf6;
+  --accent-grad: linear-gradient(135deg, #6366f1, #8b5cf6);
   --accent-fg: #ffffff;
-  --danger: #ff6b6b;
-  --success: #46d17a;
-  --radius: 10px;
+  /* Status */
+  --success: #34d399;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  /* Section hues (Home tiles + zone accents) */
+  --hue-training: #6366f1;
+  --hue-recovery: #2dd4bf;
+  --hue-nutrition: #f59e0b;
+  --hue-body: #f472b6;
+  --hue-coach: #8b5cf6;
+  /* Shape */
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  /* Type: big numerals watched mid-set are mono/tabular */
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Legacy aliases — same variables the pre-redesign screens consume. */
+  --background: var(--bg);
+  --surface: var(--card);
+  --surface-2: var(--raised);
+  --foreground: var(--text);
+  --muted: var(--text-2);
+  --border: #2a2a32; /* solid fallback where hairline alpha won't work (inputs) */
+
   color-scheme: dark;
 }
 
@@ -30,11 +64,12 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text);
+  background: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 1.4;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -55,20 +90,24 @@ button,
 select,
 input {
   font: inherit;
-  color: var(--foreground);
+  color: var(--text);
 }
 
 button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--raised);
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
 }
 button:hover:not(:disabled) {
-  background: #262626;
+  background: #24242c;
+}
+/* Light motion: a press state, nothing more. */
+button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 button:disabled {
   opacity: 0.45;
@@ -77,12 +116,12 @@ button:disabled {
 
 input,
 select {
-  min-height: 40px;
+  min-height: 44px;
   max-width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: var(--radius);
+  background: var(--card);
 }
 input[type="checkbox"] {
   min-height: 0;
@@ -100,4 +139,11 @@ button:focus-visible {
 h1 {
   font-size: 1.6rem;
   line-height: 1.2;
+  font-weight: 500; /* weights 400/500 only */
+}
+h2,
+h3,
+strong,
+b {
+  font-weight: 500;
 }
