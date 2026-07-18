@@ -47,6 +47,9 @@ function offsetOkKey(exerciseId: string, type: string) {
 // from "No machine". Both resolve to a null equipmentId; a sentinel (not "") so
 // it's distinguishable from an explicit choice in the UI.
 const UNSPECIFIED_UNIT = "__unspecified__";
+// One-time discoverability hint (tap a set to edit / drop) — global flag,
+// dismissed forever on the first row tap.
+const TAP_HINT_KEY = "fitness-app:hint-set-tap";
 
 // The exercise card (phase 2): rows show information; controls appear on
 // demand. The entire state machine below (offset machinery, lanes, timer→rest
@@ -61,6 +64,7 @@ export function StrengthCard({
   completed,
   onSessionChanged,
   onToggleComplete,
+  showTapHint,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -70,6 +74,9 @@ export function StrengthCard({
   completed: boolean;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
+  // True only for the session's FIRST card with logged sets — hosts the
+  // one-time tap hint (no permanent chrome).
+  showTapHint?: boolean;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -163,6 +170,16 @@ export function StrengthCard({
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
   // Which logged set has its action row revealed (one at a time).
   const [revealedSetId, setRevealedSetId] = useState<number | null>(null);
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem(TAP_HINT_KEY) != null
+  );
+  function toggleReveal(localId: number) {
+    if (!hintDismissed) {
+      localStorage.setItem(TAP_HINT_KEY, "1");
+      setHintDismissed(true);
+    }
+    setRevealedSetId((cur) => (cur === localId ? null : localId));
+  }
   // Equipment editor visibility. null = automatic (open while the card has no
   // logged sets — equipment gets confirmed before the first set); a boolean is
   // the user's explicit toggle, so the chip ALWAYS does something, including
@@ -625,7 +642,7 @@ export function StrengthCard({
                     isDrop={isDrop}
                     unilateral={activeExercise.unilateral}
                     revealed={revealedSetId === s.localId}
-                    onToggleReveal={() => setRevealedSetId((cur) => (cur === s.localId ? null : s.localId!))}
+                    onToggleReveal={() => toggleReveal(s.localId!)}
                     onChanged={onSessionChanged}
                     onDrop={startDrop}
                   />
@@ -646,6 +663,9 @@ export function StrengthCard({
                 </Fragment>
               ))}
             </ul>
+          )}
+          {showTapHint && !hintDismissed && !review && loggedSets.length > 0 && (
+            <p className={styles.tapHint}>tap a set to edit or add a drop</p>
           )}
 
           {loggedSets.length > 0 && !completed && (

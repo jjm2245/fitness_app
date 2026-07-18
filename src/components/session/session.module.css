@@ -341,15 +341,29 @@
   color: var(--text-3);
   font-size: 0.75rem;
 }
-/* Discoverability: rows ARE tappable — faint chevron + press state. */
+/* Discoverability: rows ARE tappable. The chevron sits in its OWN far-right
+   slot (hairline-separated) so it reads as "this row opens", never as an
+   effort dropdown; the press state covers the whole row. */
 .setChevron {
   color: var(--text-3);
   opacity: 0.55;
   font-size: 0.95rem;
   flex-shrink: 0;
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--hairline);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
 }
 .setRow:active {
   background: rgba(255, 255, 255, 0.05);
+}
+/* One-time discoverability hint under the session's first logged set. */
+.tapHint {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  padding: 2px 4px 0 18px;
 }
 .setActions {
   display: flex;

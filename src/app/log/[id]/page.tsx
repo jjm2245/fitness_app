@@ -174,6 +174,12 @@ export default function LogSessionPage() {
     }));
   }, [occurrences]);
 
+  // The session's first card WITH logged sets hosts the one-time tap hint.
+  const firstWithSetsId = useMemo(() => {
+    const withSets = new Set(sessionSets.map((s) => s.instanceId));
+    return loggables.find((ex) => withSets.has(ex.instanceId))?.instanceId ?? null;
+  }, [loggables, sessionSets]);
+
   const attachFrom = (e: ProgramExerciseDetail): AttachExercise => ({
     exerciseId: e.exerciseId,
     exerciseName: e.exerciseName,
@@ -305,6 +311,7 @@ export default function LogSessionPage() {
                 completed={completed.has(ex.instanceId)}
                 onSessionChanged={onSessionChanged}
                 onToggleComplete={toggleComplete}
+                showTapHint={ex.instanceId === firstWithSetsId}
               />
             );
           })}
