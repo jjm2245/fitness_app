@@ -623,20 +623,23 @@ export function StrengthCard({
                     onChanged={onSessionChanged}
                     onDrop={startDrop}
                   />
+                  {/* The drop entry renders directly under the set being
+                      dropped — where the logged drop will live. */}
+                  {dropFor?.localId === s.localId && (
+                    <li>
+                      <form onSubmit={addDrop} className={styles.dropForm}>
+                        <span style={{ color: "var(--text-3)" }}>↳ drop:</span>
+                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder="lb" autoFocus style={{ width: 64 }} />
+                        <span>×</span>
+                        <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 52 }} />
+                        <button type="submit" className={styles.smallBtn}>Add drop</button>
+                        <button type="button" onClick={() => setDropFor(null)} className={styles.smallBtn}>Cancel</button>
+                      </form>
+                    </li>
+                  )}
                 </Fragment>
               ))}
             </ul>
-          )}
-
-          {dropFor && (
-            <form onSubmit={addDrop} className={styles.dropForm}>
-              <span style={{ color: "var(--text-3)" }}>↳ drop of set {dropFor.setIndex}:</span>
-              <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder="lb" autoFocus style={{ width: 64 }} />
-              <span>×</span>
-              <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 52 }} />
-              <button type="submit" className={styles.smallBtn}>Add drop</button>
-              <button type="button" onClick={() => setDropFor(null)} className={styles.smallBtn}>Cancel</button>
-            </form>
           )}
 
           {loggedSets.length > 0 && !completed && (
@@ -686,7 +689,8 @@ export function StrengthCard({
               </select>
               {effOffset !== 0 && (
                 <span className={styles.offsetMath} title="Effective load = what you set + the known built-in weight. Progression uses the total.">
-                  {load} + {effOffset} = <strong>{totalLoad} lb</strong>
+                  <strong>{totalLoad} lb</strong>
+                  <span className={styles.setSuffix}> · {load} + {effOffset} built-in</span>
                 </span>
               )}
               {offsetNeedsConfirm && (

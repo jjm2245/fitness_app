@@ -13,18 +13,30 @@ export function RestConnector({ set, onChanged }: { set: SessionSet; onChanged: 
   const [editing, setEditing] = useState(false);
   const [digits, setDigits] = useState(""); // raw digit buffer; the mask formats it
 
+  // Source tags (owner convention): timed tagged, derived tagged (a derived
+  // number must not masquerade as measured/entered), user/manual bare.
+  // 0 is a KNOWN none (deliberately no rest — e.g. unilateral L→R) and shows
+  // as "no rest"; null stays the honest unknown ("rest —").
   const label =
-    set.restSeconds != null
-      ? set.restSource === "derived"
-        ? `~${fmtRest(set.restSeconds)} rest · est`
-        : set.restSource === "timed"
-        ? `${fmtRest(set.restSeconds)} rest · timed`
-        : `${fmtRest(set.restSeconds)} rest`
-      : "rest —";
+    set.restSeconds == null
+      ? "rest —"
+      : set.restSeconds === 0
+      ? "no rest"
+      : set.restSource === "derived"
+      ? `~${fmtRest(set.restSeconds)} rest · derived`
+      : set.restSource === "timed"
+      ? `${fmtRest(set.restSeconds)} rest · timed`
+      : `${fmtRest(set.restSeconds)} rest`;
 
   async function save() {
     if (!digits) return setEditing(false);
     await editSet(set.localId!, { restSeconds: digitsToSeconds(digits), restSource: "user" });
+    setEditing(false);
+    onChanged();
+  }
+  // One-tap known-zero: logging "there was no rest" shouldn't mean typing 0:00.
+  async function saveNone() {
+    await editSet(set.localId!, { restSeconds: 0, restSource: "user" });
     setEditing(false);
     onChanged();
   }
@@ -45,6 +57,7 @@ export function RestConnector({ set, onChanged }: { set: SessionSet; onChanged: 
               onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
             />
             <button type="button" onClick={save} className={styles.restEditSave}>✓</button>
+            <button type="button" onClick={saveNone} className={styles.restEditSave} title="There was deliberately no rest before this set">none</button>
           </span>
         ) : (
           <button

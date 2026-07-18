@@ -317,6 +317,7 @@
   width: 14px;
 }
 .setMain {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -331,6 +332,21 @@
   color: var(--text-3);
   font-size: 0.8rem;
   flex-shrink: 0;
+}
+/* Muted breakdown suffix — transparency without equation soup. */
+.setSuffix {
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+/* Discoverability: rows ARE tappable — faint chevron + press state. */
+.setChevron {
+  color: var(--text-3);
+  opacity: 0.55;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+.setRow:active {
+  background: rgba(255, 255, 255, 0.05);
 }
 .setActions {
   display: flex;
