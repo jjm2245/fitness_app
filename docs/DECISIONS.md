@@ -1981,3 +1981,63 @@ Also carried forward: CSS-specificity conventions added to DESIGN.md (the
 silently-losing single-class override); Train flicker/skeleton accepted
 as-is — no further optimization unless it bothers the owner (then: cache
 last-known counts + revalidate).
+
+## UI redesign — phase 2: the session screen (2026-07-17)
+
+Rebuilt /log/[id] on the DESIGN tokens. UI/interaction only — no schema, no
+sync-logic, no core changes; `src/core/*` untouched (self-check passed).
+Three part-commits (card → sheets → chrome) + this docs pass.
+
+- **Structure:** the page stays the ORCHESTRATOR (state/data/sync handlers
+  unchanged); the cards moved to `src/components/session/*` with their state
+  machines VERBATIM — offset machinery, lane derivation, timer→rest write,
+  drop groups, swap, session-relabel, every localStorage key. Only the JSX
+  was rebuilt. `session.module.css` follows the single-class-specificity
+  convention; `log.module.css` had zero consumers left and was deleted.
+- **The card:** rows show information, controls appear on demand. Collapsed
+  = one quiet line; expanded = metadata chips (the equipment chip ALWAYS
+  shows current state — "ez curl bar +20" — and toggles the on-demand editor,
+  auto-expanded on zero-set cards), read-only set rows (tap → Edit/Delete/
+  +Drop; only one action row open at a time), REST AS CONNECTORS between
+  rows (N−1 edges, the model made visible; tap-to-edit with the digits mask
+  and est/timed tags), drop nesting unchanged, the timer as the accent mono
+  BANNER (liveliest element; still mirrored to the session bar via the
+  display-only bus), and the lb/reps/effort trio (effort = compact select) +
+  one gradient Log set. ⋯ menu: Swap / Move / Remove / Check progression /
+  Undo swap.
+- **DB-verified, not eyeballed (owner requirement):** offset set stored
+  load_entered=45 + builtin_offset=20 = load=65; drop parent↔segment share
+  drop_set_group; timer→rest landed rest_seconds=44 rest_source=timed on the
+  NEXT set; unilateral set stored side=left. (Noted: the drop segment picked
+  up a rest_source=derived 28s — the derivation CAN fire; relevant to the
+  derived-rest watch item.)
+- **Sheets:** a portaled Sheet primitive — found live that a done card's
+  `opacity: 0.62` creates a stacking context that traps and dims a fixed
+  overlay rendered inside it (and that a sheet must render OUTSIDE the
+  collapse guard, since ⋯ offers Swap on collapsed cards). SwapSheet speaks
+  lifter language with the suggested offset surfaced BEFORE the pick and
+  "best match" on the top-ranked candidate; same deterministic endpoint, no
+  LLM. FinishSheet: three mono stat cells + a one-line summary — verified
+  usable at 13 staged exercises.
+- **Chrome:** one-line header (name · date ✎, same stable-date/user-time
+  flow) + the History sync-dot pattern with Sync now / Pull / Reconcile in
+  the expanded detail; palette became a sticky "+ Add" pill opening an
+  AddSheet (multi-add preserved; ExerciseSearch's row-tuned flex-basis
+  needed a plain block wrapper inside the sheet column).
+- **Husk discard, BOTH triggers (owner call):** back-button onClick (race-
+  free common path) + unmount cleanup guarded by a pathname check (real
+  navigation — button or gesture — has changed the URL by cleanup time;
+  StrictMode's double-invoke hasn't, so the eat-on-entry footgun stays
+  avoided). Verified live: button path AND simulated gesture (history.back())
+  both leave History clean on FIRST render; content sessions never touched.
+- **Offline unchanged:** set logged with the dev server dead → dot amber →
+  restart + drain → green. 142 tests, clean build throughout.
+
+### On record (owner-directed): the Start double-create race is MASKED, not fixed
+Seen twice while test-driving (phase 1.5 and again this session): a fast
+double-tap/re-render race on Start can create two sessions despite the
+`starting` guard — the guard isn't airtight across rapid re-renders. The
+empty-session discard currently makes the duplicate invisible (it's empty →
+discarded on exit/sweep), which is masking, not fixing. If Start ever grows
+side effects beyond createSession, revisit the guard (e.g. an idempotency
+key per tap or disabling via ref before the first await).
