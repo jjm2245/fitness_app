@@ -471,7 +471,11 @@ export function StrengthCard({
   // ——— presentation ———
   const swapped = activeExercise.id !== ex.exerciseId;
   const isRecal = previous != null && previous.startsWith("Recalibrating");
-  const equipEditorVisible = equipOpen || loggedSets.length === 0;
+  // A done card expanded is a REVIEW state, not a greyed logging state: chips
+  // + logged rows + rests, fully readable, no input UI. Set rows stay
+  // tappable for corrections; un-checking done restores logging.
+  const review = completed;
+  const equipEditorVisible = !review && (equipOpen || loggedSets.length === 0);
   // The chip always tells the CURRENT state without tapping (owner requirement).
   const unitChipText = selectedUnit
     ? `${selectedUnit.label}${selectedUnit.builtInWeight != null ? ` +${Number(selectedUnit.builtInWeight)}` : ""}`
@@ -487,7 +491,9 @@ export function StrengthCard({
   ];
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+    // Dim only while COLLAPSED — an expanded done card is the review state
+    // and must be fully readable.
+    <li className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
         <input
           type="checkbox"
@@ -510,9 +516,15 @@ export function StrengthCard({
       {!collapsed && (
         <div className={styles.cardBody}>
           <div className={styles.chipsRow}>
-            <button type="button" className={styles.chipUnit} onClick={() => setEquipOpen((o) => !o)} title="Equipment for this exercise — tap to change">
-              {unitChipText} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
-            </button>
+            {review ? (
+              // Review: the equipment state stays legible, but it's not an
+              // editing surface — plain chip, no toggle.
+              <span className={styles.chip}>{unitChipText}</span>
+            ) : (
+              <button type="button" className={styles.chipUnit} onClick={() => setEquipOpen((o) => !o)} title="Equipment for this exercise — tap to change">
+                {unitChipText} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
+              </button>
+            )}
             {previous != null && !isRecal && <span className={styles.chip}>{previous}</span>}
             {isRecal && !recalDismissed && (
               <span className={styles.chipRecal}>
@@ -665,6 +677,7 @@ export function StrengthCard({
             </div>
           )}
 
+          {!review && (
           <form onSubmit={handleAddSet}>
             <div className={styles.entryMetaRow}>
               <select className={styles.typeSelect} value={setType} onChange={(e) => setSetType(e.target.value as "warmup" | "working")}>
@@ -710,6 +723,7 @@ export function StrengthCard({
             )}
             <button type="submit" className={styles.logBtn} style={{ marginTop: 8 }}>Log set</button>
           </form>
+          )}
           {error && <p className={styles.errorText}>{error}</p>}
         </div>
       )}

@@ -126,7 +126,8 @@ export function CardioCard({
   };
 
   return (
-    <li className={`${styles.card} ${completed ? styles.cardDone : ""}`}>
+    // Dim only while collapsed; expanded done = readable review (no input).
+    <li className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
         <input
           type="checkbox"
@@ -181,6 +182,7 @@ export function CardioCard({
             </ul>
           )}
 
+          {!completed && (
           <form onSubmit={handleLog}>
             <div className={styles.entryGrid} style={{ gridTemplateColumns: `repeat(${Math.min(fields.length, 3)}, 1fr)` }}>
               {fields.map((f) => (
@@ -192,6 +194,7 @@ export function CardioCard({
             </div>
             <button type="submit" className={styles.logBtn} style={{ marginTop: 8 }}>Log cardio</button>
           </form>
+          )}
           {error && <p className={styles.errorText}>{error}</p>}
         </div>
       )}
