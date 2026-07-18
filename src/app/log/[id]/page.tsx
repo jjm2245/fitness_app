@@ -311,12 +311,6 @@ export default function LogSessionPage() {
         </ol>
       )}
 
-      {/* Sticky add — the exercise list is the default view; the palette
-          lives in a bottom sheet. */}
-      <button type="button" className={sessionStyles.addFab} onClick={() => setAddOpen(true)}>
-        + Add
-      </button>
-
       {addOpen && (
         <AddSheet
           programs={allPrograms}
@@ -336,6 +330,7 @@ export default function LogSessionPage() {
       <SessionBar
         finishCount={totalLogged}
         onFinish={() => setShowFinish(true)}
+        onAdd={() => setAddOpen(true)}
         onBack={async () => {
           await discardSessionIfEmpty(sessionId).catch(() => {});
           if (window.history.length > 1) router.back();

@@ -40,6 +40,24 @@
   color: var(--text);
 }
 
+/* + Add — compact accent icon in the bar; can never overlap a card CTA. */
+.addBtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-pill);
+  color: color-mix(in srgb, var(--accent) 90%, var(--text));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.addBtn:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
 /* The live rest timer: big mono numerals, accent, gently pulsing while it
    runs. Hidden entirely when idle — the center just stays quiet. */
 .timer {

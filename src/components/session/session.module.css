@@ -385,14 +385,16 @@
   border: 1px solid var(--hairline);
   color: var(--text-2);
 }
+/* Selected = FILLED accent — legible at arm's length mid-workout (2.5-13). */
 .segActive {
   min-height: 36px;
   font-size: 0.8rem;
+  font-weight: 500;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  color: var(--text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-fg);
 }
 
 /* ---------- rest: an edge between set rows ---------- */
@@ -897,27 +899,6 @@
   color: var(--text-3);
   padding: 36px 16px;
   font-size: 0.95rem;
-}
-
-/* Sticky + Add pill — floats above the session bar, below any sheet. */
-.addFab {
-  position: fixed;
-  right: 14px;
-  bottom: calc(76px + env(safe-area-inset-bottom));
-  z-index: 45;
-  min-height: 46px;
-  padding: 8px 18px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--accent-grad);
-  color: var(--accent-fg);
-  font-size: 0.95rem;
-  font-weight: 500;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-}
-.addFab:hover:not(:disabled) {
-  background: var(--accent-grad);
-  filter: brightness(1.08);
 }
 
 /* Add-sheet groups. */
