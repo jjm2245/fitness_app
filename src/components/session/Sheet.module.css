@@ -73,6 +73,14 @@
   flex-direction: column;
   gap: 8px;
 }
+/* Children keep their natural height (2.7-3): flex items default to
+   flex-shrink 1, so when content exceeded the body the EXPANDED GROUP was
+   compressed and its overflow:hidden (corner rounding) clipped its own
+   pills — with the body never overflowing, nothing scrolled and the last
+   exercises were unreachable. One scroll container: the body. */
+.body > * {
+  flex-shrink: 0;
+}
 
 .footer {
   margin-top: 12px;
