@@ -219,27 +219,30 @@
 
 /* ---------- equipment editor (on demand) ---------- */
 
-.equipEditor {
+/* Attached directly beneath the unit chip — an indented, connected row (the
+   chip is the toggle), not a floating full-width box duplicating the chip. */
+.equipAttached {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 6px;
+  margin: -4px 0 0 12px;
+  padding: 6px 0 2px 10px;
+  border-left: 2px solid var(--hairline);
 }
 .equipRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   font-size: 0.85rem;
   color: var(--text-2);
 }
 .selectQuiet {
   min-height: 40px;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   background: var(--raised);
+  width: auto;
+  max-width: 100%;
 }
 .offsetInput {
   width: 64px;

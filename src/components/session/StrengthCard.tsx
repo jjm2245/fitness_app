@@ -163,9 +163,11 @@ export function StrengthCard({
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
   // Which logged set has its action row revealed (one at a time).
   const [revealedSetId, setRevealedSetId] = useState<number | null>(null);
-  // Equipment editor visibility: on demand via the unit chip; auto-expanded
-  // while the card has no logged sets (first-time logging needs it visible).
-  const [equipOpen, setEquipOpen] = useState(false);
+  // Equipment editor visibility. null = automatic (open while the card has no
+  // logged sets — equipment gets confirmed before the first set); a boolean is
+  // the user's explicit toggle, so the chip ALWAYS does something, including
+  // collapsing the zero-set auto-expanded row.
+  const [equipOpen, setEquipOpen] = useState<boolean | null>(null);
 
   const [equipType, setEquipType] = useState<EquipmentTypeId>(() => {
     if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) return occStoredType; // server truth wins
@@ -479,7 +481,7 @@ export function StrengthCard({
   // + logged rows + rests, fully readable, no input UI. Set rows stay
   // tappable for corrections; un-checking done restores logging.
   const review = completed;
-  const equipEditorVisible = !review && (equipOpen || loggedSets.length === 0);
+  const equipEditorVisible = !review && (equipOpen ?? loggedSets.length === 0);
   // The chip always tells the CURRENT state without tapping (owner requirement).
   const unitChipText = selectedUnit
     ? `${selectedUnit.label}${selectedUnit.builtInWeight != null ? ` +${Number(selectedUnit.builtInWeight)}` : ""}`
@@ -525,7 +527,7 @@ export function StrengthCard({
               // editing surface — plain chip, no toggle.
               <span className={styles.chip}>{unitChipText}</span>
             ) : (
-              <button type="button" className={styles.chipUnit} onClick={() => setEquipOpen((o) => !o)} title="Equipment for this exercise — tap to change">
+              <button type="button" className={styles.chipUnit} onClick={() => setEquipOpen(!equipEditorVisible)} title="Equipment for this exercise — tap to change">
                 {unitChipText} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
               </button>
             )}
@@ -543,7 +545,7 @@ export function StrengthCard({
           </div>
 
           {equipEditorVisible && (
-            <div className={styles.equipEditor}>
+            <div className={styles.equipAttached}>
               <div className={styles.equipRow}>
                 <label title="How resistance is applied to this set. Pre-selected from the exercise — a visible default, always editable, never hidden.">
                   <select className={styles.selectQuiet} value={equipType} onChange={(e) => pickType(e.target.value as EquipmentTypeId)}>
