@@ -40,6 +40,12 @@
   }
 }
 
+/* The whole header zone drags — a 4px bar alone is not a touch target. */
+.dragZone {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+}
 .handle {
   width: 36px;
   height: 4px;

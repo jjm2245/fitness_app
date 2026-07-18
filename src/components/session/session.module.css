@@ -719,6 +719,37 @@
   color: var(--text-2);
   line-height: 1.6;
 }
+/* name · ×sets rows; internal scroll past ~10 rows. */
+.finishGrid {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+.finishGridRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 0.88rem;
+}
+.finishGridRow + .finishGridRow {
+  border-top: 1px solid var(--hairline);
+}
+.finishGridName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.finishGridTag {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 .finishSyncRow {
   display: flex;
   align-items: center;
@@ -931,4 +962,47 @@
   background: var(--raised);
   border: 1px solid var(--hairline);
   color: var(--text);
+}
+
+/* New-unit sheet fields (tokens, not browser defaults). */
+.unitField {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  font-size: 0.92rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.unitFieldRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.unitFieldRow .unitField {
+  flex: 1;
+  width: auto;
+}
+.unitInlineLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.unitNotes {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.unitNotes:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

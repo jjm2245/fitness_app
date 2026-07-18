@@ -33,23 +33,16 @@ export function FinishSheet({
   const cardioByInstance = new Map<string, number>();
   for (const c of sessionCardio) cardioByInstance.set(c.instanceId, (cardioByInstance.get(c.instanceId) ?? 0) + 1);
 
-  const parts: string[] = [];
-  let exerciseCount = 0;
+  const rows: Array<{ id: string; name: string; tag: string }> = [];
   for (const o of occurrences) {
     const sets = setsByInstance.get(o.instanceId) ?? 0;
     const cardio = cardioByInstance.get(o.instanceId) ?? 0;
     const done = completed.has(o.instanceId);
-    if (sets > 0) {
-      parts.push(`${o.exerciseName} ×${sets}`);
-      exerciseCount += 1;
-    } else if (cardio > 0) {
-      parts.push(`${o.exerciseName} · cardio`);
-      exerciseCount += 1;
-    } else if (done) {
-      parts.push(`${o.exerciseName} · done, nothing logged`);
-      exerciseCount += 1;
-    }
+    if (sets > 0) rows.push({ id: o.instanceId, name: o.exerciseName, tag: `×${sets}` });
+    else if (cardio > 0) rows.push({ id: o.instanceId, name: o.exerciseName, tag: "cardio" });
+    else if (done) rows.push({ id: o.instanceId, name: o.exerciseName, tag: "done, 0 logged" });
   }
+  const exerciseCount = rows.length;
 
   // Duration from the stable created→now span, same plausibility bounds as
   // History (1 min – 6 h); omitted rather than guessed outside them.
@@ -77,15 +70,24 @@ export function FinishSheet({
         </div>
       </div>
 
-      {parts.length === 0 ? (
+      {rows.length === 0 ? (
         <p className={styles.finishSummaryLine}>Nothing logged yet — you can still finish, or keep logging.</p>
       ) : (
-        <p className={styles.finishSummaryLine}>{parts.join(" · ")}</p>
+        // Compact name · ×sets grid; capped height with internal scroll so it
+        // stays readable however long the session gets.
+        <div className={styles.finishGrid}>
+          {rows.map((r) => (
+            <div key={r.id} className={styles.finishGridRow}>
+              <span className={styles.finishGridName}>{r.name}</span>
+              <span className={styles.finishGridTag}>{r.tag}</span>
+            </div>
+          ))}
+        </div>
       )}
 
       <div className={styles.finishSyncRow}>
         <span className={`${styles.dot} ${pending > 0 ? styles.dotAmber : styles.dotGreen}`} />
-        <span>{pending > 0 ? `${pending} change(s) will sync when you're back online` : "All changes synced"}</span>
+        <span>{pending > 0 ? `${pending} ${pending === 1 ? "change" : "changes"} will sync when you're back online` : "All changes synced"}</span>
       </div>
 
       <div className={styles.finishActions}>

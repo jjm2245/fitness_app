@@ -116,7 +116,7 @@ export function SessionHeader({
             {conflict
               ? "The server has logged sets this device doesn't — pull its copy down."
               : pending > 0
-              ? `${pending} change(s) pending — ${syncError === "network" ? "offline, syncs when you reconnect." : "syncs automatically."}`
+              ? `${pending} ${pending === 1 ? "change" : "changes"} pending — ${syncError === "network" ? "offline, syncs when you reconnect." : "syncs automatically."}`
               : "Synced with the server."}
           </span>
           <div className={styles.syncActions}>
