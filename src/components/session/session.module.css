@@ -1,0 +1,620 @@
+/* Session screen (phase 2) — cards, set rows, rest edges, the live timer.
+   DESIGN.md contract: tokens only, single-class selectors (state variants
+   match the specificity of what they override), rows show information and
+   controls appear on demand. */
+
+/* ---------- card ---------- */
+
+.card {
+  list-style: none;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  padding: 4px 0 0;
+  margin-bottom: 10px;
+  overflow: visible;
+}
+.cardDone {
+  opacity: 0.62;
+}
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+/* Header row — the whole line is the expand/collapse tap target; the checkbox
+   and ⋯ stop propagation. */
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 2px 4px 2px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-lg);
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.headRow:hover {
+  background: transparent;
+}
+.doneBox {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  accent-color: var(--success);
+}
+.exName {
+  font-weight: 500;
+  font-size: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badgeQuiet {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+.countMuted {
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.srcTag {
+  color: var(--text-3);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34%;
+}
+
+/* ---------- ⋯ menu ---------- */
+
+.menuWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.menuBtn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 1.2rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.menuBtn:hover {
+  background: transparent;
+  color: var(--text);
+}
+.menuBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  cursor: default;
+}
+.menuCard {
+  position: absolute;
+  right: 4px;
+  top: 40px;
+  z-index: 56;
+  min-width: 190px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.menuItem {
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.92rem;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.menuItem:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+.menuItem:disabled {
+  opacity: 0.4;
+}
+.menuItemDanger {
+  color: var(--danger);
+}
+
+/* ---------- metadata chips ---------- */
+
+.chipsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chip {
+  font-size: 0.76rem;
+  color: var(--text-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The ONE interactive chip: current equipment state, always legible without
+   tapping; tap toggles the editor. Reads as a control (border, chevron). */
+.chipUnit {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px 10px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  max-width: 100%;
+}
+.chipUnit:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+.chipDismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  padding: 0 2px;
+  min-height: 0;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.chipDismiss:hover {
+  background: transparent;
+  color: var(--text);
+}
+.chipRecal {
+  font-size: 0.76rem;
+  color: color-mix(in srgb, var(--warning) 75%, var(--text-2));
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: normal;
+}
+
+/* ---------- equipment editor (on demand) ---------- */
+
+.equipEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+.equipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.selectQuiet {
+  min-height: 40px;
+  font-size: 0.88rem;
+  background: var(--raised);
+}
+.offsetInput {
+  width: 64px;
+  min-height: 40px;
+  font-size: 0.88rem;
+}
+.confirmChip {
+  min-height: 36px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+.applyAllChip {
+  min-height: 36px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+.warnNote {
+  font-size: 0.76rem;
+  color: var(--warning);
+}
+
+/* ---------- logged sets ---------- */
+
+.setsList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.setRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.setRow:hover {
+  background: transparent;
+}
+.setRowActive {
+  background: rgba(255, 255, 255, 0.04);
+}
+.setDropWrap {
+  margin-left: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
+.setTick {
+  color: var(--success);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 14px;
+}
+.setTickPending {
+  color: var(--warning);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 14px;
+}
+.setMain {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setKind {
+  color: var(--text-3);
+  font-size: 0.78rem;
+}
+.setEffort {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.setActions {
+  display: flex;
+  gap: 8px;
+  padding: 2px 4px 8px 22px;
+}
+.setActions button {
+  min-height: 38px;
+  font-size: 0.82rem;
+  padding: 4px 12px;
+}
+.setEditRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 4px 4px 8px 22px;
+  font-size: 0.9rem;
+}
+.setEditRow input {
+  min-height: 40px;
+}
+
+/* Segmented control (effort in edit, side selector). */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.segBtn {
+  min-height: 36px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+}
+.segActive {
+  min-height: 36px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--text);
+}
+
+/* ---------- rest: an edge between set rows ---------- */
+
+.restEdge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 9px;
+}
+.restRule {
+  width: 2px;
+  align-self: stretch;
+  min-height: 22px;
+  background: var(--hairline);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.restBtn {
+  background: transparent;
+  border: none;
+  min-height: 26px;
+  padding: 2px 6px;
+  color: var(--text-3);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.restBtn:hover {
+  background: transparent;
+  color: var(--text-2);
+}
+.restEditWrap {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.restEditInput {
+  width: 64px;
+  min-height: 36px;
+  font-size: 0.82rem;
+}
+.restEditSave {
+  min-height: 36px;
+  font-size: 0.82rem;
+  padding: 4px 10px;
+}
+
+/* ---------- the live rest timer ---------- */
+
+.timerIdleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-3);
+}
+.timerStartBtn {
+  min-height: 40px;
+  font-size: 0.84rem;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+}
+.timerTargetInput {
+  width: 52px;
+  min-height: 40px;
+  font-size: 0.82rem;
+}
+/* Running: THE live element — accent gradient border/glow, big mono numerals,
+   gentle pulse. Tap anywhere on it to stop. */
+.timerLive {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.16));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+  animation: timerpulse 2.4s ease-in-out infinite;
+  cursor: pointer;
+}
+.timerLive:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+}
+.timerDigits {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.7rem;
+  color: color-mix(in srgb, var(--accent) 88%, var(--text));
+}
+.timerHint {
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+@keyframes timerpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+  50% {
+    box-shadow: 0 0 22px 0 rgba(99, 102, 241, 0.28);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .timerLive {
+    animation: none;
+  }
+}
+.timerHeld {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.timerHeldDigits {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* ---------- input trio + log ---------- */
+
+.entryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 8px;
+}
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cellLabel {
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-left: 2px;
+}
+.cellInput {
+  min-height: 52px;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  width: 100%;
+}
+.cellSelect {
+  min-height: 52px;
+  font-size: 0.88rem;
+  width: 100%;
+}
+.logBtn {
+  width: 100%;
+  min-height: 50px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-size: 1rem;
+  font-weight: 500;
+}
+.logBtn:hover:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(1.08);
+}
+.entryMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.offsetMath {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.typeSelect {
+  min-height: 36px;
+  font-size: 0.8rem;
+  background: var(--raised);
+}
+
+/* ---------- misc ---------- */
+
+.progNote {
+  font-size: 0.84rem;
+  color: var(--text-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.errorText {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.dropForm {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: 22px;
+  font-size: 0.9rem;
+}
+.dropForm input {
+  min-height: 40px;
+}
+.cardioEntryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  width: 100%;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.cardioEntryRow:hover {
+  background: transparent;
+}
+.smallBtn {
+  min-height: 38px;
+  font-size: 0.82rem;
+  padding: 4px 12px;
+}
