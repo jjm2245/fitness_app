@@ -2081,3 +2081,38 @@ Fourteen phone-testing items, five commits (A–E). UI/interaction only;
   unilateral L→R pair and rendered `· derived` (the derivation firing again
   — second data point for the watch item); drag-dismiss verified with
   synthetic pointer events; the 13-exercise finish grid scrolls internally.
+
+## Session-screen refinements — phase 2.6 (2026-07-18)
+
+Five phone-testing items, five commits. UI/interaction only; `src/core/*`
+untouched; 142 tests + clean build.
+
+- **1 — equipment editor attaches to the chip:** the zero-set editor was a
+  full-width box duplicating the chip while the chip did nothing. Now one
+  control: a compact indented row connected beneath the chip (left rule,
+  selects sized to content), and the chip toggles it EVERYWHERE —
+  `equipOpen` became `boolean | null` (null = automatic open-on-zero-sets,
+  so equipment still gets confirmed before the first set; a tap always flips
+  the visible state).
+- **2 — chevron + hint:** the chevron moved to a hairline-separated far-right
+  slot (it read as an effort dropdown sitting flush against the effort text,
+  and floated alone when effort was unset); press state already covered the
+  whole row. A one-time "tap a set to edit or add a drop" hint renders under
+  the session's FIRST card with logged sets, dismissed forever on the first
+  row tap (`fitness-app:hint-set-tap`). Known fuzziness: a tap on a
+  *different* card's row sets the flag but the hint card only re-reads it on
+  remount — acceptable for a one-time hint.
+- **3 — timer target removed entirely** (owner call: its purpose is served by
+  tapping the rest connector). Deleted, not hidden: the input, the
+  stop-at-target check, and the whole Notification request/fire path. The
+  timer is count-up + tap-to-stop + auto-write.
+- **4 — side-pill first-tap fix:** verified via computed styles — the global
+  `button:hover:not(:disabled)` (0,2,1) out-ranked `.segActive` (0,1,0) and
+  touch leaves :hover STUCK on the tapped element, so tap one painted the
+  grey hover background over the accent fill. State classes now carry their
+  own interaction rules at ≥ the global's specificity. Confirmed: one tap →
+  computed background rgb(99,102,241) with hover applied. (Third instance of
+  the DESIGN.md specificity trap; the convention held.)
+- **5 — loads carry units:** rows read "95 lb × 8" (standard notation) —
+  drops, review state, the `last ·` chip, and the recalibration note
+  included; the finish grid shows no loads.
