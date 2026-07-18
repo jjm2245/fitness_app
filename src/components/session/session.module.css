@@ -456,10 +456,18 @@
   padding: 6px 14px;
   border-radius: var(--radius-pill);
 }
+.timerTargetLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
 .timerTargetInput {
-  width: 52px;
+  width: 62px;
   min-height: 40px;
   font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
 }
 /* Running: THE live element — accent gradient border/glow, big mono numerals,
    gentle pulse. Tap anywhere on it to stop. */

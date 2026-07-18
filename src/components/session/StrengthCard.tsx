@@ -14,6 +14,7 @@ import { AddUnitModal } from "./AddUnitModal";
 import { SwapSheet } from "./SwapSheet";
 import {
   EFFORT_OPTIONS,
+  digitsToSeconds,
   type CardControls,
   type EffortTag,
   type EquipmentOption,
@@ -106,7 +107,10 @@ export function StrengthCard({
   // auto-written as the NEXT set's restBefore (source "timed").
   const [timerStart, setTimerStart] = useState<number | null>(null);
   const [heldRest, setHeldRest] = useState<number | null>(null);
-  const [timerTargetMin, setTimerTargetMin] = useState("");
+  // Optional timer TARGET — hitting it stops the timer, holds the rest, and
+  // notifies. Entered through the same digits-only m:ss mask as rest editing
+  // (it was a bare unlabeled minutes field — "300" meant 300 minutes).
+  const [timerTargetDigits, setTimerTargetDigits] = useState("");
   // Display mirror of the running elapsed seconds (render never reads the clock).
   const [timerElapsed, setTimerElapsed] = useState(0);
   const timerNotified = useRef(false);
@@ -114,8 +118,8 @@ export function StrengthCard({
     if (timerStart == null) return;
     const iv = setInterval(() => {
       setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
-      const mins = Number(timerTargetMin);
-      if (Number.isFinite(mins) && mins > 0 && Date.now() - timerStart >= mins * 60_000) {
+      const targetSecs = digitsToSeconds(timerTargetDigits);
+      if (targetSecs > 0 && Date.now() - timerStart >= targetSecs * 1000) {
         // Target hit: hold the rest at the target and notify — it will be
         // written to the next set automatically.
         setHeldRest(Math.round((Date.now() - timerStart) / 1000));
@@ -127,7 +131,7 @@ export function StrengthCard({
       }
     }, 1000);
     return () => clearInterval(iv);
-  }, [timerStart, timerTargetMin]);
+  }, [timerStart, timerTargetDigits]);
   // Mirror the running timer into the session bar (display-only bus — the bar
   // renders it; this card still owns start/stop and the rest write).
   useEffect(() => {
@@ -647,19 +651,18 @@ export function StrengthCard({
               timerStart={timerStart}
               timerElapsed={timerElapsed}
               heldRest={heldRest}
-              targetMin={timerTargetMin}
+              targetDigits={timerTargetDigits}
               onStart={() => {
                 setTimerStart(Date.now());
                 setTimerElapsed(0);
                 timerNotified.current = false;
-                const mins = Number(timerTargetMin);
-                if (Number.isFinite(mins) && mins > 0 && typeof Notification !== "undefined" && Notification.permission === "default") {
+                if (digitsToSeconds(timerTargetDigits) > 0 && typeof Notification !== "undefined" && Notification.permission === "default") {
                   Notification.requestPermission().catch(() => {});
                 }
               }}
               onStop={() => { setHeldRest(Math.round((Date.now() - timerStart!) / 1000)); setTimerStart(null); }}
               onDiscardHeld={() => setHeldRest(null)}
-              onTargetChange={setTimerTargetMin}
+              onTargetChange={setTimerTargetDigits}
             />
           )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "./session.module.css";
-import { fmtRest } from "./shared";
+import { digitsToSeconds, fmtRest } from "./shared";
 
 // The live rest timer — the most alive element on the screen while running
 // (accent, big mono numerals, gentle pulse; the session bar mirrors it via
@@ -12,7 +12,7 @@ export function RestBanner({
   timerStart,
   timerElapsed,
   heldRest,
-  targetMin,
+  targetDigits,
   onStart,
   onStop,
   onDiscardHeld,
@@ -21,7 +21,8 @@ export function RestBanner({
   timerStart: number | null;
   timerElapsed: number;
   heldRest: number | null;
-  targetMin: string;
+  // Raw digit buffer for the optional m:ss target (same mask as rest editing).
+  targetDigits: string;
   onStart: () => void;
   onStop: () => void;
   onDiscardHeld: () => void;
@@ -52,14 +53,16 @@ export function RestBanner({
       <button type="button" className={styles.timerStartBtn} onClick={onStart} title="Start after racking — stopping (or hitting the target) records the rest on your next set automatically">
         ⏱ Start rest
       </button>
-      <input
-        type="number"
-        className={styles.timerTargetInput}
-        value={targetMin}
-        onChange={(e) => onTargetChange(e.target.value)}
-        placeholder="min"
-        title="Optional target — stops the timer and notifies"
-      />
+      <label className={styles.timerTargetLabel} title="Optional — the timer stops at this mark, holds the rest for your next set, and notifies">
+        target
+        <input
+          className={styles.timerTargetInput}
+          value={targetDigits ? fmtRest(digitsToSeconds(targetDigits)) : ""}
+          onChange={(e) => onTargetChange(e.target.value.replace(/\D/g, "").slice(-4))}
+          inputMode="numeric"
+          placeholder="m:ss"
+        />
+      </label>
     </div>
   );
 }
