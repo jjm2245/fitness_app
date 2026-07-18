@@ -2041,3 +2041,43 @@ empty-session discard currently makes the duplicate invisible (it's empty →
 discarded on exit/sweep), which is masking, not fixing. If Start ever grows
 side effects beyond createSession, revisit the guard (e.g. an idempotency
 key per tap or disabling via ref before the first await).
+
+## Session-screen polish — phase 2.5 (2026-07-18)
+
+Fourteen phone-testing items, five commits (A–E). UI/interaction only;
+`src/core/*` untouched; 142 tests + clean build throughout.
+
+- **A — done-card review state:** an expanded done card shows chips + logged
+  rows + rests, fully readable (the 0.62 dim now applies only while
+  collapsed), with NO input trio / Log set / equipment editor — the unit chip
+  stays legible but is a plain chip, not a control. Set rows remain tappable
+  for corrections; unchecking done restores logging. Cardio matches.
+- **B — set-row clarity:** rows lead with the effective load ("65 × 8") and
+  the breakdown became a muted suffix ("· 45 + 20 built-in") shown only when
+  an offset exists (same flip on the input preview); rows got a faint chevron
+  + press state (they didn't look tappable); edit-mode effort is the same
+  dropdown as the trio; the drop entry renders directly under its parent set;
+  a 0 rest displays as "no rest" (deliberate none — the owner's unilateral
+  L→R case) distinct from null "rest —", with a one-tap **none** in the rest
+  editor (saves 0/user); rest tags completed per convention — timed tagged,
+  **derived tagged** (`· derived` replacing the vaguer "est"), user bare.
+- **C — timer target:** the unlabeled minutes field ("300" = 300 minutes)
+  became a labeled `target` input on the same digits-only m:ss mask as rest
+  editing; the stop-at-target check and notification prompt read the masked
+  seconds.
+- **D — sheets:** the grab handle is honest — dragging the header zone down
+  >90px dismisses (pointer capture, live translate, snap-back animation
+  skipped under reduced motion); the finish summary became a name/×sets row
+  grid capped at 340px with internal scroll (verified at 13 exercises); the
+  new-unit modal became a bottom sheet on the Sheet primitive with token
+  fields (the last centered modal + raw-bordered textarea gone); "1
+  change(s)" pluralized.
+- **E — selection + Add:** selected segment pills are FILLED accent
+  (arm's-length legible); **+ Add moved into the session bar** (back · + ·
+  timer · Finish) — the sticky pill could park on a card's Log set; the bar
+  structurally can't. Verified at 375px with the timer running: fits, no
+  fallback needed.
+- Live verification highlights: a ~2:20 derived rest fired between a
+  unilateral L→R pair and rendered `· derived` (the derivation firing again
+  — second data point for the watch item); drag-dismiss verified with
+  synthetic pointer events; the 13-exercise finish grid scrolls internally.
