@@ -524,6 +524,8 @@ export function StrengthCard({
 
       {!collapsed && (
         <div className={styles.cardBody}>
+          {/* Order (2.7-2): chip → editor (connected, directly beneath) →
+              metadata pills. The editor belongs to the chip, not the pills. */}
           <div className={styles.chipsRow}>
             {review ? (
               // Review: the equipment state stays legible, but it's not an
@@ -534,17 +536,6 @@ export function StrengthCard({
                 {unitChipText} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
               </button>
             )}
-            {previous != null && !isRecal && <span className={styles.chip}>{previous}</span>}
-            {isRecal && !recalDismissed && (
-              <span className={styles.chipRecal}>
-                {previous}
-                <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
-              </span>
-            )}
-            {ex.target && (
-              <span className={styles.chip}>target {ex.target.targetSets} × {ex.target.repRange ?? "?"}{ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}</span>
-            )}
-            <span className={styles.chip}>{ex.source}</span>
           </div>
 
           {equipEditorVisible && (
@@ -596,6 +587,20 @@ export function StrengthCard({
               )}
             </div>
           )}
+
+          <div className={styles.chipsRow}>
+            {previous != null && !isRecal && <span className={styles.chip}>{previous}</span>}
+            {isRecal && !recalDismissed && (
+              <span className={styles.chipRecal}>
+                {previous}
+                <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
+              </span>
+            )}
+            {ex.target && (
+              <span className={styles.chip}>target {ex.target.targetSets} × {ex.target.repRange ?? "?"}{ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}</span>
+            )}
+            <span className={styles.chip}>{ex.source}</span>
+          </div>
 
           {unitModalOpen && (
             <AddUnitModal
