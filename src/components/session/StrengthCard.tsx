@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./session.module.css";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
@@ -14,7 +14,6 @@ import { AddUnitModal } from "./AddUnitModal";
 import { SwapSheet } from "./SwapSheet";
 import {
   EFFORT_OPTIONS,
-  digitsToSeconds,
   type CardControls,
   type EffortTag,
   type EquipmentOption,
@@ -114,31 +113,18 @@ export function StrengthCard({
   // auto-written as the NEXT set's restBefore (source "timed").
   const [timerStart, setTimerStart] = useState<number | null>(null);
   const [heldRest, setHeldRest] = useState<number | null>(null);
-  // Optional timer TARGET — hitting it stops the timer, holds the rest, and
-  // notifies. Entered through the same digits-only m:ss mask as rest editing
-  // (it was a bare unlabeled minutes field — "300" meant 300 minutes).
-  const [timerTargetDigits, setTimerTargetDigits] = useState("");
   // Display mirror of the running elapsed seconds (render never reads the clock).
+  // (The timer target + notify feature was removed in 2.6-3: a separately-
+  // timed rest is entered by tapping the rest connector after logging; the
+  // timer is count-up + tap-to-stop + auto-write.)
   const [timerElapsed, setTimerElapsed] = useState(0);
-  const timerNotified = useRef(false);
   useEffect(() => {
     if (timerStart == null) return;
     const iv = setInterval(() => {
       setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
-      const targetSecs = digitsToSeconds(timerTargetDigits);
-      if (targetSecs > 0 && Date.now() - timerStart >= targetSecs * 1000) {
-        // Target hit: hold the rest at the target and notify — it will be
-        // written to the next set automatically.
-        setHeldRest(Math.round((Date.now() - timerStart) / 1000));
-        setTimerStart(null);
-        if (!timerNotified.current && typeof Notification !== "undefined" && Notification.permission === "granted") {
-          timerNotified.current = true;
-          new Notification("Rest done — next set");
-        }
-      }
     }, 1000);
     return () => clearInterval(iv);
-  }, [timerStart, timerTargetDigits]);
+  }, [timerStart]);
   // Mirror the running timer into the session bar (display-only bus — the bar
   // renders it; this card still owns start/stop and the rest write).
   useEffect(() => {
@@ -673,18 +659,12 @@ export function StrengthCard({
               timerStart={timerStart}
               timerElapsed={timerElapsed}
               heldRest={heldRest}
-              targetDigits={timerTargetDigits}
               onStart={() => {
                 setTimerStart(Date.now());
                 setTimerElapsed(0);
-                timerNotified.current = false;
-                if (digitsToSeconds(timerTargetDigits) > 0 && typeof Notification !== "undefined" && Notification.permission === "default") {
-                  Notification.requestPermission().catch(() => {});
-                }
               }}
               onStop={() => { setHeldRest(Math.round((Date.now() - timerStart!) / 1000)); setTimerStart(null); }}
               onDiscardHeld={() => setHeldRest(null)}
-              onTargetChange={setTimerTargetDigits}
             />
           )}
 
