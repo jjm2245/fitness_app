@@ -11,6 +11,7 @@ import { RestConnector } from "./RestConnector";
 import { RestBanner } from "./RestBanner";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import { AddUnitModal } from "./AddUnitModal";
+import { SwapSheet } from "./SwapSheet";
 import {
   EFFORT_OPTIONS,
   type CardControls,
@@ -59,7 +60,6 @@ export function StrengthCard({
   completed,
   onSessionChanged,
   onToggleComplete,
-  swapSheet,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -69,8 +69,6 @@ export function StrengthCard({
   completed: boolean;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
-  // Part 2 wires the bottom sheet; Part 1 renders an inline candidate list.
-  swapSheet?: (args: { candidates: SubstitutionCandidate[] | null; onPick: (c: SubstitutionCandidate) => void; onClose: () => void; originalName: string }) => React.ReactNode;
 }) {
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
@@ -596,21 +594,6 @@ export function StrengthCard({
             />
           )}
 
-          {swapOpen && swapSheet
-            ? swapSheet({ candidates: swapCandidates, onPick: pickSwap, onClose: () => setSwapOpen(false), originalName: activeExercise.name })
-            : swapOpen && (
-                <div className={styles.progNote}>
-                  {swapCandidates == null ? "Finding swaps…" : swapCandidates.length === 0 ? "No swaps available." : null}
-                  <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
-                    {swapCandidates?.map((c) => (
-                      <li key={c.id}>
-                        <button type="button" className={styles.smallBtn} onClick={() => pickSwap(c)}>{c.name}</button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
           {displaySets.length > 0 && (
             <ul className={styles.setsList}>
               {displaySets.map(({ set: s, isDrop }, i) => (
@@ -729,6 +712,17 @@ export function StrengthCard({
           </form>
           {error && <p className={styles.errorText}>{error}</p>}
         </div>
+      )}
+
+      {/* Fixed overlay — must render regardless of collapse state (the ⋯ menu
+          offers Swap on a collapsed card too). */}
+      {swapOpen && (
+        <SwapSheet
+          originalName={activeExercise.name}
+          candidates={swapCandidates}
+          onPick={pickSwap}
+          onClose={() => setSwapOpen(false)}
+        />
       )}
     </li>
   );

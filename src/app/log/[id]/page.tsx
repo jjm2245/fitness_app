@@ -9,6 +9,7 @@ import { prettyDayName } from "@/lib/labels";
 import { SessionBar } from "@/components/shell/SessionBar";
 import { StrengthCard } from "@/components/session/StrengthCard";
 import { CardioCard } from "@/components/session/CardioCard";
+import { FinishSheet } from "@/components/session/FinishSheet";
 import type {
   BlockDetail,
   CardControls,
@@ -100,69 +101,6 @@ function SessionDateEditor({ session, onChanged }: { session: LocalSession; onCh
       <button type="button" onClick={save} className={styles.primary}>Save</button>
       <button type="button" onClick={() => setEditing(false)} className={styles.secondaryBtn}>Cancel</button>
     </span>
-  );
-}
-
-function FinishSummary({
-  session, occurrences, completed, sessionSets, sessionCardio, pending, onConfirm, onClose,
-}: {
-  session: LocalSession;
-  occurrences: Occurrence[];
-  completed: Set<string>;
-  sessionSets: SessionSet[];
-  sessionCardio: SessionCardio[];
-  pending: number;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  // One row per performed occurrence, in order, with its own set/cardio/done —
-  // regardless of source (bug 1b stays fixed under the occurrence model).
-  const setsByInstance = new Map<string, number>();
-  for (const s of sessionSets) setsByInstance.set(s.instanceId, (setsByInstance.get(s.instanceId) ?? 0) + 1);
-  const cardioByInstance = new Map<string, number>();
-  for (const c of sessionCardio) cardioByInstance.set(c.instanceId, (cardioByInstance.get(c.instanceId) ?? 0) + 1);
-
-  const list = occurrences.map((o) => {
-    const sets = setsByInstance.get(o.instanceId) ?? 0;
-    const cardio = cardioByInstance.get(o.instanceId) ?? 0;
-    const done = completed.has(o.instanceId);
-    const bits: string[] = [];
-    if (sets > 0) bits.push(`${sets} ${sets === 1 ? "set" : "sets"}`);
-    if (cardio > 0) bits.push("cardio");
-    if (bits.length === 0 && done) bits.push("done, no sets logged");
-    return { instanceId: o.instanceId, name: o.exerciseName, desc: bits.join(" · ") };
-  }).filter((r) => r.desc.length > 0);
-
-  const setCount = sessionSets.length;
-
-  return (
-    <div className={styles.modalBackdrop}>
-      <div className={styles.modal}>
-        <h2 style={{ marginTop: 0 }}>Finish session — {session.origin}</h2>
-        <p>
-          <strong>{setCount}</strong> {setCount === 1 ? "set" : "sets"} across <strong>{list.length}</strong>{" "}
-          {list.length === 1 ? "exercise" : "exercises"}
-          {sessionCardio.length > 0 && <> · <strong>{sessionCardio.length}</strong> cardio {sessionCardio.length === 1 ? "entry" : "entries"}</>}.
-        </p>
-        {list.length === 0 ? (
-          <p style={{ opacity: 0.7 }}>Nothing logged yet — you can still finish, or keep logging.</p>
-        ) : (
-          <ol style={{ paddingLeft: 18 }}>
-            {list.map((r) => <li key={r.instanceId}>{r.name} — {r.desc}</li>)}
-          </ol>
-        )}
-        <p style={{ fontSize: 13, opacity: 0.7 }}>
-          {pending > 0 ? `${pending} change(s) not yet synced — they'll sync when you're back online.` : "All changes synced."}
-        </p>
-        {session.finishedAt && (
-          <p style={{ fontSize: 13, opacity: 0.7 }}>Previously finished at {new Date(session.finishedAt).toLocaleTimeString()} — finishing again re-stamps it.</p>
-        )}
-        <div className={styles.modalActions}>
-          <button type="button" onClick={onConfirm} className={styles.primary}>Confirm finish</button>
-          <button type="button" onClick={onClose}>Keep logging</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -510,7 +448,7 @@ export default function LogSessionPage() {
       />
 
       {showFinish && (
-        <FinishSummary
+        <FinishSheet
           session={session}
           occurrences={occurrences}
           completed={completed}
