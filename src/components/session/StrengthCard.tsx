@@ -282,7 +282,7 @@ export function StrengthCard({
       if (cancelled) return;
       if (data.session) {
         const reps = data.session.sets.map((s) => s.reps).join(", ");
-        setPrevious(`last · ${data.session.sets[0]?.load ?? "?"} × ${reps}`);
+        setPrevious(`last · ${data.session.sets[0]?.load ?? "?"} lb × ${reps}`);
       } else if (lane) {
         // Recalibrate, don't reset: no history in THIS lane, but show
         // continuity from the exercise's other lanes — effort + volume carry
@@ -291,7 +291,7 @@ export function StrengthCard({
         const anyData: { session: { sets: Array<{ load: number; reps: number }> } | null } = await any.json();
         if (cancelled) return;
         if (anyData.session) {
-          setPrevious(`Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} on another unit (effort + volume carry over)`);
+          setPrevious(`Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} lb on another unit (effort + volume carry over)`);
         } else {
           setPrevious(null);
         }

@@ -91,7 +91,7 @@ export function SetRow({
           <span className={styles.setMain}>
             {isDrop && <span className={styles.setKind}>↳ drop · </span>}
             {!isDrop && set.setType === "warmup" && <span className={styles.setKind}>warm-up · </span>}
-            {set.load} × {set.reps}
+            {set.load} lb × {set.reps}
             {sideTag}
             {hasOffset && <span className={styles.setSuffix}> · {set.loadEntered} + {set.builtinOffset} built-in</span>}
           </span>
