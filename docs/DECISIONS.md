@@ -2116,3 +2116,39 @@ untouched; 142 tests + clean build.
 - **5 — loads carry units:** rows read "95 lb × 8" (standard notation) —
   drops, review state, the `last ·` chip, and the recalibration note
   included; the finish grid shows no loads.
+
+## Session-screen refinements — phase 2.7 (2026-07-18)
+
+Three fixes from phone screenshots, all `src/components/session/*` only
+(core untouched, no schema/API/sync changes). Tests 142 pass, clean build.
+
+- **1 — ⋯ menu positioning + scrim:** the menu was portaled but still
+  positioned naively. Now placed from the trigger's rect: right-aligned and
+  viewport-clamped, flipping ABOVE the trigger when the estimated height
+  (items × 44 + 8) would cross the bottom edge — it can never spill
+  off-screen or land over the next card. One consistent light scrim
+  (`rgba(0,0,0,0.35)`, z 65) dims the page, traps every tap (menu item or
+  scrim — never the card behind), and closes on tap. Verified in-browser:
+  bottom-most card's menu flips up fully in-viewport, the menu stays fully
+  opaque (computed opacity 1) over a dimmed done card (0.62), tap-outside
+  closes without reaching the card underneath.
+- **2 — equipment editor above the pills:** 2.6 attached the editor to the
+  chip but left it BELOW the metadata pills, breaking the "hangs off the
+  chip" read. Order is now chip → attached editor row → pills
+  (previous / recal / target / source); the first chips row holds only the
+  unit chip. Verified geometrically (chip y < editor y < pills y).
+- **3 — add-panel clip was flex compression, not a height cap:** sheet-body
+  children default to `flex-shrink: 1`, so when an expanded group made the
+  content taller than the body the GROUP was squeezed to fit and its own
+  `overflow: hidden` (corner rounding) clipped the trailing pills — the body
+  never overflowed, so it never scrolled and the last exercises were
+  unreachable. Fix: `.body > * { flex-shrink: 0 }` — children keep natural
+  height and the body is the single scroll container; `.addChips` got 14px
+  bottom padding so the final pill terminates cleanly (safe-area padding was
+  already on the panel). Verified: all 10 pills of a 10-exercise group
+  reachable at 375px. (New trap class for DESIGN.md thinking: a flex column
+  with `overflow` styling on a child can clip instead of scroll.)
+- **Specificity guardrail:** proposed to the owner (not built — approval
+  required): wrap `globals.css` interactive pseudo-class rules in
+  `:where()` so they carry zero specificity (structural fix), with an
+  optional stylelint check as a complement.
