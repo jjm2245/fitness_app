@@ -410,18 +410,11 @@
   border: 1px solid var(--accent);
   color: var(--accent-fg);
 }
-/* First-tap fix (2.6-4): the global `button:hover:not(:disabled)` (0,2,1)
-   out-ranks a bare state class (0,1,0), and touch leaves :hover STUCK on the
-   tapped pill — so the first tap painted the grey hover background over the
-   accent fill (the "old faint purple" look) until a second tap moved hover
-   elsewhere. State classes must carry their own interaction rules at ≥ the
-   global's specificity (DESIGN.md convention: verify computed styles). */
-.segActive:hover:not(:disabled) {
-  background: var(--accent);
-}
-.segBtn:hover:not(:disabled) {
-  background: var(--raised);
-}
+/* The first-tap fix that used to live here (a matching `.segActive:hover`
+   override) is now unnecessary: globals.css wraps the interactive pseudo
+   chain in :where(), so the global hover is 0,0,1 and this bare state class
+   (0,1,0) wins by construction — even with :hover stuck after a touch tap.
+   Verified via computed style, not class presence (2.8). */
 
 /* ---------- rest: an edge between set rows ---------- */
 

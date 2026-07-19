@@ -102,11 +102,19 @@ button {
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
 }
-button:hover:not(:disabled) {
+/* Interactive states are wrapped in :where() so the pseudo-class chain adds
+   ZERO specificity — the selector stays 0,0,1 (one live type selector). It
+   still beats the base `button` rule above by source order (plain buttons
+   keep their hover), but ANY single class (e.g. a component's .segActive at
+   0,1,0) now wins by construction. This makes the recurring bug — a bare
+   global `button:hover:not(:disabled)` (0,2,1) out-ranking a state class and,
+   with touch leaving :hover stuck, painting the hover bg over an accent fill
+   — unwritable here. Verify with computed styles, never class presence. */
+button:where(:hover:not(:disabled)) {
   background: #24242c;
 }
 /* Light motion: a press state, nothing more. */
-button:active:not(:disabled) {
+button:where(:active:not(:disabled)) {
   transform: scale(0.98);
 }
 button:disabled {
@@ -129,9 +137,9 @@ input[type="checkbox"] {
   height: 22px;
   accent-color: var(--accent);
 }
-input:focus,
-select:focus,
-button:focus-visible {
+input:where(:focus),
+select:where(:focus),
+button:where(:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
