@@ -2242,3 +2242,39 @@ Final exercise-card header refinement. Verified in-app at 375px; tsc clean,
     108px cap was purpose-built for the now-replaced inline row; its only
     remaining users are SetRow's effort-in-edit select and AddUnitModal's ratio
     select, which shouldn't truncate. The editor now uses a new `.selectFull`.
+
+## Session-screen refinements — phase 2.10 (2026-07-19)
+
+Cardio card brought into the strength-card header family, and the duplicate
+"cardio" tag diagnosed and removed. `src/components` only (the approved
+`?scope=exercise` route from 2.9 stays); core untouched, 142 tests, clean build.
+
+- **1 — CardioCard harmonized.** Metadata now sits under the name as a muted,
+  exercise-level `last …` line in the exercise's own units — `last 30 min ·
+  3 speed · 12 incline` (treadmill), `last — no prior data` (Stairmaster) —
+  built from the same `fields` that drive the input cells. Always shown; no
+  target/equipment/offset/lane (cardio has none). The input grid, the
+  MIN/SPEED/INCLINE/LEVEL labels, and the Log cardio button already used the
+  shared strength tokens (`.entryGrid/.cell/.cellLabel/.cellInput/.logBtn`), so
+  no restyling was needed — the harmonization is the metadata line + dropping
+  the pills. Collapsed header keeps `[source]`, matching the strength card.
+- **2/3 — duplicate "cardio / Cardio" tag: diagnosed, not guess-patched.** The
+  two pills were **not** duplicated tag data. The lowercase "cardio" was a
+  **hardcoded literal chip** in CardioCard's body; the capitalized "Cardio" was
+  `ex.source` — the occurrence's origin — because the seed exposes a **program
+  day literally named "Cardio"** (AddSheet's comment notes it dedupes that
+  label). The exercise's own data is clean (`movement_pattern` "conditioning",
+  no muscles), so **no seed cleanup is needed**. Dropping the source pill and
+  the hardcoded category chip (the whole `chipsRow`) removes the duplicate —
+  mirroring the strength card, which carries neither, so it is not a cardio
+  special-case.
+  - **On the requested general case-insensitive dedupe:** there is **no
+    display-layer site that renders a set of exercise tags/labels** that could
+    collide — I checked the cards, the exercises-management page, ExerciseSearch
+    results, FinishSheet and SwapSheet; the only `.muscles.map` is in
+    `src/core/substitution.ts` (logic, not display). The duplicate was a
+    hardcoded string vs. the source field, which a tag-array dedupe wouldn't
+    even catch ("conditioning"/day-name "Cardio" don't match). So a general
+    dedupe utility would have no call site (dead code); removal is the correct,
+    general fix. If a tag-list display is added later (e.g. muscles on a detail
+    view), that is where a `dedupeCI` helper should live — flagged for the owner.
