@@ -2278,3 +2278,8 @@ Cardio card brought into the strength-card header family, and the duplicate
     dedupe utility would have no call site (dead code); removal is the correct,
     general fix. If a tag-list display is added later (e.g. muscles on a detail
     view), that is where a `dedupeCI` helper should live — flagged for the owner.
+
+**2.10-1 follow-up:** cardio input cells no longer prefill from the program's
+prescribed `ex.params` (the treadmill showed 30/3/12 while every other
+exercise started blank). They initialize to "" — the muted `last …` line is
+the reference, not a prefill. Dropped the now-unused `num`/`params` read.
