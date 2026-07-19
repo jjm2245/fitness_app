@@ -2152,3 +2152,46 @@ Three fixes from phone screenshots, all `src/components/session/*` only
   required): wrap `globals.css` interactive pseudo-class rules in
   `:where()` so they carry zero specificity (structural fix), with an
   optional stylelint check as a complement.
+
+## Session-screen refinements — phase 2.8 (2026-07-18)
+
+Two items, `src/app/globals.css` + `src/components/session/*` only (core
+untouched, no schema/API/sync changes). tsc clean, 142 tests pass, clean build.
+
+- **1 — specificity guardrail (`:where()`, approved):** the shared global
+  interactive rules now wrap their pseudo-class chain in `:where()` —
+  `button:where(:hover:not(:disabled))`, `button:where(:active…)`, and the
+  `input/select/button` `:focus` outline rules. `:where()` contributes zero
+  specificity, so the selector stays **0,0,1** (one live `button` type
+  selector): it still beats the base `button` rule by source order (plain
+  buttons keep their hover) but ANY single class (0,1,0) now wins by
+  construction. This makes the three-times-recurring bug unwritable — a bare
+  global `button:hover` (0,2,1) out-ranking a state class, and touch leaving
+  `:hover` stuck so the grey hover paints over an accent fill. The 2.6-4
+  band-aid (`.segActive:hover` override) was **removed** — the structural fix
+  carries it, and removing it is what actually exercises the guardrail.
+  - *Verified via computed style, not class presence:* active side-pill `L`
+    with `:hover` genuinely stuck (real pointer, confirmed `:hover` matched) →
+    `rgb(99,102,241)` accent + white text; a plain `.smallBtn` (no bg
+    override) on hover → `rgb(36,36,44)` (#24242c), i.e. still inherits the
+    global hover — nothing that should inherit it changed.
+  - *Subtlety recorded:* the literal `:where(button):hover:not(:disabled)`
+    form leaves **0,2,0** and would NOT fix it (still beats `.segActive`
+    0,1,0). Keeping `button` live and wrapping the pseudo chain is what lands
+    the needed **0,0,1**. Stylelint tripwire intentionally skipped (owner):
+    `:where()` makes the bug unwritable, so the tripwire is redundant unless
+    we later want to guard globals.css against regressions.
+- **2 — compact card metadata:** the expanded card top showed the same info
+  twice over two rows.
+  - *(a) Editor is compact inline:* the chip is the full summary, so the
+    editor no longer restates it as full-width stacked dropdowns —
+    `[type ▾] [unit ▾] [+ New]` fit one row at 375px (selects `max-width:108px`
+    + truncate, `min-height:34px`; "+ New unit…" → "+ New"). Verified all
+    three controls share a row (rightmost edge 337 < 350).
+  - *(b) One muted line, not pills:* the `last · target · source` chips
+    collapse into a single quiet `.metaLine` (text-3, nowrap, ellipsis) —
+    `last · 45 lb × 8 · target 3 × 8-12 @ RIR 2 · Legs + shoulders` — same
+    information, far less chrome. Kept the `lb ×` notation (2.6 standard).
+    The recalibration note stays its OWN dismissible chip (actionable, not
+    static) — verified rendering separately above the line via a real recal
+    (free-weight set logged, then equipment switched to a contextBound type).
