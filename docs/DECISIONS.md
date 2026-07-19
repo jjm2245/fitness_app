@@ -2195,3 +2195,50 @@ untouched, no schema/API/sync changes). tsc clean, 142 tests pass, clean build.
     The recalibration note stays its OWN dismissible chip (actionable, not
     static) — verified rendering separately above the line via a real recal
     (free-weight set logged, then equipment switched to a contextBound type).
+
+## Session-screen refinements — phase 2.9 (2026-07-19)
+
+Final exercise-card header refinement. Verified in-app at 375px; tsc clean,
+142 tests pass, clean build.
+
+- **Header order** is now: `☐/☑ Name TAGGED ⋯` → `last …` → `target …` →
+  recalibration chip (when present) → equipment summary chip (Option A) →
+  full-width fields (when tapped) → input trio / sets. Confirmed via DOM order
+  `metaBlock → recalChip → equipChip → editor → sets`.
+- **1 — metadata under the name, two muted lines, source dropped.** Metadata
+  describes the exercise, so it sits directly under the name (above the
+  equipment control), not below the editor. `last 140 lb × 12, 11, 10` and
+  `target 3 × 8-12 @ RIR 2`, value in secondary text, the label ("last"/
+  "target") dimmer; each line stays single-row and ellipses rather than
+  pushing layout. The `[source]` pill is **removed** (redundant — the page is
+  titled by day).
+  - "last" is now **exercise-level**: its own fetch (`scope=exercise`, deps
+    `[activeExercise.id]` only), decoupled from the lane. It no longer vanishes
+    when the unit changes (the old behavior showed it for a named unit and
+    dropped it for unspecified). Shows `last — no prior data` when empty.
+    Verified "last 120 lb × 12" on both a named (VSL16) and an unspecified
+    unit of Leg Extensions, and "no prior data" on a fresh Smith Machine Squat.
+  - State split: `previous` → `lastText` (exercise-level) + `recalNote`
+    (lane-level). Two effects. The recalibration DETECTION is unchanged; it now
+    drives only its own dismissible chip, never the "last" line.
+  - **Scope note / deviation:** exercise-level "last" needs cross-lane data the
+    lane-scoped `last-session` route couldn't give, so the route gained an
+    additive, read-only `?scope=exercise` mode (commit 2.9-0). This is the one
+    non-`src/components` change; it touches no schema/sync/core and leaves the
+    default lane-scoped path (progression/recal) untouched. Flagged for the
+    owner as the minimal way to satisfy "last is independent of the unit."
+- **2 — equipment editor → Option A.** At rest, one summary chip:
+  `⚙ {unit} · {type}` (named), `⚙ {Type} · pick unit` (context-bound, no unit),
+  or just the type (portable) — the only equipment element visible. Tapping
+  flips the caret and reveals, indented under the accent rule, **full-width
+  labeled** Type and Unit selects — fixing the compact row's truncation
+  ("Selectorized m…" / "Unspecified u…"); verified the selects render at full
+  width (301px / 199px) with complete text. "+ New unit…" still opens the
+  existing bottom sheet (verified by creating VSL16 → chip became
+  `⚙ VSL16 · selectorized machine`). The chip remains the toggle everywhere,
+  including the zero-set auto-expand (kept). Built-in offset display + confirm
+  chip unchanged (verified `+ built-in 20` and `apply +20…`).
+  - `.selectQuiet` restored to its pre-2.8 non-truncating size — its compact
+    108px cap was purpose-built for the now-replaced inline row; its only
+    remaining users are SetRow's effort-in-edit select and AddUnitModal's ratio
+    select, which shouldn't truncate. The editor now uses a new `.selectFull`.
