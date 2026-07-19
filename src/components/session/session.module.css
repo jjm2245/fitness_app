@@ -213,6 +213,17 @@
   gap: 4px;
   white-space: normal;
 }
+/* Reference metadata (last · target · source) as one quiet muted line, not
+   boxed pills (2.8): single row, truncates with ellipsis — the values are
+   reference, not interactive, so the eye passes over them to the sets. */
+.metaLine {
+  font-size: 0.76rem;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---------- equipment editor (on demand) ---------- */
 
@@ -234,12 +245,16 @@
   font-size: 0.85rem;
   color: var(--text-2);
 }
+/* Compact inline controls (2.8): the chip above is the full summary, so the
+   editor selects don't restate it full-width — they cap their width and
+   truncate, letting [type ▾] [unit ▾] [+ New] sit on one row at 375px. */
 .selectQuiet {
-  min-height: 40px;
-  font-size: 0.85rem;
+  min-height: 34px;
+  font-size: 0.8rem;
+  padding: 4px 8px;
   background: var(--raised);
   width: auto;
-  max-width: 100%;
+  max-width: 108px;
 }
 .offsetInput {
   width: 64px;
@@ -646,9 +661,10 @@
   background: transparent;
 }
 .smallBtn {
-  min-height: 38px;
-  font-size: 0.82rem;
-  padding: 4px 12px;
+  min-height: 34px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
 
 /* ---------- swap sheet rows ---------- */

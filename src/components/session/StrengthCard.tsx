@@ -480,6 +480,17 @@ export function StrengthCard({
   // ——— presentation ———
   const swapped = activeExercise.id !== ex.exerciseId;
   const isRecal = previous != null && previous.startsWith("Recalibrating");
+  // Reference metadata reads as ONE quiet muted line, not boxed pills (2.8):
+  // last · target · source, same information, far less chrome — the eye reaches
+  // the logged sets faster. The recalibration note is NOT folded in here: it's
+  // actionable context, so it stays its own dismissible chip below.
+  const metaParts: string[] = [];
+  if (previous != null && !isRecal) metaParts.push(previous);
+  if (ex.target)
+    metaParts.push(
+      `target ${ex.target.targetSets} × ${ex.target.repRange ?? "?"}${ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}`
+    );
+  metaParts.push(ex.source);
   // A done card expanded is a REVIEW state, not a greyed logging state: chips
   // + logged rows + rests, fully readable, no input UI. Set rows stay
   // tappable for corrections; un-checking done restores logging.
@@ -557,7 +568,7 @@ export function StrengthCard({
                       <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
                       {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
                     </select>
-                    <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn}>+ New unit…</button>
+                    <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn} title="Add a new unit for this equipment type">+ New</button>
                   </>
                 )}
               </div>
@@ -588,19 +599,17 @@ export function StrengthCard({
             </div>
           )}
 
-          <div className={styles.chipsRow}>
-            {previous != null && !isRecal && <span className={styles.chip}>{previous}</span>}
-            {isRecal && !recalDismissed && (
+          {isRecal && !recalDismissed && (
+            <div className={styles.chipsRow}>
               <span className={styles.chipRecal}>
                 {previous}
                 <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
               </span>
-            )}
-            {ex.target && (
-              <span className={styles.chip}>target {ex.target.targetSets} × {ex.target.repRange ?? "?"}{ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}</span>
-            )}
-            <span className={styles.chip}>{ex.source}</span>
-          </div>
+            </div>
+          )}
+          {metaParts.length > 0 && (
+            <div className={styles.metaLine} title={metaParts.join(" · ")}>{metaParts.join(" · ")}</div>
+          )}
 
           {unitModalOpen && (
             <AddUnitModal
