@@ -2337,3 +2337,16 @@ untouched (self-checked across the phase). 142 tests, clean build.
     **0 orphan equipment refs**. All test rows removed.
 - **Dead-code sweep:** `DayEditor.tsx/.module.css` and `exercises.module.css`
   retired (no importers left). `log.module.css` was already gone in phase 2.
+
+## Phase-3 route additions — accepted (2026-07-19)
+
+The two additive, read-only API touches from phase 3 are **owner-approved** —
+same class as the earlier `scope=exercise` acceptance: read-only, no
+schema/sync/core change, flagged not hidden. They are the honest footnote to
+the "UI-only" boundary of the phase:
+
+- `GET /api/exercises/manage` returns `primaryMuscle` (highest-emphasis
+  primary-role tag) for the exercises-list subline — not client-derivable.
+- Standalone equipment add reuses existing `POST /api/equipment` + `PATCH` (the
+  session's new-unit sheet is exercise-scoped and can't serve a context-free
+  add). No new routes.
