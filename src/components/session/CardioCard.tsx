@@ -18,9 +18,6 @@ function cardioFields(name: string): CardioField[] {
   if (n.includes("row")) return ["duration", "distance", "level"];
   return ["duration", "distance"];
 }
-function num(v: unknown): number | null {
-  return typeof v === "number" ? v : null;
-}
 
 const FIELD_LABEL: Record<CardioField, string> = {
   duration: "min",
@@ -76,12 +73,14 @@ export function CardioCard({
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
 }) {
-  const p = ex.params ?? {};
-  const [durationMin, setDurationMin] = useState<string>(String(num(p.duration_min) ?? ""));
-  const [incline, setIncline] = useState<string>(String(num(p.incline) ?? ""));
-  const [speed, setSpeed] = useState<string>(String(num(p.speed) ?? ""));
+  // Inputs start EMPTY — like every other exercise. The program's prescribed
+  // params aren't prefilled (that made the treadmill show 30/3/12 while others
+  // were blank); the muted `last …` line is the reference instead.
+  const [durationMin, setDurationMin] = useState<string>("");
+  const [incline, setIncline] = useState<string>("");
+  const [speed, setSpeed] = useState<string>("");
   const [distance, setDistance] = useState<string>("");
-  const [level, setLevel] = useState<string>(String(num(p.level) ?? ""));
+  const [level, setLevel] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   // The exercise's most recent cardio entry (exercise-level — cardio has no
   // lanes). Raw object; formatted in render against the current `fields`.
