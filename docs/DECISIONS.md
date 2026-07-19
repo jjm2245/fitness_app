@@ -2283,3 +2283,57 @@ Cardio card brought into the strength-card header family, and the duplicate
 prescribed `ex.params` (the treadmill showed 30/3/12 while every other
 exercise started blank). They initialize to "" — the muted `last …` line is
 the reference, not a prefill. Dropped the now-unused `num`/`params` read.
+
+## UI redesign — phase 3: the editors (2026-07-19)
+
+The last button-walls fall. All four editor screens rebuilt on the session
+screen's vocabulary (Sheet primitive, portaled ⋯ menu, chips, rows + progressive
+disclosure). New `src/components/editors/`. UI/interaction only; `src/core/*`
+untouched (self-checked across the phase). 142 tests, clean build.
+
+- **Part 1 — Program + Blocks (one row system, two screens).** A block is
+  structurally a program_day, so `/program` and `/blocks` are one engine
+  (`DayEditorView`) with `noun` relabeled. Program name is the title + a ⋯
+  (rename / set active / switch via sheet / new / delete-with-confirm); days
+  are horizontal pill tabs with a pinned day ⋯ (rename / move left / move right
+  / delete). Quiet exercise rows: name + one target chip (`3 × 8–12 @ RIR 2`),
+  tap → `TargetSheet` (labeled Sets / Rep range / Effort RIR + Move up/down +
+  Remove-confirm). **Target semantics untouched** — `"8-12"` only *displays* as
+  `8–12`; stored values (incl. RIR) never rewritten. Cardio rows show only what
+  applies (`1 set · 30 min` chip; sheet = Sets only + read-only prescribed
+  duration — no dead rep-range/RIR inputs). `+ Add exercise` → `AddExerciseSheet`
+  (the session AddSheet pattern; tag-on-add lives in ExerciseSearch).
+- **Reorder = ↑/↓, not drag.** The move API is single-step direction-based, so
+  exercises reorder via ↑/↓ in the edit sheet (boundary-disabled) and days via
+  Move left/right in the ⋯ — a boring reliable reorder over a janky mobile drag.
+- **Part 2 — Exercises.** List rows: name + kind badge (library name / your
+  name → library / custom / untagged) + muted subline (primary muscle ·
+  equipment type · logged count; snake_case humanized for display only). Search
+  + My/Library/Custom filter chips. Tap → `ExerciseDetailSheet` carrying all six
+  old buttons: rename (+ use-library-name), description, unilateral toggle,
+  equipment associations, collapse-into-library (copy kept), history-safe remove
+  (409/Keep). Header paragraph → one line.
+- **Part 3 — Equipment.** List rows: label + type/built-in/pulley chips +
+  used-by/logged subline. Tap → `EquipmentSheet` (all fields, used-by, merge
+  with history-moves copy, guarded delete with a clear blocked message). `+ Add`
+  reuses the same sheet in add mode.
+- **Additive read-only API touches (same class as the approved `scope=exercise`,
+  flagged):** (1) `GET /api/exercises/manage` now returns `primaryMuscle`
+  (highest-emphasis primary tag) for the subline — not client-derivable; joins
+  `exercise_muscles` read-only. (2) Equipment standalone add uses existing
+  `POST /api/equipment` + `PATCH` (the session new-unit sheet is exercise-
+  scoped). No schema/sync/core change.
+- **DB-level verification (throwaway entities, created + cleaned up through the
+  app / my own test rows; real program/exercises/equipment read-only and
+  restored exactly):**
+  - *Reorder:* swapped two exercises in a throwaway day → `order_index` 0/1
+    persisted (survived reload); throwaway program deleted, zero residue.
+  - *Collapse:* logged 2 sets on a throwaway custom, collapsed into a
+    zero-history library entry → source set_logs 0, survivor +2 (history moved),
+    total set_logs unchanged, source exercise deleted, **0 orphans**. Test rows
+    removed; survivor restored to 0.
+  - *Merge:* 2 set_logs referencing a throwaway unit merged into another →
+    source 0, target 2 (re-pointed, count identical), source unit deleted,
+    **0 orphan equipment refs**. All test rows removed.
+- **Dead-code sweep:** `DayEditor.tsx/.module.css` and `exercises.module.css`
+  retired (no importers left). `log.module.css` was already gone in phase 2.
