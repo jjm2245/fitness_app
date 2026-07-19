@@ -360,6 +360,24 @@
   min-height: 44px;
   font-size: 0.9rem;
 }
+/* Two-state toggle (unilateral) — filled accent when selected. */
+.toggleBtn {
+  flex: 1;
+  min-height: 44px;
+  font-size: 0.9rem;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+}
+.toggleActive {
+  flex: 1;
+  min-height: 44px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-fg);
+}
 /* Rows inside a sheet (used-by lists, merge targets, switch program). */
 .sheetList {
   display: flex;

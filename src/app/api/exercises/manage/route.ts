@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { ne, sql } from "drizzle-orm";
+import { eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { exercises, setLogs, cardioLogs } from "@/db/schema";
+import { exercises, exerciseMuscles, setLogs, cardioLogs } from "@/db/schema";
 
 // GET /api/exercises/manage — the exercises worth managing: everything that
 // isn't a raw library row (curated + custom). Each is classified into one of
@@ -40,6 +40,24 @@ export async function GET() {
   for (const r of setUse) use.set(r.exerciseId, (use.get(r.exerciseId) ?? 0) + r.n);
   for (const r of cardioUse) use.set(r.exerciseId, (use.get(r.exerciseId) ?? 0) + r.n);
 
+  // Additive (phase 3): the list rows' subline shows the primary muscle —
+  // highest-emphasis primary-role tag per exercise. Read-only enrichment.
+  const primaries = await db
+    .select({
+      exerciseId: exerciseMuscles.exerciseId,
+      muscle: exerciseMuscles.muscle,
+      emphasis: exerciseMuscles.emphasis,
+    })
+    .from(exerciseMuscles)
+    .where(eq(exerciseMuscles.role, "primary"));
+  const primaryMuscle = new Map<string, { muscle: string; emphasis: number }>();
+  for (const m of primaries) {
+    const cur = primaryMuscle.get(m.exerciseId);
+    if (!cur || Number(m.emphasis) > cur.emphasis) {
+      primaryMuscle.set(m.exerciseId, { muscle: m.muscle, emphasis: Number(m.emphasis) });
+    }
+  }
+
   const out = rows.map((e) => {
     const kind =
       e.canonicalName && e.canonicalName === e.name
@@ -47,7 +65,7 @@ export async function GET() {
         : e.canonicalName
         ? "named_on_ref"
         : "custom";
-    return { ...e, kind, loggedCount: use.get(e.id) ?? 0 };
+    return { ...e, kind, loggedCount: use.get(e.id) ?? 0, primaryMuscle: primaryMuscle.get(e.id)?.muscle ?? null };
   });
 
   return NextResponse.json(out);

@@ -1,466 +1,126 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import styles from "./exercises.module.css";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import styles from "@/components/editors/editors.module.css";
+import { Sheet } from "@/components/session/Sheet";
 import { ExerciseSearch } from "@/components/ExerciseSearch";
+import { ExerciseDetailSheet, KIND_LABEL, type ManagedExercise } from "@/components/editors/ExerciseDetailSheet";
+import { api } from "@/components/editors/types";
 
-interface ManagedExercise {
-  id: string;
-  name: string;
-  source: string;
-  canonicalName: string | null;
-  movementPattern: string | null;
-  untagged: boolean;
-  day: string | null;
-  loadType: string;
-  description: string | null;
-  unilateral: boolean;
-  kind: "library_name" | "named_on_ref" | "custom";
-  loggedCount: number;
-}
+type Filter = "my" | "library" | "custom";
 
-interface ExerciseEquipment {
-  id: string; // opaque stable key (surrogate-key model)
-  label: string; // display name
-  notes: string | null;
-  loggedCount: number;
-}
-
-const KIND_LABEL: Record<ManagedExercise["kind"], string> = {
-  library_name: "library name",
-  named_on_ref: "your name → library",
-  custom: "custom",
-};
-
-interface LibResult {
-  id: string;
-  name: string;
-  source: string;
-}
-
-// Custom-exercise management (Part 3b). Lists everything that isn't a raw
-// library row, badges the three naming kinds, and lets you rename, adopt the
-// library's own name, or collapse a redundant custom into a library entry —
-// which re-points all logged history so nothing is orphaned.
+// Exercises (phase 3): list rows + a detail sheet. The six always-visible
+// buttons collapse into the sheet; the header paragraph becomes one line.
 export default function ExercisesPage() {
   const [rows, setRows] = useState<ManagedExercise[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [collapsing, setCollapsing] = useState<string | null>(null);
-  const [equipmentFor, setEquipmentFor] = useState<string | null>(null);
-  const [describing, setDescribing] = useState<string | null>(null);
-  const [descText, setDescText] = useState("");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<Filter>("my");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<ManagedExercise | null>(null);
-  const [removeErr, setRemoveErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/exercises/manage");
-    if (res.ok) setRows(await res.json());
+    setRows(await api<ManagedExercise[]>("/api/exercises/manage"));
     setLoaded(true);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/exercises/manage");
-      if (res.ok) setRows(await res.json());
-      setLoaded(true);
-    })();
-  }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  async function rename(id: string) {
-    const name = editName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (res.ok) {
-        setEditing(null);
-        await load();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return rows.filter((e) => {
+      if (needle && !e.name.toLowerCase().includes(needle)) return false;
+      if (filter === "library") return e.kind === "library_name" || e.kind === "named_on_ref";
+      if (filter === "custom") return e.kind === "custom";
+      return true; // "my" = everything managed
+    });
+  }, [rows, q, filter]);
 
-  async function adoptLibraryName(e: ManagedExercise) {
-    if (!e.canonicalName || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(e.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: e.canonicalName }),
-      });
-      if (res.ok) await load();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const open = rows.find((e) => e.id === openId) ?? null;
 
-  async function saveDescription(id: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: descText }),
-      });
-      if (res.ok) {
-        setDescribing(null);
-        await load();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Unilateral tag toggle (Part 4) — visible + correctable per exercise. Your
-  // edit overrides for your copy; a library value was only ever the default.
-  async function toggleUnilateral(e: ManagedExercise) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(e.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ unilateral: !e.unilateral }),
-      });
-      if (res.ok) await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeExercise(id: string) {
-    if (busy) return;
-    setBusy(true);
-    setRemoveErr(null);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (res.ok) {
-        setRemoving(null);
-        await load();
-      } else {
-        const body = await res.json().catch(() => null);
-        setRemoveErr(body?.message ?? "Couldn't remove this exercise.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function collapse(id: string, targetId: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(id)}/collapse`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetId }),
-      });
-      if (res.ok) {
-        setCollapsing(null);
-        await load();
-      }
-    } finally {
-      setBusy(false);
-    }
+  // Stored muscle/loadType are snake_case (rectus_abdominis, machine_selectorized)
+  // — display-only humanize to spaces; the underlying values are untouched.
+  const humanize = (s: string) => s.replace(/_/g, " ");
+  function subline(e: ManagedExercise): string {
+    return [
+      e.primaryMuscle ? humanize(e.primaryMuscle) : null,
+      e.loadType && e.loadType !== "unknown" ? humanize(e.loadType) : null,
+      e.loggedCount > 0 ? `${e.loggedCount} logged` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
 
   return (
     <main className={styles.page}>
-      <div className={styles.head}>
-        <h1>My exercises</h1>
+      <div className={styles.titleRow}>
+        <h1 className={styles.title}>My exercises</h1>
       </div>
-      <p className={styles.hint}>
-        Your named + custom exercises. <strong>library name</strong> uses the library&rsquo;s own name;{" "}
-        <strong>your name → library</strong> is a precise name on a library reference;{" "}
-        <strong>custom</strong> is your own, with no library link. &ldquo;Collapse&rdquo; moves all logged history onto the
-        library entry, so nothing is orphaned.
-      </p>
+      <p className={styles.hintLine}>Your named + custom exercises — tap one to rename, describe, or manage.</p>
 
-      <div className={styles.addBox}>
-        {adding ? (
-          <>
-            <ExerciseSearch
-              placeholder="Search library / curated, or create a custom…"
-              onPick={() => { setAdding(false); load(); }}
-            />
-            <button type="button" className={styles.btn} onClick={() => setAdding(false)}>Cancel</button>
-          </>
-        ) : (
-          <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => setAdding(true)}>
-            + Add an exercise
+      <div className={styles.searchRow}>
+        <ExerciseSearchless value={q} onChange={setQ} />
+      </div>
+      <div className={styles.filterRow}>
+        {(["my", "library", "custom"] as Filter[]).map((f) => (
+          <button key={f} type="button" className={filter === f ? styles.filterChipActive : styles.filterChip} onClick={() => setFilter(f)}>
+            {f === "my" ? "My" : f === "library" ? "Library" : "Custom"}
           </button>
+        ))}
+      </div>
+
+      <div className={styles.rowsCard}>
+        <button type="button" className={styles.addRow} onClick={() => setAdding(true)}>
+          + Add an exercise
+        </button>
+        {!loaded ? (
+          <p className={styles.emptyNote}>Loading…</p>
+        ) : shown.length === 0 ? (
+          <p className={styles.emptyNote}>No matches.</p>
+        ) : (
+          shown.map((e) => (
+            <button key={e.id} type="button" className={styles.row} onClick={() => setOpenId(e.id)}>
+              <span className={styles.rowMain}>
+                <span className={styles.rowName}>
+                  <span className={styles.rowNameText}>{e.name}</span>
+                  <span className={styles.badge}>{KIND_LABEL[e.kind]}</span>
+                  {e.untagged && <span className={styles.badgeWarn}>untagged</span>}
+                </span>
+                {subline(e) && <span className={styles.rowSub}>{subline(e)}</span>}
+              </span>
+              <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+                <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </button>
+          ))
         )}
       </div>
 
-      {!loaded ? (
-        <p className={styles.hint}>Loading…</p>
-      ) : (
-        <ul className={styles.list}>
-          {rows.map((e) => (
-            <li key={e.id} className={styles.item}>
-              <div className={styles.itemTop}>
-                <span className={styles.name}>{e.name}</span>
-                <span className={`${styles.badge} ${styles[`k_${e.kind}`]}`}>{KIND_LABEL[e.kind]}</span>
-                {e.untagged && <span className={styles.meta}>· untagged</span>}
-                {e.unilateral && <span className={styles.meta}>· unilateral</span>}
-                {e.loggedCount > 0 && <span className={styles.meta}>· {e.loggedCount} logged</span>}
-              </div>
-              {e.kind === "named_on_ref" && e.canonicalName && (
-                <div className={styles.refCanon}>library reference: {e.canonicalName}</div>
-              )}
-              {e.description && describing !== e.id && (
-                <div className={styles.description}>{e.description}</div>
-              )}
-
-              {editing === e.id ? (
-                <div className={styles.editRow}>
-                  <input className={styles.input} value={editName} onChange={(ev) => setEditName(ev.target.value)} autoFocus />
-                  <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => rename(e.id)} disabled={busy}>Save</button>
-                  <button type="button" className={styles.btn} onClick={() => setEditing(null)}>Cancel</button>
-                </div>
-              ) : (
-                <div className={styles.actions}>
-                  <button type="button" className={styles.btn} onClick={() => { setEditing(e.id); setEditName(e.name); }}>Rename</button>
-                  {e.kind === "named_on_ref" && (
-                    <button type="button" className={styles.btn} onClick={() => adoptLibraryName(e)} disabled={busy}>Use library name</button>
-                  )}
-                  <button type="button" className={styles.btn} onClick={() => setCollapsing(collapsing === e.id ? null : e.id)}>
-                    {collapsing === e.id ? "Close" : "Collapse into library…"}
-                  </button>
-                  <button type="button" className={styles.btn} onClick={() => setEquipmentFor(equipmentFor === e.id ? null : e.id)}>
-                    {equipmentFor === e.id ? "Close equipment" : "Equipment"}
-                  </button>
-                  <button type="button" className={styles.btn} onClick={() => { setDescribing(e.id); setDescText(e.description ?? ""); }}>
-                    {e.description ? "Edit description" : "Add description"}
-                  </button>
-                  <button type="button" className={styles.btn} onClick={() => toggleUnilateral(e)} disabled={busy} title="Unilateral = one side at a time; each logged set gets an L/R/both selector">
-                    {e.unilateral ? "Unilateral ✓" : "Mark unilateral"}
-                  </button>
-                  <button type="button" className={`${styles.btn} ${styles.danger}`} onClick={() => { setRemoving(e); setRemoveErr(null); }}>Remove</button>
-                </div>
-              )}
-
-              {removing?.id === e.id && (
-                <div className={styles.removeBox}>
-                  {e.loggedCount > 0 ? (
-                    <p className={styles.removeWarn}>
-                      <strong>{e.name}</strong> has <strong>{e.loggedCount} logged {e.loggedCount === 1 ? "entry" : "entries"}</strong>.
-                      Removing it would orphan that history, so it&rsquo;s blocked — use <em>Collapse into library…</em> to move the
-                      history onto another exercise first, or keep it.
-                    </p>
-                  ) : (
-                    <p className={styles.removeWarn}>Remove <strong>{e.name}</strong>? This can&rsquo;t be undone.</p>
-                  )}
-                  {removeErr && <p className={styles.removeErr}>{removeErr}</p>}
-                  <div className={styles.actions}>
-                    {e.loggedCount === 0 && (
-                      <button type="button" className={`${styles.btn} ${styles.danger}`} onClick={() => removeExercise(e.id)} disabled={busy}>
-                        {busy ? "Removing…" : "Remove"}
-                      </button>
-                    )}
-                    <button type="button" className={styles.btn} onClick={() => { setRemoving(null); setRemoveErr(null); }}>{e.loggedCount > 0 ? "Keep" : "Cancel"}</button>
-                  </div>
-                </div>
-              )}
-
-              {describing === e.id && (
-                <div className={styles.editRow}>
-                  <textarea
-                    className={styles.input}
-                    value={descText}
-                    onChange={(ev) => setDescText(ev.target.value)}
-                    placeholder="How you actually do it — grip, ROM, setup… (optional)"
-                    rows={2}
-                    style={{ flex: "1 1 100%", resize: "vertical", fontFamily: "inherit" }}
-                    autoFocus
-                  />
-                  <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => saveDescription(e.id)} disabled={busy}>Save</button>
-                  <button type="button" className={styles.btn} onClick={() => setDescribing(null)} disabled={busy}>Cancel</button>
-                </div>
-              )}
-
-              {collapsing === e.id && (
-                <CollapsePicker exercise={e} onCollapse={(targetId) => collapse(e.id, targetId)} busy={busy} />
-              )}
-
-              {equipmentFor === e.id && <EquipmentPanel exerciseId={e.id} />}
-            </li>
-          ))}
-        </ul>
+      {open && <ExerciseDetailSheet ex={open} onChanged={load} onClose={() => setOpenId(null)} />}
+      {adding && (
+        <Sheet title="Add an exercise" subtitle="Search the library and your customs, or create a custom (you'll tag a movement pattern next)." onClose={() => setAdding(false)}>
+          <div>
+            <ExerciseSearch
+              placeholder="Search library / curated, or create custom…"
+              onPick={() => { setAdding(false); void load(); }}
+            />
+          </div>
+        </Sheet>
       )}
-
     </main>
   );
 }
 
-function CollapsePicker({ exercise, onCollapse, busy }: { exercise: ManagedExercise; onCollapse: (targetId: string) => void; busy: boolean }) {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<LibResult[]>([]);
-  const show = q.trim().length >= 2;
-
-  useEffect(() => {
-    if (q.trim().length < 2) return; // stale results are hidden by `show`
-    const t = setTimeout(async () => {
-      const res = await fetch(`/api/exercises/search?q=${encodeURIComponent(q.trim())}`);
-      if (res.ok) {
-        const all: LibResult[] = await res.json();
-        // Only library targets, and never itself.
-        setResults(all.filter((r) => r.source === "library" && r.id !== exercise.id));
-      }
-    }, 220);
-    return () => clearTimeout(t);
-  }, [q, exercise.id]);
-
+// A plain search box that filters the loaded list (no navigation) — distinct
+// from ExerciseSearch, which searches the whole graph to add.
+function ExerciseSearchless({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className={styles.collapseBox}>
-      <p className={styles.warn}>
-        Pick the library exercise this really is. {exercise.loggedCount > 0
-          ? `Its ${exercise.loggedCount} logged entr${exercise.loggedCount === 1 ? "y" : "ies"} will move to it`
-          : "Any logged history will move to it"} and &ldquo;{exercise.name}&rdquo; will be removed.
-      </p>
-      <input className={styles.input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the library…" autoFocus />
-      {show && results.length > 0 && (
-        <div className={styles.results}>
-          {results.map((r) => (
-            <button key={r.id} type="button" className={styles.result} onClick={() => onCollapse(r.id)} disabled={busy}>
-              Collapse into: {r.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Per-exercise equipment list (Part 3): curate the units that apply to this
-// exercise (add / edit note / remove), complementing auto-create-on-first-use.
-// Portable equipment types (dumbbell, bars, bodyweight) need no unit row at
-// log time — it's the empty selection, not a row here.
-function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
-  const [rows, setRows] = useState<ExerciseEquipment[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [label, setLabel] = useState("");
-  const [note, setNote] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editNote, setEditNote] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
-    if (res.ok) setRows(await res.json());
-    setLoaded(true);
-  }, [exerciseId]);
-
-  useEffect(() => {
-    (async () => {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
-      if (res.ok) setRows(await res.json());
-      setLoaded(true);
-    })();
-  }, [exerciseId]);
-
-  async function add() {
-    const l = label.trim();
-    if (!l || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Client-generated opaque id (surrogate-key model) — label is display only.
-        body: JSON.stringify({ id: crypto.randomUUID(), label: l, notes: note.trim() || undefined }),
-      });
-      if (res.ok) {
-        setLabel("");
-        setNote("");
-        await load();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveNote(equipmentId: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/equipment/${encodeURIComponent(equipmentId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: editNote }),
-      });
-      if (res.ok) {
-        setEditing(null);
-        await load();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(equipmentId: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment/${encodeURIComponent(equipmentId)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className={styles.collapseBox}>
-      <p className={styles.warn}>
-        Equipment units for this exercise. Context-bound types (cable/selectorized/Smith/plate-loaded) track each unit as its own lane when logging.
-      </p>
-      {!loaded ? (
-        <p className={styles.meta}>Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className={styles.meta}>No units yet — add one below, or they appear automatically the first time you log with one.</p>
-      ) : (
-        <ul className={styles.list} style={{ marginBottom: 8 }}>
-          {rows.map((m) => (
-            <li key={m.id} className={styles.itemTop} style={{ justifyContent: "space-between" }}>
-              <span>
-                <span className={styles.name}>{m.label}</span>
-                {m.notes ? <span className={styles.meta}> · {m.notes}</span> : null}
-                {m.loggedCount > 0 ? <span className={styles.meta}> · {m.loggedCount} logged</span> : null}
-              </span>
-              {editing === m.id ? (
-                <span className={styles.editRow}>
-                  <input className={styles.input} value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="note" />
-                  <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={() => saveNote(m.id)} disabled={busy}>Save</button>
-                  <button type="button" className={styles.btn} onClick={() => setEditing(null)}>Cancel</button>
-                </span>
-              ) : (
-                <span className={styles.actions} style={{ marginTop: 0 }}>
-                  <button type="button" className={styles.btn} onClick={() => { setEditing(m.id); setEditNote(m.notes ?? ""); }}>Edit note</button>
-                  <button type="button" className={styles.btn} onClick={() => remove(m.id)} disabled={busy}>Remove</button>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className={styles.editRow}>
-        <input className={styles.input} value={label} onChange={(e) => setLabel(e.target.value)} placeholder='unit label, e.g. "by the mirror"' />
-        <input className={styles.input} value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" style={{ minWidth: 140 }} />
-        <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={add} disabled={busy || !label.trim()}>Add unit</button>
-      </div>
-    </div>
+    <input
+      className={styles.fieldInput}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Search your exercises…"
+      type="search"
+    />
   );
 }
