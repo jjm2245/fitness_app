@@ -30,6 +30,30 @@ const FIELD_LABEL: Record<CardioField, string> = {
   distance: "distance",
 };
 
+// Shape returned by the last-session route for a conditioning exercise.
+type CardioLast = {
+  durationMin: string | null;
+  incline: string | null;
+  speed: string | null;
+  distance: string | null;
+  level: string | null;
+};
+
+// The "last" line, in the units THIS exercise actually uses (2.10) — e.g.
+// "30 min · 3.0 speed · 12 incline" for a treadmill, "20 min · level 8" for a
+// stair machine. Built from the same `fields` that drive the input cells.
+function fmtCardioLast(fields: CardioField[], c: CardioLast): string {
+  const parts: string[] = [];
+  for (const f of fields) {
+    if (f === "duration" && c.durationMin != null) parts.push(`${c.durationMin} min`);
+    else if (f === "speed" && c.speed != null) parts.push(`${c.speed} speed`);
+    else if (f === "incline" && c.incline != null) parts.push(`${c.incline} incline`);
+    else if (f === "level" && c.level != null) parts.push(`level ${c.level}`);
+    else if (f === "distance" && c.distance != null) parts.push(`${c.distance} dist`);
+  }
+  return parts.join(" · ") || "logged";
+}
+
 // The cardio card (phase 2) — same collapsed/expanded treatment as strength,
 // lighter body: contextual input cells + Log cardio; entries are read-only
 // rows whose Delete appears on tap. Logic moved verbatim.
@@ -59,7 +83,9 @@ export function CardioCard({
   const [distance, setDistance] = useState<string>("");
   const [level, setLevel] = useState<string>(String(num(p.level) ?? ""));
   const [error, setError] = useState<string | null>(null);
-  const [previous, setPrevious] = useState<string | null>(null);
+  // The exercise's most recent cardio entry (exercise-level — cardio has no
+  // lanes). Raw object; formatted in render against the current `fields`.
+  const [lastCardio, setLastCardio] = useState<CardioLast | null>(null);
   const [manual, setManual] = useState<{ done: boolean; collapsed: boolean } | null>(null);
   const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
@@ -72,17 +98,9 @@ export function CardioCard({
     let cancelled = false;
     (async () => {
       const res = await fetch(`/api/exercises/${ex.exerciseId}/last-session`);
-      const data: { cardio: { durationMin: string | null; incline: string | null; speed: string | null } | null } = await res.json();
+      const data: { cardio: CardioLast | null } = await res.json();
       if (cancelled) return;
-      if (!data.cardio) setPrevious(null);
-      else {
-        const bits = [
-          data.cardio.durationMin ? `${data.cardio.durationMin} min` : null,
-          data.cardio.incline ? `incline ${data.cardio.incline}` : null,
-          data.cardio.speed ? `speed ${data.cardio.speed}` : null,
-        ].filter(Boolean);
-        setPrevious(`last · ${bits.join(", ") || "logged"}`);
-      }
+      setLastCardio(data.cardio ?? null);
     })();
     return () => { cancelled = true; };
   }, [ex.exerciseId]);
@@ -125,6 +143,11 @@ export function CardioCard({
     distance: [distance, setDistance],
   };
 
+  // Same header language as the strength card (2.10): a muted, exercise-level
+  // "last" line under the name. No source/category pill — the page is titled
+  // by day. (There's no equipment/offset/lane/target here.)
+  const lastText = lastCardio ? fmtCardioLast(fields, lastCardio) : null;
+
   return (
     // Dim only while collapsed; expanded done = readable review (no input).
     <li className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
@@ -148,10 +171,11 @@ export function CardioCard({
 
       {!collapsed && (
         <div className={styles.cardBody}>
-          <div className={styles.chipsRow}>
-            <span className={styles.chip}>cardio</span>
-            {previous != null && <span className={styles.chip}>{previous}</span>}
-            <span className={styles.chip}>{ex.source}</span>
+          <div className={styles.metaBlock}>
+            <div className={styles.metaLine}>
+              <span className={styles.metaLabel}>last</span>{" "}
+              {lastText ?? <span className={styles.metaEmpty}>— no prior data</span>}
+            </div>
           </div>
 
           {entries.length > 0 && (
