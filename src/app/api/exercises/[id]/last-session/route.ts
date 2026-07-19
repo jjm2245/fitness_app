@@ -14,6 +14,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id: exerciseId } = await params;
   const { searchParams } = new URL(request.url);
   const machineId = searchParams.get("lane") ?? searchParams.get("machineId");
+  // scope=exercise → the exercise's last session across ALL lanes/units, for
+  // the exercise-level "last" reference line on the card (independent of the
+  // selected unit). The default stays lane-scoped (progression + recalibration
+  // rely on per-lane history). Additive, read-only; no schema/sync/core change.
+  const scope = searchParams.get("scope");
 
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId));
 
@@ -36,7 +41,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const allSets = await loadSetLogInputsForExercise(exerciseId);
-  const laneSets = allSets.filter((s) => s.machineId === machineId);
+  const laneSets = scope === "exercise" ? allSets : allSets.filter((s) => s.machineId === machineId);
   const sessions = sessionsFromOldestToNewest(toSessionSummaries(laneSets));
 
   const last = sessions[sessions.length - 1];
