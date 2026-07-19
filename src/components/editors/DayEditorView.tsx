@@ -1,0 +1,194 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import styles from "./editors.module.css";
+import { CardMenu } from "@/components/session/CardMenu";
+import { Sheet } from "@/components/session/Sheet";
+import { NameSheet } from "./NameSheet";
+import { TargetSheet } from "./TargetSheet";
+import { AddExerciseSheet } from "./AddExerciseSheet";
+import { api, type EditorDay, type EditorExercise } from "./types";
+
+// The shared day/block editor engine (phase 3): horizontal pill tabs, one
+// day's quiet exercise rows at a time, edit-by-sheet, add-by-sheet, day ⋯.
+// A block is structurally a program_day, so /program and /blocks are this one
+// component with `noun` relabeled — same routes, same rows.
+
+// Display-only: stored "8-12" renders as "8–12"; storage is never rewritten.
+function targetChip(ex: EditorExercise): string {
+  if (ex.conditioningOnly) {
+    const dur = ex.params && typeof ex.params.duration_min === "number" ? ` · ${ex.params.duration_min} min` : "";
+    return `${ex.targetSets} ${ex.targetSets === 1 ? "set" : "sets"}${dur}`;
+  }
+  const range = ex.repRange ? ` × ${ex.repRange.replace("-", "–")}` : ` ${ex.targetSets === 1 ? "set" : "sets"}`;
+  const rir = ex.rirTarget != null && ex.rirTarget !== "" ? ` @ RIR ${ex.rirTarget}` : "";
+  return ex.repRange ? `${ex.targetSets}${range}${rir}` : `${ex.targetSets}${range}${rir}`;
+}
+
+export function DayEditorView({
+  days,
+  noun,
+  createTitle,
+  programId,
+  onChanged,
+}: {
+  days: EditorDay[];
+  noun: "day" | "block";
+  createTitle: string;
+  // Required for noun="day" so a day can be created on an empty program.
+  programId?: number;
+  onChanged: () => Promise<void>;
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingExId, setEditingExId] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  // Keep the selection stable across refreshes; fall back to the first.
+  const selected = days.find((d) => d.id === selectedId) ?? days[0] ?? null;
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+  }, [selected, selectedId]);
+
+  const editingEx = selected?.exercises.find((e) => e.id === editingExId) ?? null;
+  const editingPos = editingEx && selected ? selected.exercises.findIndex((e) => e.id === editingEx.id) : -1;
+
+  async function moveDay(direction: "up" | "down") {
+    if (!selected) return;
+    await api(`/api/program-days/${selected.id}/move`, { method: "POST", body: JSON.stringify({ direction }) });
+    await onChanged();
+  }
+
+  async function deleteDay() {
+    if (!selected) return;
+    await api(`/api/program-days/${selected.id}`, { method: "DELETE" });
+    setConfirmDelete(false);
+    setSelectedId(null);
+    await onChanged();
+  }
+
+  const dayPos = selected ? days.findIndex((d) => d.id === selected.id) : -1;
+
+  return (
+    <>
+      <div className={styles.tabsWrap}>
+        <div className={styles.tabsRow}>
+          {days.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={d.id === selected?.id ? styles.tabActive : styles.tab}
+              onClick={() => setSelectedId(d.id)}
+            >
+              {d.name}
+            </button>
+          ))}
+          <button type="button" className={styles.tab} onClick={() => setCreating(true)} aria-label={createTitle}>
+            +
+          </button>
+        </div>
+        {selected && (
+          <CardMenu
+            label={`${noun} menu`}
+            items={[
+              { label: `Rename ${noun}…`, onSelect: () => setRenaming(true) },
+              { label: "Move left", onSelect: () => moveDay("up"), disabled: dayPos <= 0 },
+              { label: "Move right", onSelect: () => moveDay("down"), disabled: dayPos === days.length - 1 },
+              { label: `Delete ${noun}…`, onSelect: () => setConfirmDelete(true), danger: true },
+            ]}
+          />
+        )}
+      </div>
+
+      {selected ? (
+        <div className={styles.rowsCard}>
+          {selected.exercises.length === 0 && (
+            <p className={styles.emptyNote}>No exercises yet — add the first below.</p>
+          )}
+          {selected.exercises.map((ex) => (
+            <button key={ex.id} type="button" className={styles.row} onClick={() => setEditingExId(ex.id)}>
+              <span className={styles.rowMain}>
+                <span className={styles.rowName}>
+                  <span className={styles.rowNameText}>{ex.exerciseName}</span>
+                  {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
+                </span>
+              </span>
+              <span className={styles.rowChip}>{targetChip(ex)}</span>
+              <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+                <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </button>
+          ))}
+          <button type="button" className={styles.addRow} onClick={() => setAdding(true)}>
+            + Add exercise
+          </button>
+        </div>
+      ) : (
+        <div className={styles.rowsCard}>
+          <p className={styles.emptyNote}>No {noun}s yet — create the first with +.</p>
+        </div>
+      )}
+
+      {creating && (
+        <NameSheet
+          title={createTitle}
+          label="Name"
+          submitLabel="Create"
+          onClose={() => setCreating(false)}
+          onSubmit={async (name) => {
+            if (noun === "block") {
+              await api("/api/blocks", { method: "POST", body: JSON.stringify({ name }) });
+            } else if (programId != null) {
+              await api(`/api/programs/${programId}/days`, { method: "POST", body: JSON.stringify({ name }) });
+            }
+            await onChanged();
+          }}
+        />
+      )}
+      {renaming && selected && (
+        <NameSheet
+          title={`Rename ${noun}`}
+          label="Name"
+          initial={selected.name}
+          submitLabel="Rename"
+          onClose={() => setRenaming(false)}
+          onSubmit={async (name) => {
+            await api(`/api/program-days/${selected.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+            await onChanged();
+          }}
+        />
+      )}
+      {confirmDelete && selected && (
+        <Sheet title={`Delete ${noun}?`} onClose={() => setConfirmDelete(false)}>
+          <p className={styles.warnBox}>
+            &ldquo;{selected.name}&rdquo; and its {selected.exercises.length} exercise
+            {selected.exercises.length === 1 ? "" : "s"} will be removed from this {noun === "day" ? "program" : "list"}.
+            Logged history is untouched.
+          </p>
+          <div className={styles.sheetActions} style={{ marginTop: 12 }}>
+            <button type="button" className={styles.dangerFill} style={{ flex: 1 }} onClick={deleteDay}>
+              Delete {noun}
+            </button>
+            <button type="button" className={styles.quietBtn} onClick={() => setConfirmDelete(false)}>
+              Keep
+            </button>
+          </div>
+        </Sheet>
+      )}
+      {editingEx && selected && (
+        <TargetSheet
+          ex={editingEx}
+          position={editingPos}
+          total={selected.exercises.length}
+          onChanged={onChanged}
+          onClose={() => setEditingExId(null)}
+        />
+      )}
+      {adding && selected && (
+        <AddExerciseSheet dayId={selected.id} noun={noun} onAdded={onChanged} onClose={() => setAdding(false)} />
+      )}
+    </>
+  );
+}
