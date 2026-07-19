@@ -526,7 +526,12 @@ export function StrengthCard({
       ? `${typeDef.label} · pick unit`
       : typeDef.label;
 
+  // Re-open a done exercise for editing (revert-to-editable): un-completes THIS
+  // occurrence only. The session's finishedAt/firstFinishedAt are never touched,
+  // so a finished session stays finished + filed and its History date cannot
+  // move. Re-finish = re-check the done box → back to review.
   const menuItems: CardMenuItem[] = [
+    ...(review ? [{ label: "Edit exercise", onSelect: () => onToggleComplete(ex.instanceId, false) }] : []),
     { label: "Swap exercise…", onSelect: openSwap },
     ...(swapped ? [{ label: `Undo swap (back to ${ex.exerciseName})`, onSelect: resetSwap }] : []),
     { label: "Move up", onSelect: controls.onMoveUp, disabled: controls.position === 0 },
@@ -534,6 +539,26 @@ export function StrengthCard({
     { label: checking ? "Checking progression…" : "Check progression", onSelect: checkProgression, disabled: checking },
     { label: "Remove exercise", onSelect: controls.onRemove, danger: true },
   ];
+
+  // Re-point LOGGED sets to the currently-selected unit (2.11). The equipment
+  // dropdown only governs NEW sets; this is the explicit, never-automatic way to
+  // move already-logged sets onto the right unit — or to unspecified. It changes
+  // ONLY the unit identity (equipmentId/label/type); each set's load, entered
+  // load, and built-in offset are preserved exactly, so no load ever shifts.
+  const repointSets = review
+    ? []
+    : loggedSets.filter((s) => (s.equipmentId ?? null) !== resolvedUnitId || (s.equipmentType ?? null) !== equipType);
+  const repointTargetLabel = selectedUnit?.label ?? (contextBound ? "unspecified" : typeDef.label.toLowerCase());
+  async function applyUnitToLoggedSets() {
+    for (const st of repointSets) {
+      await editSet(st.localId!, {
+        equipmentId: resolvedUnitId,
+        equipmentLabel: selectedUnit?.label ?? null,
+        equipmentType: equipType,
+      });
+    }
+    onSessionChanged();
+  }
 
   return (
     // Dim only while COLLAPSED — an expanded done card is the review state
@@ -649,6 +674,19 @@ export function StrengthCard({
                       carriage weight unknown — set it
                     </span>
                   )}
+                </div>
+              )}
+              {repointSets.length > 0 && (
+                <div className={styles.equipRow}>
+                  <button
+                    type="button"
+                    onClick={applyUnitToLoggedSets}
+                    className={styles.applyAllChip}
+                    title="Re-points these already-logged sets to the selected unit. Logged loads are unchanged — only the unit label moves."
+                  >
+                    Move {repointSets.length} logged set{repointSets.length === 1 ? "" : "s"} → {repointTargetLabel}
+                  </button>
+                  <span className={styles.equipHint}>loads unchanged — only the unit moves</span>
                 </div>
               )}
             </div>

@@ -128,7 +128,11 @@ export function CardioCard({
     onSessionChanged();
   }
 
+  // Re-open a done cardio entry for editing (revert-to-editable): un-completes
+  // THIS occurrence only; the session's finish state is untouched. Re-finish =
+  // re-check the done box.
   const menuItems: CardMenuItem[] = [
+    ...(completed ? [{ label: "Edit exercise", onSelect: () => onToggleComplete(ex.instanceId, false) }] : []),
     { label: "Move up", onSelect: controls.onMoveUp, disabled: controls.position === 0 },
     { label: "Move down", onSelect: controls.onMoveDown, disabled: controls.position === controls.total - 1 },
     { label: "Remove exercise", onSelect: controls.onRemove, danger: true },

@@ -317,6 +317,12 @@
   font-size: 0.76rem;
   color: var(--warning);
 }
+/* Quiet note beside the "move logged sets" chip — states the no-load-shift
+   guarantee so re-pointing a unit is never a surprise. */
+.equipHint {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
 
 /* ---------- logged sets ---------- */
 
