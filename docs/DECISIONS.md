@@ -2350,3 +2350,37 @@ the "UI-only" boundary of the phase:
 - Standalone equipment add reuses existing `POST /api/equipment` + `PATCH` (the
   session's new-unit sheet is exercise-scoped and can't serve a context-free
   add). No new routes.
+
+## Edit a finished exercise — revert-to-editable (2026-07-19)
+
+A finished session was already reachable + editable from History (no session
+lock); the only thing read-locking a done exercise was its per-occurrence
+`completed` review state. UI/interaction only — no schema/sync-logic/core.
+
+- **Revert scope = the occurrence, not the session** (owner-confirmed). A done
+  card's ⋯ gains **"Edit exercise"** → `setOccurrenceCompleted(false)` for THAT
+  occurrence only. The session's `finishedAt`/`firstFinishedAt` are **never
+  touched**, so the session stays finished + filed and its History date cannot
+  move — the finish-restamp regression is made *impossible* (nothing re-finishes
+  the session), not merely guarded. Re-finish = re-check the done box → review.
+  CardioCard gets the same "Edit exercise".
+- **Re-point logged sets' unit** — the actual need (fix a set logged on the
+  wrong unit). The equipment dropdown only governs NEW sets; the sole re-point
+  path (`applyOffsetToOccurrence`) was gated on an *offset* change, so a plain
+  unit swap had no trigger. Added an **explicit, never-automatic** affordance:
+  when the selected unit ≠ what the logged sets carry, a chip reads
+  `Move N logged sets → <unit | unspecified>` (names count + target; one tap
+  after you see it). It changes ONLY `equipmentId/label/type` via the existing
+  `editSet` loop — each set's `load/loadEntered/builtinOffset` are preserved, so
+  **no load ever shifts** (a note states this). `→ unspecified` is first-class.
+- **Sync/offline:** revert (occurrence `completed`) + re-points use existing
+  dirty-flag + sync paths. Because `finishedAt` is untouched, there is **no
+  finish-sync ordering concern**. DB-verified: re-point moved 2 sets
+  VSL16 → "the good one" → unspecified with load unchanged; date/finish
+  timestamps byte-identical before/after; offline edit queued (`pending_update`)
+  and drained on the next sync (History load).
+- Out of scope (as agreed): the prod duplicate-VSL16 consolidation (owner does
+  it on their phone), no schema, no session un-finish, no prod/dev data writes
+  beyond throwaway test rows I created and removed. Note: dev and the owner's
+  prod (Neon) have drifted — dev is a test sandbox; statements about real data
+  are prod reads only.
