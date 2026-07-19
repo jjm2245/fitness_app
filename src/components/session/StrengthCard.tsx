@@ -145,7 +145,11 @@ export function StrengthCard({
     return null;
   }
   const [error, setError] = useState<string | null>(null);
-  const [previous, setPrevious] = useState<string | null>(null);
+  // "last" is EXERCISE-level (independent of the selected unit — 2.9); the
+  // recalibration note is lane-level (this unit has no history but the exercise
+  // does elsewhere). They are decoupled so "last" never vanishes on unit change.
+  const [lastText, setLastText] = useState<string | null>(null);
+  const [recalNote, setRecalNote] = useState<string | null>(null);
   const [recalDismissed, setRecalDismissed] = useState(false);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -272,32 +276,53 @@ export function StrengthCard({
     })();
   }, [activeExercise.id]);
 
+  // "last" — the exercise's most recent session across ALL units (scope=exercise).
+  // Depends only on the exercise, never the selected lane, so switching units
+  // never makes it disappear (2.9).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const params = new URLSearchParams();
-      if (lane) params.set("lane", lane);
-      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?${params.toString()}`);
+      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?scope=exercise`);
+      const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
+      if (cancelled) return;
+      if (data.session && data.session.sets.length > 0) {
+        const reps = data.session.sets.map((s) => s.reps).join(", ");
+        const load = data.session.sets[0]?.load;
+        setLastText(load != null ? `${load} lb × ${reps}` : `× ${reps}`);
+      } else {
+        setLastText(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExercise.id]);
+
+  // Recalibration note — lane-level: no history in THIS unit's lane, but the
+  // exercise has history on another. Detection unchanged from before; it now
+  // drives only its own dismissible chip (never the "last" line).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!lane) {
+        setRecalNote(null);
+        return;
+      }
+      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?lane=${encodeURIComponent(lane)}`);
       const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
       if (cancelled) return;
       if (data.session) {
-        const reps = data.session.sets.map((s) => s.reps).join(", ");
-        setPrevious(`last · ${data.session.sets[0]?.load ?? "?"} lb × ${reps}`);
-      } else if (lane) {
-        // Recalibrate, don't reset: no history in THIS lane, but show
-        // continuity from the exercise's other lanes — effort + volume carry
-        // over; switching units is never "starting over".
-        const any = await fetch(`/api/exercises/${activeExercise.id}/last-session`);
-        const anyData: { session: { sets: Array<{ load: number; reps: number }> } | null } = await any.json();
-        if (cancelled) return;
-        if (anyData.session) {
-          setPrevious(`Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} lb on another unit (effort + volume carry over)`);
-        } else {
-          setPrevious(null);
-        }
-      } else {
-        setPrevious(null);
+        setRecalNote(null); // this unit has its own history — no recalibration
+        return;
       }
+      const any = await fetch(`/api/exercises/${activeExercise.id}/last-session`);
+      const anyData: { session: { sets: Array<{ load: number; reps: number }> } | null } = await any.json();
+      if (cancelled) return;
+      setRecalNote(
+        anyData.session
+          ? `Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} lb on another unit (effort + volume carry over)`
+          : null
+      );
     })();
     return () => {
       cancelled = true;
@@ -479,27 +504,27 @@ export function StrengthCard({
 
   // ——— presentation ———
   const swapped = activeExercise.id !== ex.exerciseId;
-  const isRecal = previous != null && previous.startsWith("Recalibrating");
-  // Reference metadata reads as ONE quiet muted line, not boxed pills (2.8):
-  // last · target · source, same information, far less chrome — the eye reaches
-  // the logged sets faster. The recalibration note is NOT folded in here: it's
-  // actionable context, so it stays its own dismissible chip below.
-  const metaParts: string[] = [];
-  if (previous != null && !isRecal) metaParts.push(previous);
-  if (ex.target)
-    metaParts.push(
-      `target ${ex.target.targetSets} × ${ex.target.repRange ?? "?"}${ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}`
-    );
-  metaParts.push(ex.source);
+  const isRecal = recalNote != null;
+  // Metadata describes the EXERCISE — it sits under the name as two muted lines
+  // (2.9), above the equipment control. "last" always shows (exercise-level;
+  // "no prior data" when empty); the source is dropped (the page is already
+  // titled by day). The recalibration note stays its own dismissible chip.
+  const targetText = ex.target
+    ? `${ex.target.targetSets} × ${ex.target.repRange ?? "?"}${ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}`
+    : null;
   // A done card expanded is a REVIEW state, not a greyed logging state: chips
   // + logged rows + rests, fully readable, no input UI. Set rows stay
   // tappable for corrections; un-checking done restores logging.
   const review = completed;
   const equipEditorVisible = !review && (equipOpen ?? loggedSets.length === 0);
-  // The chip always tells the CURRENT state without tapping (owner requirement).
-  const unitChipText = selectedUnit
-    ? `${selectedUnit.label}${selectedUnit.builtInWeight != null ? ` +${Number(selectedUnit.builtInWeight)}` : ""}`
-    : `${typeDef.label.toLowerCase()}${contextBound ? " · unspecified" : ""}${offsetNum !== 0 && !offsetNeedsConfirm && offsetRelevant ? ` +${offsetNum}` : ""}`;
+  // Option A summary (2.9): the ONE equipment element at rest — "⚙ unit · type"
+  // (named) or "⚙ Type · pick unit" (context-bound, no unit yet) or just the
+  // type (portable). Tapping reveals full-width labeled Type/Unit fields.
+  const equipSummary = selectedUnit
+    ? `${selectedUnit.label} · ${typeDef.label.toLowerCase()}`
+    : contextBound
+      ? `${typeDef.label} · pick unit`
+      : typeDef.label;
 
   const menuItems: CardMenuItem[] = [
     { label: "Swap exercise…", onSelect: openSwap },
@@ -535,32 +560,62 @@ export function StrengthCard({
 
       {!collapsed && (
         <div className={styles.cardBody}>
-          {/* Order (2.7-2): chip → editor (connected, directly beneath) →
-              metadata pills. The editor belongs to the chip, not the pills. */}
+          {/* Metadata under the NAME (2.9): two muted lines describing the
+              EXERCISE — above the equipment control. "last" is exercise-level
+              (never vanishes on unit change); source dropped. */}
+          <div className={styles.metaBlock}>
+            <div className={styles.metaLine}>
+              <span className={styles.metaLabel}>last</span>{" "}
+              {lastText ?? <span className={styles.metaEmpty}>— no prior data</span>}
+            </div>
+            {targetText && (
+              <div className={styles.metaLine}>
+                <span className={styles.metaLabel}>target</span> {targetText}
+              </div>
+            )}
+          </div>
+
+          {isRecal && !recalDismissed && (
+            <div className={styles.chipsRow}>
+              <span className={styles.chipRecal}>
+                {recalNote}
+                <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
+              </span>
+            </div>
+          )}
+
+          {/* Equipment — Option A (2.9): one summary chip at rest; tapping it
+              reveals full-width labeled Type/Unit fields (no truncation). */}
           <div className={styles.chipsRow}>
             {review ? (
-              // Review: the equipment state stays legible, but it's not an
-              // editing surface — plain chip, no toggle.
-              <span className={styles.chip}>{unitChipText}</span>
+              // Review: legible, not an editing surface — plain, no toggle.
+              <span className={styles.chipUnit}><span aria-hidden="true">⚙</span> {equipSummary}</span>
             ) : (
               <button type="button" className={styles.chipUnit} onClick={() => setEquipOpen(!equipEditorVisible)} title="Equipment for this exercise — tap to change">
-                {unitChipText} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
+                <span aria-hidden="true">⚙</span> {equipSummary} <span aria-hidden="true">{equipEditorVisible ? "▴" : "▾"}</span>
               </button>
             )}
           </div>
 
           {equipEditorVisible && (
             <div className={styles.equipAttached}>
-              <div className={styles.equipRow}>
-                <label title="How resistance is applied to this set. Pre-selected from the exercise — a visible default, always editable, never hidden.">
-                  <select className={styles.selectQuiet} value={equipType} onChange={(e) => pickType(e.target.value as EquipmentTypeId)}>
-                    {EQUIPMENT_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                  </select>
-                </label>
-                {contextBound && (
-                  <>
+              <div className={styles.equipField}>
+                <span className={styles.equipFieldLabel}>Type</span>
+                <select
+                  className={styles.selectFull}
+                  value={equipType}
+                  onChange={(e) => pickType(e.target.value as EquipmentTypeId)}
+                  title="How resistance is applied to this set. Pre-selected from the exercise — a visible default, always editable, never hidden."
+                >
+                  {EQUIPMENT_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </div>
+              {contextBound && (
+                <div className={styles.equipField}>
+                  <span className={styles.equipFieldLabel}>Unit</span>
+                  <div className={styles.equipUnitRow}>
                     <select
-                      className={styles.selectQuiet}
+                      className={styles.selectFull}
                       value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId}
                       onChange={(e) => { setEquipmentId(e.target.value); setOffsetTouched(false); setEquipTouched(true); }}
                       title="Which unit — the same stack number means different resistance on different units, so each unit tracks its own lane."
@@ -568,10 +623,10 @@ export function StrengthCard({
                       <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
                       {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
                     </select>
-                    <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn} title="Add a new unit for this equipment type">+ New</button>
-                  </>
-                )}
-              </div>
+                    <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn} title="Add a new unit for this equipment type">+ New unit…</button>
+                  </div>
+                </div>
+              )}
               {offsetRelevant && (
                 <div className={styles.equipRow}>
                   <label title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged.">
@@ -597,18 +652,6 @@ export function StrengthCard({
                 </div>
               )}
             </div>
-          )}
-
-          {isRecal && !recalDismissed && (
-            <div className={styles.chipsRow}>
-              <span className={styles.chipRecal}>
-                {previous}
-                <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
-              </span>
-            </div>
-          )}
-          {metaParts.length > 0 && (
-            <div className={styles.metaLine} title={metaParts.join(" · ")}>{metaParts.join(" · ")}</div>
           )}
 
           {unitModalOpen && (

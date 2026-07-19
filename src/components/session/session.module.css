@@ -213,16 +213,27 @@
   gap: 4px;
   white-space: normal;
 }
-/* Reference metadata (last · target · source) as one quiet muted line, not
-   boxed pills (2.8): single row, truncates with ellipsis — the values are
-   reference, not interactive, so the eye passes over them to the sets. */
+/* Exercise metadata, directly under the name (2.9): two muted lines — last
+   and target. Value in secondary, the label ("last"/"target") dimmer. Each
+   line stays single-row and ellipses rather than pushing the layout. */
+.metaBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .metaLine {
-  font-size: 0.76rem;
-  color: var(--text-3);
+  font-size: 0.82rem;
+  color: var(--text-2);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.metaLabel {
+  color: var(--text-3);
+}
+.metaEmpty {
+  color: var(--text-3);
 }
 
 /* ---------- equipment editor (on demand) ---------- */
@@ -245,16 +256,39 @@
   font-size: 0.85rem;
   color: var(--text-2);
 }
-/* Compact inline controls (2.8): the chip above is the full summary, so the
-   editor selects don't restate it full-width — they cap their width and
-   truncate, letting [type ▾] [unit ▾] [+ New] sit on one row at 375px. */
+/* Option A editor fields (2.9): the summary chip is the rest state; when
+   revealed, Type and Unit are full-width LABELED selects — no truncation
+   (fixes the "Selectorized m…" / "Unspecified u…" cutoff of the compact row). */
+.equipField {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.equipFieldLabel {
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.selectFull {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  font-size: 0.9rem;
+  background: var(--raised);
+}
+.equipUnitRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+/* Shared quiet select (effort-in-edit, unit-ratio) — natural width, no cap. */
 .selectQuiet {
-  min-height: 34px;
-  font-size: 0.8rem;
-  padding: 4px 8px;
+  min-height: 40px;
+  font-size: 0.85rem;
   background: var(--raised);
   width: auto;
-  max-width: 108px;
+  max-width: 100%;
 }
 .offsetInput {
   width: 64px;
@@ -665,6 +699,7 @@
   font-size: 0.8rem;
   padding: 4px 10px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ---------- swap sheet rows ---------- */
