@@ -50,6 +50,18 @@ const UNSPECIFIED_UNIT = "__unspecified__";
 // dismissed forever on the first row tap.
 const TAP_HINT_KEY = "fitness-app:hint-set-tap";
 
+// A unit as GET /api/equipment returns it — the whole cross-exercise list. The
+// picker groups by (matches the selected type?) and (already on this exercise?).
+interface SessionUnit {
+  id: string;
+  label: string;
+  equipmentType: string | null;
+  gym: string | null;
+  builtInWeight: string | null;
+  notes: string | null;
+  exercises: { exerciseId: string }[];
+}
+
 // The exercise card (phase 2): rows show information; controls appear on
 // demand. The entire state machine below (offset machinery, lanes, timer→rest
 // write, drop groups, swap, relabel) moved VERBATIM from the pre-rebuild
@@ -84,12 +96,17 @@ export function StrengthCard({
     portable: ex.portable,
     unilateral: ex.unilateral,
   });
-  // Units curated for THIS exercise, not the global list.
-  const [equipmentUnits, setEquipmentUnits] = useState<EquipmentOption[]>([]);
+  // ALL of the user's units, not just this exercise's (2.12). A unit is a
+  // standalone physical machine that many exercises reference (the schema is
+  // many-to-many); scoping the picker to one exercise is what forced "+ New
+  // unit…" and minted duplicate rows for the same machine (VSL16/VSL13). The
+  // picker now groups every unit so an existing machine is one tap away on any
+  // exercise, and picking it REUSES the row.
+  const [equipmentUnits, setEquipmentUnits] = useState<SessionUnit[]>([]);
   const refreshEquipmentUnits = useCallback(async () => {
-    const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
+    const res = await fetch(`/api/equipment`);
     if (res.ok) setEquipmentUnits(await res.json());
-  }, [activeExercise.id]);
+  }, []);
   // The equipment TYPE/unit are stored on this occurrence's logged sets (and
   // restored from the server on hydrate) — a finished session's machine
   // survives a PWA reinstall / localStorage wipe.
@@ -200,6 +217,41 @@ export function StrengthCard({
   const selectedUnit = resolvedUnitId ? equipmentUnits.find((m) => m.id === resolvedUnitId) ?? null : null;
   const lane = laneKey(equipType, resolvedUnitId);
 
+  // Group the whole unit list for the picker (2.12): this exercise's units of
+  // the selected type first, then the rest of that type, then other types —
+  // NEVER hidden, so a valid unit is always reachable (the trap that forced
+  // "+ New"). Re-computes live when the type changes.
+  const unitGroups = useMemo(() => {
+    const onThis: SessionUnit[] = [];
+    const sameType: SessionUnit[] = [];
+    const otherType: SessionUnit[] = [];
+    const here = (u: SessionUnit) => u.id === occStoredUnit || u.exercises.some((e) => e.exerciseId === activeExercise.id);
+    for (const u of [...equipmentUnits].sort((a, b) => a.label.localeCompare(b.label))) {
+      if ((u.equipmentType ?? null) === equipType) (here(u) ? onThis : sameType).push(u);
+      else otherType.push(u);
+    }
+    return { onThis, sameType, otherType };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipmentUnits, equipType, occStoredUnit, activeExercise.id]);
+  const unitOptionLabel = (u: SessionUnit) =>
+    `${u.label}${u.gym ? ` · ${u.gym}` : ""}${u.builtInWeight != null ? ` (+${Number(u.builtInWeight)})` : ""}`;
+
+  // Picking a unit REUSES its row. If the unit's own type differs from the
+  // current selection, adopt it so the (type, unit) lane stays consistent —
+  // this is also what makes an "Other types" unit selectable without breaking.
+  function pickUnit(value: string) {
+    setEquipmentId(value);
+    setOffsetTouched(false);
+    setEquipTouched(true);
+    if (value !== UNSPECIFIED_UNIT) {
+      const u = equipmentUnits.find((m) => m.id === value);
+      if (u?.equipmentType && u.equipmentType !== equipType && EQUIPMENT_TYPE_BY_ID.has(u.equipmentType as EquipmentTypeId)) {
+        setEquipType(u.equipmentType as EquipmentTypeId);
+        localStorage.setItem(lastTypeKey(activeExercise.id), u.equipmentType);
+      }
+    }
+  }
+
   // Offset: a named unit's stored offset pre-fills (explicit → no prompt);
   // otherwise the type default. Editable per set — a set-level override, never
   // a rewrite of the unit's default. Non-zero TYPE-LEVEL defaults are
@@ -249,13 +301,14 @@ export function StrengthCard({
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
 
-  // Load this exercise's curated unit list (always — the field is always on).
+  // Load the whole unit list (all exercises) so any existing machine is
+  // reusable here — the field is always on.
   useEffect(() => {
     (async () => {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`);
+      const res = await fetch(`/api/equipment`);
       if (res.ok) setEquipmentUnits(await res.json());
     })();
-  }, [activeExercise.id]);
+  }, []);
 
   // Refresh flags that may have changed since this occurrence was snapshotted —
   // tagging an exercise unilateral must make its HISTORICAL sets side-editable
@@ -642,11 +695,25 @@ export function StrengthCard({
                     <select
                       className={styles.selectFull}
                       value={equipmentId === "" ? UNSPECIFIED_UNIT : equipmentId}
-                      onChange={(e) => { setEquipmentId(e.target.value); setOffsetTouched(false); setEquipTouched(true); }}
-                      title="Which unit — the same stack number means different resistance on different units, so each unit tracks its own lane."
+                      onChange={(e) => pickUnit(e.target.value)}
+                      title="Which unit — pick any of your existing machines to reuse it (no duplicate row). The same stack number means different resistance on different units, so each unit tracks its own lane."
                     >
                       <option value={UNSPECIFIED_UNIT}>Unspecified unit</option>
-                      {equipmentUnits.map((m) => <option key={m.id} value={m.id}>{m.label}{m.builtInWeight != null ? ` (+${Number(m.builtInWeight)})` : ""}</option>)}
+                      {unitGroups.onThis.length > 0 && (
+                        <optgroup label="On this exercise">
+                          {unitGroups.onThis.map((m) => <option key={m.id} value={m.id}>{unitOptionLabel(m)}</option>)}
+                        </optgroup>
+                      )}
+                      {unitGroups.sameType.length > 0 && (
+                        <optgroup label={`Your ${typeDef.label.toLowerCase()} units`}>
+                          {unitGroups.sameType.map((m) => <option key={m.id} value={m.id}>{unitOptionLabel(m)}</option>)}
+                        </optgroup>
+                      )}
+                      {unitGroups.otherType.length > 0 && (
+                        <optgroup label="Other types">
+                          {unitGroups.otherType.map((m) => <option key={m.id} value={m.id}>{m.label}{m.gym ? ` · ${m.gym}` : ""}{m.equipmentType ? ` · ${m.equipmentType}` : ""}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                     <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn} title="Add a new unit for this equipment type">+ New unit…</button>
                   </div>
@@ -696,10 +763,16 @@ export function StrengthCard({
             <AddUnitModal
               exerciseId={activeExercise.id}
               presetType={equipType}
+              existingUnits={equipmentUnits}
               onClose={() => setUnitModalOpen(false)}
               onCreated={(unit) => {
                 setUnitModalOpen(false);
-                setEquipmentUnits((us) => [...us, unit]);
+                // Optimistic add (refresh reloads the accurate list right after).
+                setEquipmentUnits((us) =>
+                  us.some((u) => u.id === unit.id)
+                    ? us
+                    : [...us, { id: unit.id, label: unit.label, equipmentType: equipType, gym: null, builtInWeight: unit.builtInWeight, notes: unit.notes, exercises: [{ exerciseId: activeExercise.id }] }]
+                );
                 setEquipmentId(unit.id);
                 // Session-level relabel: within one session you are demonstrably
                 // on one unit — re-point THIS session's unspecified sets of this

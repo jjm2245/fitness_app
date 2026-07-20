@@ -2384,3 +2384,45 @@ lock); the only thing read-locking a done exercise was its per-occurrence
   beyond throwaway test rows I created and removed. Note: dev and the owner's
   prod (Neon) have drifted — dev is a test sandbox; statements about real data
   are prod reads only.
+
+## Duplicate equipment units — root cause + fix (2026-07-19)
+
+**Root cause (diagnosed, prod-read confirmed).** The equipment SCHEMA is
+correctly many-to-many (`exercise_equipment` composite PK; `set_logs.equipment_id
+→ equipment.id`) — a unit is a standalone physical machine many exercises can
+reference. The bug was entirely in the UI/creation path:
+1. The unit picker in `StrengthCard` loaded from `GET /api/exercises/[id]/equipment`
+   — **exercise-scoped** — so a machine already used on exercise A never appeared
+   when logging exercise B.
+2. `AddUnitModal` ("+ New unit…") minted a fresh `crypto.randomUUID()` every time
+   with **no label lookup**, so re-typing an existing machine's name created a
+   second row.
+With the existing unit hidden from the picker, the user was FORCED into "+ New",
+which then duplicated. Prod evidence: VSL16 = 2 rows 27 min apart (Seated Leg
+Curl / Leg Extensions); **VSL13 = 2 rows a full day apart** — proof it recurs
+across sessions, not a one-off. No schema change needed (owner's first case).
+
+**Fix (UI/logic only; `src/core/*` untouched).**
+- **Selector shows ALL units** (`GET /api/equipment`), grouped: *On this exercise*
+  → *Your \<type\> units* (matching the selected type) → *Other types* (never
+  hidden — a valid unit is always reachable, closing the exact trap that forced
+  "+ New"). Groups re-compute live when the Type changes. Picking a unit REUSES
+  its row and adopts the unit's own type so the (type, unit) lane stays
+  consistent.
+- **Create-dedupe in "+ New unit…"** (offer, never force): before minting, match
+  an existing unit on **label + type + gym**, case-insensitive on label (gym is
+  part of identity — same label at two gyms = two machines). On a match, show
+  *"You already have \<label\> — reuse it?"* with **Use \<label\>** (associates +
+  selects the existing row, no new row) / **Create anyway**. Never silent.
+- **Preserved:** the merge path + history-safety are untouched; no auto-merge of
+  existing prod duplicates (owner's by-hand phone job). This prevents NEW
+  duplicates and makes existing units reusable going forward; it does not
+  retroactively fix VSL16/VSL13 already in prod.
+
+**Verified (DB-level, throwaway dev entities, cleaned up; prod read-only):**
+logging Seated Leg Curl on an existing selectorized unit ("press by the window",
+tied to Machine Bench Press) minted **no new equipment row** (total 6 → 6), the
+set referenced the existing id, and the unit auto-associated with both exercises.
+"+ New unit…" typing "vsl16" matched "VSL16" case-insensitively and offered
+reuse; **Use VSL16** reused (still 6 rows). Changing Type re-filtered the groups
+live with every unit still reachable.

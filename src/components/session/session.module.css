@@ -323,6 +323,16 @@
   font-size: 0.72rem;
   color: var(--text-3);
 }
+/* Reuse-existing prompt in the new-unit sheet (dedupe) — offer, never force. */
+.warnBox {
+  font-size: 0.88rem;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  line-height: 1.45;
+}
 
 /* ---------- logged sets ---------- */
 
