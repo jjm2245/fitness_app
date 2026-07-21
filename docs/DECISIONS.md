@@ -2426,3 +2426,58 @@ set referenced the existing id, and the unit auto-associated with both exercises
 "+ New unit…" typing "vsl16" matched "VSL16" case-insensitively and offered
 reuse; **Use VSL16** reused (still 6 rows). Changing Type re-filtered the groups
 live with every unit still reachable.
+
+## Program editor — target sheet + reorder (2026-07-20)
+
+Phase-3 program-editor iteration on the shared `DayEditorView` engine
+(/program, /blocks, block library). Two gated decisions were reported first and
+approved; the session/logging screen was not touched.
+
+### A — target sheet
+- **Migration 0022 (additive, owner-approved; local-first, prod held):**
+  `program_exercises.target_sets` DROP NOT NULL. A program exercise can now have
+  NO target (NULL sets/reps/rir) → a freshly added exercise reads "Set a target"
+  instead of a fabricated `3 × 8–12 @ RIR 2`. `addExerciseToDay` inserts all-null
+  by default; the seed keeps its explicit PPL prescription; cardio carries no
+  set/rep target (kills the vestigial "1 set"). Read paths were already
+  NULL-safe (log page maps `targetSets==null → target:null`; progression uses a
+  defaulted context, never `target_sets`; stats reads logged sets, not targets).
+  Real-format audit (prod): strength rep ranges are only `8-12` (×39) and `8`
+  (×1); zero rows used `target_sets=0`.
+- **Reps Single/Range toggle** (defaulted from the stored value: `a-b` → Range,
+  else Single), numeric-only inputs (inputmode numeric; letters/symbols
+  filtered), blank RIR → null. Invariant held: `8-12` stores `8-12` (shown 8–12),
+  a single `10` stores `10`, and a no-edit save is byte-identical.
+- **Cardio targets live on `exercises.params`** (exercise-level jsonb, not
+  per-program) — confirmed by prod read. The sheet edits them via an additive
+  `params` field on the exercise PATCH (no schema change), with a muted
+  "applies everywhere" note. Duration uses the same Single/Range toggle so a
+  `[min,max]` (Stairmaster `[5,15]`) round-trips; incline/speed optional singles;
+  a merge preserves unknown keys and unsets blanked ones. Chip shows
+  `30 min · 12 incline · 3 speed` (or ranges) / "Set a target", never "1 set".
+- The exercise target sheet's ORDER / Move up-down block is gone (see B).
+
+### B — reorder supersedes the single-step moves
+**This supersedes the phase-2/DayEditor decision to reorder via ↑/↓ one at a
+time.** Reasoning: single-step moves are O(n) taps and API calls to move an item
+far; a whole-order commit is one action and removes the "sorted view vs. manual
+move" ambiguity. Now:
+- **Bulk reorder endpoints** (a day's exercises; a program's days) write
+  contiguous `order_index 0..n-1`, scoped to the parent, and reject an id set
+  that doesn't match the parent's children exactly (no gap/dupe/cross-parent).
+  Additive — `order_index` already existed.
+- **Drag** via **dnd-kit** (added dependency, owner-approved; touch-first, not
+  hand-rolled): PointerSensor + 6px activation + a grip handle (touch-action
+  none) so the row still taps to open its sheet. **Sort** actions (A–Z / Z–A /
+  Recent — Recent uses the serial `id` as the creation-order proxy, since there
+  is no `created_at`) commit a canonical order, still drag-tweakable. Days
+  reorder via a **"Organize order…"** drag modal.
+- Retired: exercise Move up/down (sheet) and day Move left/right (⋯).
+- DB-verified on throwaway rows (real rows read-only, restored): drag/sort/day-
+  modal all persist contiguous `order_index`, survive reload, are parent-scoped;
+  +3 reorder-integrity unit tests. Blocks parity confirmed.
+
+**Deploy note:** migration 0022 is applied to LOCAL only; prod is held for the
+owner's review (before/after counts) and must land before the code deploys
+(inserting NULL target_sets would violate the old NOT NULL). VSL16 / all real
+prod rows untouched.
