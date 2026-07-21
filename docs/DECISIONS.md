@@ -2541,3 +2541,43 @@ substrings misroute (e.g. "Prowler" → row set; "Step-ups" → stair set). Defe
 fix: an explicit user-chosen field set per exercise, to land with the
 exercise-tab / tag work. (Cross-ref: the cardio audit entry's field-set-source
 paragraph above.)
+
+## Target sheet v4 — opt-in + anchor + effort scale + compact (2026-07-21)
+
+Shipped (ungated, no schema): **opt-in flow** — no target by default; the sheet
+shows "No target set" + "＋ Add a target"; opting in reveals fields; "Remove
+target" returns to no target (persists the clear if one was stored, else just
+collapses). **One required anchor** — Sets (strength) / Duration (cardio),
+marked `*`; while opted in with an empty anchor, Save is disabled + an inline
+error + red field border (never saves silently to "Set a target"). Consequence:
+a cardio target with incline/speed but **no duration is invalid** → reads "Set a
+target" (verified: prod `lib_Jogging_Treadmill {speed,incline}` → "Set a
+target"). **Compact layout** — small inline Single/Range segmented toggle,
+Sets+Reps on one row, effort as three pills. **Cardio field-sets unchanged** —
+still from `cardioFields()` (Stairmaster → duration+level, Treadmill →
+duration+speed+incline); only the opt-in/anchor/compact chrome was applied.
+
+**Effort model.** The target adopts the session's 3-level `effort` enum
+(`more_in_me`/`near_failure`/`to_failure`) so target and actual are comparable;
+the easiest level is relabeled **"Relaxed"** in the target voice (session says
+"More in me"). The editor chip + the session's target-reference line now show the
+effort **label** (`3 × 8–12 · near failure`) instead of the stale `@ RIR 2`.
+
+**Effort storage — interim on `rir_target` (see `src/lib/targetEffort.ts`).**
+Until the additive `effort_target` column lands, the target's effort rides on the
+legacy numeric `rir_target` via a bucket that matches the migration backfill
+(0–1 → to failure, 2–3 → near failure, 4+ → relaxed, null → none). A no-edit save
+preserves the original rir string byte-identically; a changed pill writes a
+representative (`to→"0"`, `near→"2"`, `relaxed→"4"`) that re-buckets to the same
+tag, so interim writes migrate losslessly. Round-trip proven on a throwaway copy:
+`3 / "8-12" / "2"` and Stairmaster `[5,15]` unchanged on no-edit save.
+
+**GATE — proposed migration (paused for owner go).** Additive
+`ALTER TABLE program_exercises ADD COLUMN effort_target "effort"` + backfill from
+`rir_target` per the bucket above. Prod `rir_target` today: null×16, "1"×1,
+"2"×40, "5"×2 → after: to_failure×1, near_failure×40, more_in_me×2, null×16;
+`rir_target` kept (nothing dropped). **Progression consequence to confirm:**
+progression's numeric `targetRir` (StrengthCard → `/api/progression`) would
+derive from the tag via `effort.ts` (near_failure→1), shifting the 40 `rir=2`
+rows from targetRir 2→1 — unless progression keeps reading the legacy numeric.
+Owner decides; `src/core/*` untouched either way.

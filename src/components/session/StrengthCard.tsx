@@ -12,6 +12,7 @@ import { RestBanner } from "./RestBanner";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import { AddUnitModal } from "./AddUnitModal";
 import { SwapSheet } from "./SwapSheet";
+import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import {
   EFFORT_OPTIONS,
   type CardControls,
@@ -562,8 +563,12 @@ export function StrengthCard({
   // (2.9), above the equipment control. "last" always shows (exercise-level;
   // "no prior data" when empty); the source is dropped (the page is already
   // titled by day). The recalibration note stays its own dismissible chip.
+  // The target-reference line shows the effort as the 3-level label (not the
+  // stale "@ RIR 2") — the target now speaks the same effort scale the session
+  // logs. Derived from the stored rir_target via the shared bucket shim.
+  const targetTag = rirToEffortTag(ex.target?.rirTarget ?? null);
   const targetText = ex.target
-    ? `${ex.target.targetSets} × ${ex.target.repRange ?? "?"}${ex.target.rirTarget != null ? ` @ RIR ${ex.target.rirTarget}` : ""}`
+    ? `${ex.target.targetSets} × ${ex.target.repRange ?? "?"}${targetTag ? ` · ${TARGET_EFFORT_LABEL[targetTag]}` : ""}`
     : null;
   // A done card expanded is a REVIEW state, not a greyed logging state: chips
   // + logged rows + rests, fully readable, no input UI. Set rows stay

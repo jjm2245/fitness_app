@@ -11,6 +11,7 @@ import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
 import { cardioFields } from "@/lib/cardioFields";
+import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
 // day's quiet exercise rows at a time, edit-by-sheet, add-by-sheet, day ⋯.
@@ -26,12 +27,15 @@ function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
   if (ex.conditioningOnly) {
     // Same field-set source the target sheet + session card read, so the chip
     // shows exactly the fields this exercise prescribes (min+level for a stair
-    // machine, min+speed+incline for a treadmill).
+    // machine, min+speed+incline for a treadmill). Duration is the anchor: with
+    // no duration the target is invalid (incline/speed alone) → "Set a target".
     const p = ex.params ?? {};
+    const dur = p.duration_min;
+    const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
+    if (!hasDuration) return { text: "Set a target", muted: true };
     const parts: string[] = [];
     for (const f of cardioFields(ex.exerciseName)) {
       if (f === "duration") {
-        const dur = p.duration_min;
         if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
         else if (typeof dur === "number") parts.push(`${dur} min`);
       } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
@@ -39,12 +43,13 @@ function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
       else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
       else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} dist`);
     }
-    return parts.length ? { text: parts.join(" · "), muted: false } : { text: "Set a target", muted: true };
+    return { text: parts.join(" · "), muted: false };
   }
   if (ex.targetSets == null) return { text: "Set a target", muted: true };
   const reps = ex.repRange ? ` × ${ex.repRange.replace("-", "–")}` : ex.targetSets === 1 ? " set" : " sets";
-  const rir = ex.rirTarget != null && ex.rirTarget !== "" ? ` @ RIR ${ex.rirTarget}` : "";
-  return { text: `${ex.targetSets}${reps}${rir}`, muted: false };
+  const tag = rirToEffortTag(ex.rirTarget);
+  const effort = tag ? ` · ${TARGET_EFFORT_LABEL[tag]}` : "";
+  return { text: `${ex.targetSets}${reps}${effort}`, muted: false };
 }
 
 export function DayEditorView({

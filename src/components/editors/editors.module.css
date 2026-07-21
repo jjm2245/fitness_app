@@ -465,6 +465,128 @@
   border: 1px solid var(--accent);
   color: var(--accent-fg);
 }
+
+/* ---------- target sheet v4: opt-in + compact ---------- */
+
+/* No-target empty state + its opt-in button. */
+.emptyTarget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0 2px;
+}
+.emptyTargetNote {
+  font-size: 0.9rem;
+  color: var(--text-3);
+}
+.addTargetBtn {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+
+/* Small inline Single/Range segmented toggle (replaces the 44px pair). */
+.segToggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.segBtn,
+.segActive {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+}
+.segActive {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
+
+/* Sets + Reps on one row. */
+.compactRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.setsCol {
+  width: 84px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.repsCol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.repsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Required-anchor marker + error state. */
+.anchorReq {
+  color: var(--accent);
+  font-weight: 600;
+}
+.inputErr {
+  border: 1px solid var(--danger) !important;
+}
+
+/* Effort as three compact pills. */
+.pillRow {
+  display: flex;
+  gap: 6px;
+}
+.pill,
+.pillActive {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+}
+.pillActive {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
+
+/* "Remove target" — quiet text action under the opted-in fields. */
+.linkRemove {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  font-size: 0.82rem;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 /* Rows inside a sheet (used-by lists, merge targets, switch program). */
 .sheetList {
   display: flex;

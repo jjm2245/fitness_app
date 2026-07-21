@@ -5,12 +5,16 @@ import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
 import { cardioFields, CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
+import { TARGET_EFFORT_OPTIONS, rirToEffortTag, effortTagToRirStore, type EffortTag } from "@/lib/targetEffort";
 
-// Exercise target edit sheet (3.1). The values are the per-session GOAL; leave
-// anything blank to leave it unset. Invariant: stored values are never silently
-// rewritten — "8-12" stores "8-12" (shown 8–12), a single "10" stores "10",
-// RIR/sets store exactly what was entered, and a no-edit save is byte-identical.
-// No reorder here (that moved to drag + sort). Reorder/Move controls removed.
+// Exercise target edit sheet (v4). No target by default: the sheet shows an
+// empty state until you opt in. Once opted in, ONE anchor is required (Sets for
+// strength, Duration for cardio) — Save is disabled and the anchor errors until
+// it's filled; everything else is optional. "Remove target" returns to no
+// target. Invariant: stored rep/sets/duration values round-trip byte-identical
+// ("8-12", single "10", Stairmaster [5,15]); a no-edit save re-writes the
+// identical value (effort included, via the rir shim in targetEffort.ts).
+// Cardio field-sets come from cardioFields() — unchanged, not re-hardcoded here.
 
 const digits = (s: string) => s.replace(/[^\d]/g, "");
 const decimal = (s: string) => {
@@ -26,18 +30,20 @@ function NumField({
   onChange,
   placeholder,
   allowDecimal,
+  error,
 }: {
-  label?: string;
+  label?: React.ReactNode;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   allowDecimal?: boolean;
+  error?: boolean;
 }) {
   return (
     <label className={styles.fieldHalf}>
       {label && <span className={styles.fieldLabel}>{label}</span>}
       <input
-        className={styles.fieldInput}
+        className={`${styles.fieldInput} ${error ? styles.inputErr : ""}`}
         inputMode={allowDecimal ? "decimal" : "numeric"}
         value={value}
         onChange={(e) => onChange((allowDecimal ? decimal : digits)(e.target.value))}
@@ -56,6 +62,7 @@ export function TargetSheet({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const isCardio = ex.conditioningOnly;
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -67,12 +74,11 @@ export function TargetSheet({
   const [repSingle, setRepSingle] = useState(initRepRange.includes("-") ? "" : initRepRange);
   const [repA, setRepA] = useState(initRepRange.includes("-") ? initRepRange.split("-")[0] : "");
   const [repB, setRepB] = useState(initRepRange.includes("-") ? initRepRange.split("-")[1] : "");
-  const [rirTarget, setRirTarget] = useState(ex.rirTarget ?? "");
+  // Effort adopts the session's 3-level scale; stored (for now) on the legacy
+  // numeric rir_target via the bucket shim so it round-trips + migrates cleanly.
+  const [effort, setEffort] = useState<EffortTag | null>(rirToEffortTag(ex.rirTarget));
 
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
-  // Which fields this exercise shows comes from the shared source, so the
-  // editor and the session card always agree (Stairmaster → min+level,
-  // Treadmill → min+speed+incline). Duration keeps its Single/Range toggle.
   const cardioFieldSet = cardioFields(ex.exerciseName);
   const p = ex.params ?? {};
   const dur = p.duration_min;
@@ -86,7 +92,6 @@ export function TargetSheet({
   const [level, setLevel] = useState(typeof p.level === "number" ? String(p.level) : "");
   const [distance, setDistance] = useState(typeof p.distance === "number" ? String(p.distance) : "");
 
-  // The non-duration fields, keyed for both render and save.
   type ExtraField = Exclude<CardioField, "duration">;
   const extraFieldState: Record<ExtraField, { value: string; set: (v: string) => void; label: string; decimal?: boolean }> = {
     speed: { value: speed, set: setSpeed, label: "Speed", decimal: true },
@@ -95,6 +100,16 @@ export function TargetSheet({
     distance: { value: distance, set: setDistance, label: "Distance", decimal: true },
   };
   const extraFields = cardioFieldSet.filter((f): f is ExtraField => f !== "duration");
+
+  // ── opt-in + anchor validity ──
+  // A cardio target only counts as "set" when it has a Duration — incline/speed
+  // alone is an invalid target (reads "Set a target").
+  const durationComplete = durMode === "single" ? durSingle.trim() !== "" : durA.trim() !== "" && durB.trim() !== "";
+  const initialOpted = isCardio ? durationComplete : ex.targetSets != null;
+  const [opted, setOpted] = useState(initialOpted);
+
+  const setsComplete = targetSets.trim() !== "";
+  const anchorValid = isCardio ? durationComplete : setsComplete;
 
   function repRangeToStore(): string | null {
     if (repMode === "single") return repSingle.trim() === "" ? null : repSingle.trim();
@@ -105,16 +120,16 @@ export function TargetSheet({
 
   async function saveStrength(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !anchorValid) return;
     setBusy(true);
     setErr(null);
     try {
       await api(`/api/program-exercises/${ex.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          targetSets: targetSets.trim() === "" ? null : Number(targetSets),
+          targetSets: Number(targetSets),
           repRange: repRangeToStore(),
-          rirTarget: rirTarget.trim() === "" ? null : rirTarget.trim(),
+          rirTarget: effortTagToRirStore(effort, ex.rirTarget ?? null),
         }),
       });
       await onChanged();
@@ -125,25 +140,17 @@ export function TargetSheet({
     }
   }
 
-  async function saveCardio(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setErr(null);
-    // Merge over the exercise's existing params so keys this exercise doesn't
-    // show are PRESERVED (never silently dropped — e.g. a stored incline on a
-    // stair machine whose field-set is duration+level), while the fields it
-    // does show are written, or deleted when blanked.
+  function buildCardioParams(): Record<string, unknown> {
+    // Merge over existing params so keys this exercise doesn't show are PRESERVED
+    // (e.g. a stored incline on a stair machine whose field-set is duration+level).
     const params: Record<string, unknown> = { ...(ex.params ?? {}) };
-    if (cardioFieldSet.includes("duration")) {
-      if (durMode === "single") {
-        if (durSingle.trim() !== "") params.duration_min = Number(durSingle);
-        else delete params.duration_min;
-      } else if (durA.trim() !== "" && durB.trim() !== "") {
-        params.duration_min = [Number(durA), Number(durB)];
-      } else {
-        delete params.duration_min;
-      }
+    if (durMode === "single") {
+      if (durSingle.trim() !== "") params.duration_min = Number(durSingle);
+      else delete params.duration_min;
+    } else if (durA.trim() !== "" && durB.trim() !== "") {
+      params.duration_min = [Number(durA), Number(durB)];
+    } else {
+      delete params.duration_min;
     }
     for (const f of extraFields) {
       const key = CARDIO_FIELD_KEY[f];
@@ -151,6 +158,15 @@ export function TargetSheet({
       if (raw.trim() !== "") params[key] = Number(raw);
       else delete params[key];
     }
+    return params;
+  }
+
+  async function saveCardio(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || !anchorValid) return;
+    setBusy(true);
+    setErr(null);
+    const params = buildCardioParams();
     try {
       await api(`/api/exercises/${encodeURIComponent(ex.exerciseId)}`, {
         method: "PATCH",
@@ -164,7 +180,37 @@ export function TargetSheet({
     }
   }
 
-  async function remove() {
+  // "Remove target" → back to no target. If nothing was ever stored (added but
+  // not saved), just collapse to the empty state; otherwise persist the clear.
+  async function removeTarget() {
+    if (!initialOpted) { setOpted(false); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      if (isCardio) {
+        const params: Record<string, unknown> = { ...(ex.params ?? {}) };
+        delete params.duration_min;
+        for (const f of extraFields) delete params[CARDIO_FIELD_KEY[f]];
+        await api(`/api/exercises/${encodeURIComponent(ex.exerciseId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ params: Object.keys(params).length ? params : null }),
+        });
+      } else {
+        await api(`/api/program-exercises/${ex.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ targetSets: null, repRange: null, rirTarget: null }),
+        });
+      }
+      await onChanged();
+      onClose();
+    } catch {
+      setErr("Couldn't remove the target — try again.");
+      setBusy(false);
+    }
+  }
+
+  // Remove the whole EXERCISE from this day/list (distinct from removing its target).
+  async function removeExercise() {
     if (busy) return;
     setBusy(true);
     try {
@@ -177,38 +223,58 @@ export function TargetSheet({
     }
   }
 
-  const RepToggle = (
-    <div className={styles.movePair}>
-      <button type="button" className={repMode === "single" ? styles.toggleActive : styles.toggleBtn} onClick={() => setRepMode("single")}>
-        Single
-      </button>
-      <button type="button" className={repMode === "range" ? styles.toggleActive : styles.toggleBtn} onClick={() => setRepMode("range")}>
-        Range
-      </button>
+  const SegToggle = ({ mode, onSet }: { mode: "single" | "range"; onSet: (m: "single" | "range") => void }) => (
+    <div className={styles.segToggle}>
+      <button type="button" className={mode === "single" ? styles.segActive : styles.segBtn} onClick={() => onSet("single")}>Single</button>
+      <button type="button" className={mode === "range" ? styles.segActive : styles.segBtn} onClick={() => onSet("range")}>Range</button>
     </div>
   );
+
+  const EffortPills = (
+    <div className={styles.field} style={{ marginTop: 12 }}>
+      <span className={styles.fieldLabel}>Effort</span>
+      <div className={styles.pillRow}>
+        {TARGET_EFFORT_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={effort === o.value ? styles.pillActive : styles.pill}
+            onClick={() => setEffort((cur) => (cur === o.value ? null : o.value))}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const anchorError = opted && !anchorValid;
 
   return (
     <Sheet title={ex.exerciseName} onClose={onClose}>
       <div className={styles.sectionLabel}>Target</div>
-      {ex.conditioningOnly ? (
+
+      {!opted ? (
+        <div className={styles.emptyTarget}>
+          <span className={styles.emptyTargetNote}>No target set for this exercise.</span>
+          <button type="button" className={styles.addTargetBtn} onClick={() => setOpted(true)}>＋ Add a target</button>
+        </div>
+      ) : isCardio ? (
         <form onSubmit={saveCardio}>
-          <p className={styles.fieldNote}>What you&rsquo;re aiming for each session — leave anything blank to leave it unset.</p>
           {cardioFieldSet.includes("duration") && (
-            <div className={styles.field} style={{ marginTop: 10 }}>
-              <span className={styles.fieldLabel}>Duration (min)</span>
-              <div className={styles.movePair} style={{ marginBottom: 6 }}>
-                <button type="button" className={durMode === "single" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("single")}>Single</button>
-                <button type="button" className={durMode === "range" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("range")}>Range</button>
+            <div className={styles.field}>
+              <div className={styles.repsHead}>
+                <span className={styles.fieldLabel}>Duration (min) <span className={styles.anchorReq}>*</span></span>
+                <SegToggle mode={durMode} onSet={setDurMode} />
               </div>
               {durMode === "single" ? (
                 <div className={styles.fieldRow}>
-                  <NumField value={durSingle} onChange={setDurSingle} placeholder="30" />
+                  <NumField value={durSingle} onChange={setDurSingle} placeholder="30" error={anchorError} />
                 </div>
               ) : (
                 <div className={styles.fieldRow}>
-                  <NumField value={durA} onChange={setDurA} placeholder="5" />
-                  <NumField value={durB} onChange={setDurB} placeholder="15" />
+                  <NumField value={durA} onChange={setDurA} placeholder="5" error={anchorError} />
+                  <NumField value={durB} onChange={setDurB} placeholder="15" error={anchorError} />
                 </div>
               )}
             </div>
@@ -221,46 +287,60 @@ export function TargetSheet({
               })}
             </div>
           )}
+          {anchorError && <p className={styles.errText} style={{ marginTop: 8 }}>Add a duration to save this target.</p>}
           <p className={styles.fieldNote} style={{ marginTop: 8 }}>
-            This target lives on the exercise — it applies to <strong>{ex.exerciseName}</strong> everywhere it&rsquo;s used.
+            Lives on the exercise — applies to <strong>{ex.exerciseName}</strong> everywhere it&rsquo;s used.
           </p>
           {err && <p className={styles.errText} style={{ marginTop: 8 }}>{err}</p>}
           <div className={styles.sheetActions} style={{ marginTop: 12 }}>
-            <button type="submit" className={styles.primaryBtn} disabled={busy}>Save target</button>
+            <button type="submit" className={styles.primaryBtn} disabled={busy || !anchorValid}>Save target</button>
           </div>
+          <button type="button" className={styles.linkRemove} style={{ marginTop: 10 }} onClick={removeTarget} disabled={busy}>Remove target</button>
         </form>
       ) : (
         <form onSubmit={saveStrength}>
-          <p className={styles.fieldNote}>What you&rsquo;re aiming for each session — leave anything blank to leave it unset.</p>
-          <div className={styles.fieldRow} style={{ marginTop: 10 }}>
-            <NumField label="Sets" value={targetSets} onChange={setTargetSets} placeholder="3" />
-            <NumField label="Effort (RIR)" value={rirTarget} onChange={setRirTarget} placeholder="—" />
-          </div>
-          <div className={styles.field} style={{ marginTop: 10 }}>
-            <span className={styles.fieldLabel}>Reps</span>
-            <div style={{ marginBottom: 6 }}>{RepToggle}</div>
-            {repMode === "single" ? (
-              <div className={styles.fieldRow}>
-                <NumField value={repSingle} onChange={setRepSingle} placeholder="10" />
+          <div className={styles.compactRow}>
+            <div className={styles.setsCol}>
+              <span className={styles.fieldLabel}>Sets <span className={styles.anchorReq}>*</span></span>
+              <input
+                className={`${styles.fieldInput} ${anchorError ? styles.inputErr : ""}`}
+                inputMode="numeric"
+                value={targetSets}
+                onChange={(e) => setTargetSets(digits(e.target.value))}
+                placeholder="3"
+              />
+            </div>
+            <div className={styles.repsCol}>
+              <div className={styles.repsHead}>
+                <span className={styles.fieldLabel}>Reps</span>
+                <SegToggle mode={repMode} onSet={setRepMode} />
               </div>
-            ) : (
-              <div className={styles.fieldRow}>
-                <NumField value={repA} onChange={setRepA} placeholder="8" />
-                <NumField value={repB} onChange={setRepB} placeholder="12" />
-              </div>
-            )}
+              {repMode === "single" ? (
+                <div className={styles.fieldRow}>
+                  <NumField value={repSingle} onChange={setRepSingle} placeholder="10" />
+                </div>
+              ) : (
+                <div className={styles.fieldRow}>
+                  <NumField value={repA} onChange={setRepA} placeholder="8" />
+                  <NumField value={repB} onChange={setRepB} placeholder="12" />
+                </div>
+              )}
+            </div>
           </div>
+          {EffortPills}
+          {anchorError && <p className={styles.errText} style={{ marginTop: 8 }}>Add sets to save this target.</p>}
           {err && <p className={styles.errText} style={{ marginTop: 8 }}>{err}</p>}
           <div className={styles.sheetActions} style={{ marginTop: 12 }}>
-            <button type="submit" className={styles.primaryBtn} disabled={busy}>Save target</button>
+            <button type="submit" className={styles.primaryBtn} disabled={busy || !anchorValid}>Save target</button>
           </div>
+          <button type="button" className={styles.linkRemove} style={{ marginTop: 10 }} onClick={removeTarget} disabled={busy}>Remove target</button>
         </form>
       )}
 
       <div className={styles.sectionLabel}>Remove</div>
       {confirmRemove ? (
         <div className={styles.sheetActions}>
-          <button type="button" className={styles.dangerFill} style={{ flex: 1 }} onClick={remove} disabled={busy}>
+          <button type="button" className={styles.dangerFill} style={{ flex: 1 }} onClick={removeExercise} disabled={busy}>
             Remove from this list
           </button>
           <button type="button" className={styles.quietBtn} onClick={() => setConfirmRemove(false)}>
