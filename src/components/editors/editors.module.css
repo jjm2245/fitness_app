@@ -165,6 +165,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* No-target chip — muted, reads as a tappable "Set a target" prompt. */
+.rowChipMuted {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .rowChevron {
   color: var(--text-3);
   flex-shrink: 0;

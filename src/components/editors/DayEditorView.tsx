@@ -15,14 +15,25 @@ import { api, type EditorDay, type EditorExercise } from "./types";
 // component with `noun` relabeled — same routes, same rows.
 
 // Display-only: stored "8-12" renders as "8–12"; storage is never rewritten.
-function targetChip(ex: EditorExercise): string {
+// The single quiet chip. Stored values only DISPLAY differently ("8-12" → 8–12);
+// nothing is rewritten. `null` = no target → muted, tappable "Set a target".
+// Cardio never shows "1 set" — it shows the prescription (duration/incline/speed)
+// from exercises.params, or "Set a target".
+function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
   if (ex.conditioningOnly) {
-    const dur = ex.params && typeof ex.params.duration_min === "number" ? ` · ${ex.params.duration_min} min` : "";
-    return `${ex.targetSets} ${ex.targetSets === 1 ? "set" : "sets"}${dur}`;
+    const p = ex.params ?? {};
+    const parts: string[] = [];
+    const dur = p.duration_min;
+    if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
+    else if (typeof dur === "number") parts.push(`${dur} min`);
+    if (typeof p.incline === "number") parts.push(`${p.incline} incline`);
+    if (typeof p.speed === "number") parts.push(`${p.speed} speed`);
+    return parts.length ? { text: parts.join(" · "), muted: false } : { text: "Set a target", muted: true };
   }
-  const range = ex.repRange ? ` × ${ex.repRange.replace("-", "–")}` : ` ${ex.targetSets === 1 ? "set" : "sets"}`;
+  if (ex.targetSets == null) return { text: "Set a target", muted: true };
+  const reps = ex.repRange ? ` × ${ex.repRange.replace("-", "–")}` : ex.targetSets === 1 ? " set" : " sets";
   const rir = ex.rirTarget != null && ex.rirTarget !== "" ? ` @ RIR ${ex.rirTarget}` : "";
-  return ex.repRange ? `${ex.targetSets}${range}${rir}` : `${ex.targetSets}${range}${rir}`;
+  return { text: `${ex.targetSets}${reps}${rir}`, muted: false };
 }
 
 export function DayEditorView({
@@ -53,7 +64,6 @@ export function DayEditorView({
   }, [selected, selectedId]);
 
   const editingEx = selected?.exercises.find((e) => e.id === editingExId) ?? null;
-  const editingPos = editingEx && selected ? selected.exercises.findIndex((e) => e.id === editingEx.id) : -1;
 
   async function moveDay(direction: "up" | "down") {
     if (!selected) return;
@@ -115,7 +125,7 @@ export function DayEditorView({
                   {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
                 </span>
               </span>
-              <span className={styles.rowChip}>{targetChip(ex)}</span>
+              {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
               <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
                 <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
               </svg>
@@ -178,13 +188,7 @@ export function DayEditorView({
         </Sheet>
       )}
       {editingEx && selected && (
-        <TargetSheet
-          ex={editingEx}
-          position={editingPos}
-          total={selected.exercises.length}
-          onChanged={onChanged}
-          onClose={() => setEditingExId(null)}
-        />
+        <TargetSheet ex={editingEx} onChanged={onChanged} onClose={() => setEditingExId(null)} />
       )}
       {adding && selected && (
         <AddExerciseSheet dayId={selected.id} noun={noun} onAdded={onChanged} onClose={() => setAdding(false)} />
