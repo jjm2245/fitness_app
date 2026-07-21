@@ -2522,7 +2522,8 @@ hardcoded duration/incline/speed), and the editor target chip all import it, so
 they agree. `TargetSheet` cardio save writes only the fields in the set and
 **preserves out-of-set keys** (a stair machine's stored `incline` survives) —
 honours "stored values never silently rewritten." Known heuristic quirk (kept):
-"Prowler" contains "row" so it reads as a rower.
+"Prowler" contains "row" so it reads as a rower — see the deferred-fix note at
+the bottom of this log ("cardioFields() name-substring brittleness").
 
 **Data reconciliation (owner-scoped).** Owner chose **Power Stairs only** — flip
 `lib_Power_Stairs.conditioning_only` false→true (0 logged history; 1 program
@@ -2531,3 +2532,12 @@ strength** for now (loaded carry) — togglable later via the new control. Appli
 to LOCAL; PROD flip is the single authorized prod write this session (before:
 `conditioning_only`=14 true; after: 15, only Power Stairs changed). No migration
 (column already exists). `src/core/*` untouched.
+
+**Deferred fix — `cardioFields()` name-substring brittleness.** `cardioFields()`
+resolves a cardio exercise's fields by name-substring match (first match wins),
+defaulting to duration+distance; it keys off the *name* only — not equipment,
+not `movement_pattern`, not a per-exercise map. This is known-brittle: incidental
+substrings misroute (e.g. "Prowler" → row set; "Step-ups" → stair set). Deferred
+fix: an explicit user-chosen field set per exercise, to land with the
+exercise-tab / tag work. (Cross-ref: the cardio audit entry's field-set-source
+paragraph above.)
