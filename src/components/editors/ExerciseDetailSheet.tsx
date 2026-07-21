@@ -14,6 +14,7 @@ export interface ManagedExercise {
   movementPattern: string | null;
   untagged: boolean;
   unilateral: boolean;
+  conditioningOnly: boolean;
   day: string | null;
   loadType: string;
   description: string | null;
@@ -164,6 +165,33 @@ export function ExerciseDetailSheet({
         >
           Save description
         </button>
+      </div>
+
+      <div className={styles.field} style={{ marginTop: 12 }}>
+        <span className={styles.fieldLabel}>Type</span>
+        <div className={styles.movePair}>
+          <button
+            type="button"
+            className={!ex.conditioningOnly ? styles.toggleActive : styles.toggleBtn}
+            disabled={busy}
+            onClick={() => { if (ex.conditioningOnly) patch({ conditioningOnly: false }); }}
+          >
+            Strength
+          </button>
+          <button
+            type="button"
+            className={ex.conditioningOnly ? styles.toggleActive : styles.toggleBtn}
+            disabled={busy}
+            onClick={() => { if (!ex.conditioningOnly) patch({ conditioningOnly: true }); }}
+          >
+            Cardio
+          </button>
+        </div>
+        <span className={styles.fieldNote}>
+          {ex.conditioningOnly
+            ? "Logs cardio inputs (duration and its fields) everywhere it’s used."
+            : "Logs strength inputs (weight, reps, effort) everywhere it’s used."}
+        </span>
       </div>
 
       <div className={styles.field} style={{ marginTop: 12 }}>

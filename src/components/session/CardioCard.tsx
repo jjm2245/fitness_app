@@ -6,26 +6,7 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { logCardio, deleteCardio, type SessionCardio } from "@/lib/sessionStore";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import type { CardControls, LoggableOccurrence } from "./shared";
-
-type CardioField = "duration" | "speed" | "incline" | "level" | "distance";
-function cardioFields(name: string): CardioField[] {
-  const n = name.toLowerCase();
-  if (n.includes("treadmill") || n.includes("incline walk") || n.includes("run")) {
-    return ["duration", "speed", "incline"];
-  }
-  if (n.includes("stair") || n.includes("step")) return ["duration", "level"];
-  if (n.includes("bike") || n.includes("cycl") || n.includes("spin")) return ["duration", "level", "distance"];
-  if (n.includes("row")) return ["duration", "distance", "level"];
-  return ["duration", "distance"];
-}
-
-const FIELD_LABEL: Record<CardioField, string> = {
-  duration: "min",
-  speed: "speed",
-  incline: "incline",
-  level: "level",
-  distance: "distance",
-};
+import { cardioFields, CARDIO_FIELD_LABEL as FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
 
 // Shape returned by the last-session route for a conditioning exercise.
 type CardioLast = {

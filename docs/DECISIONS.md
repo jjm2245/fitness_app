@@ -2481,3 +2481,53 @@ move" ambiguity. Now:
 owner's review (before/after counts) and must land before the code deploys
 (inserting NULL target_sets would violate the old NOT NULL). VSL16 / all real
 prod rows untouched.
+
+## Cardio consistency — detection + per-exercise fields (2026-07-21)
+
+**Root cause (differed from the flag/tag guess).** `is-cardio` was already read
+identically in the editor (`DayEditorView`/`TargetSheet` via
+`programs.ts`→`conditioningOnly`) and the session (`log/[id]/page.tsx:291`
+→`CardioCard`), both keyed on `exercises.conditioning_only` (read live, not
+snapshotted). So Power Stairs showed strength inputs in *both*, not just the
+session. The real gap: the only cardio-ish tag the UI could apply was the
+`conditioning` **movement pattern** (graduation PATCH), a *different* column that
+never set the routing flag — and the custom-create route hardcodes
+`conditioning_only=false`. No user action could set the signal the app routes
+on. Prod confirmed: Power Stairs `movement_pattern=conditioning, untagged=false,
+conditioning_only=false`; the seeds (Stairmaster/Treadmill) `=true`. Signals
+diverged table-wide: `conditioning_only`=14 rows, `movement_pattern='conditioning'`=4,
+`day='cardio'`=2. The TAGGED/UNTAGGED badge (`untagged`) is orthogonal — it means
+"no movement pattern," not "not cardio."
+
+**Decision — `conditioning_only` is THE authoritative routing signal** (kept; no
+new plumbing since both surfaces already read it). Made it settable + reconciled
+structurally so tag↔flag can't drift again:
+- Exercises PATCH accepts an explicit `conditioningOnly` boolean; and assigning
+  `movement_pattern='conditioning'` now *also* sets `conditioning_only=true`
+  (explicit value wins). Tagging conditioning therefore routes to cardio
+  everywhere — the drift can't recur from the graduation flow.
+- A **Type: Strength / Cardio** toggle in the exercise editor
+  (`ExerciseDetailSheet`, mirrors the Unilateral control) — discoverable, shows
+  current state, re-routes both editor and session (live read). Small addition.
+  *Known gap surfaced for the broader-tag-editor decision:* the "My exercises"
+  manage list excludes raw `source='library'` rows, so a graduated library row
+  (like Power Stairs) isn't reachable in that editor yet — flip it via data, or
+  broaden the manage query later.
+
+**Field-set single source of truth** — extracted `cardioFields(name)` +
+`CARDIO_FIELD_KEY`/`CARDIO_FIELD_LABEL` into `src/lib/cardioFields.ts` (name-based
+heuristic, moved verbatim — Stairmaster→duration+level, Treadmill→
+duration+speed+incline). The session card, the editor target sheet (was
+hardcoded duration/incline/speed), and the editor target chip all import it, so
+they agree. `TargetSheet` cardio save writes only the fields in the set and
+**preserves out-of-set keys** (a stair machine's stored `incline` survives) —
+honours "stored values never silently rewritten." Known heuristic quirk (kept):
+"Prowler" contains "row" so it reads as a rower.
+
+**Data reconciliation (owner-scoped).** Owner chose **Power Stairs only** — flip
+`lib_Power_Stairs.conditioning_only` false→true (0 logged history; 1 program
+slot). Farmer's Walk (also `mp=conditioning`, unflagged) deliberately **left as
+strength** for now (loaded carry) — togglable later via the new control. Applied
+to LOCAL; PROD flip is the single authorized prod write this session (before:
+`conditioning_only`=14 true; after: 15, only Power Stairs changed). No migration
+(column already exists). `src/core/*` untouched.

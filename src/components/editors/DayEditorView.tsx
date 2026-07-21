@@ -10,6 +10,7 @@ import { AddExerciseSheet } from "./AddExerciseSheet";
 import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
+import { cardioFields } from "@/lib/cardioFields";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
 // day's quiet exercise rows at a time, edit-by-sheet, add-by-sheet, day ⋯.
@@ -23,13 +24,21 @@ import { api, type EditorDay, type EditorExercise } from "./types";
 // from exercises.params, or "Set a target".
 function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
   if (ex.conditioningOnly) {
+    // Same field-set source the target sheet + session card read, so the chip
+    // shows exactly the fields this exercise prescribes (min+level for a stair
+    // machine, min+speed+incline for a treadmill).
     const p = ex.params ?? {};
     const parts: string[] = [];
-    const dur = p.duration_min;
-    if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
-    else if (typeof dur === "number") parts.push(`${dur} min`);
-    if (typeof p.incline === "number") parts.push(`${p.incline} incline`);
-    if (typeof p.speed === "number") parts.push(`${p.speed} speed`);
+    for (const f of cardioFields(ex.exerciseName)) {
+      if (f === "duration") {
+        const dur = p.duration_min;
+        if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
+        else if (typeof dur === "number") parts.push(`${dur} min`);
+      } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
+      else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);
+      else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
+      else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} dist`);
+    }
     return parts.length ? { text: parts.join(" · "), muted: false } : { text: "Set a target", muted: true };
   }
   if (ex.targetSets == null) return { text: "Set a target", muted: true };

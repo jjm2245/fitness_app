@@ -20,6 +20,7 @@ export async function GET() {
       movementPattern: exercises.movementPattern,
       untagged: exercises.untagged,
       unilateral: exercises.unilateral,
+      conditioningOnly: exercises.conditioningOnly,
       day: exercises.day,
       loadType: exercises.loadType,
       description: exercises.description,

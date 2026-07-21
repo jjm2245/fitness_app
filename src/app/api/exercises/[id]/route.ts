@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const body = await request.json().catch(() => null);
 
-  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; unilateral?: boolean; params?: Record<string, unknown> | null; updatedAt: Date } = {
+  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; unilateral?: boolean; params?: Record<string, unknown> | null; conditioningOnly?: boolean; updatedAt: Date } = {
     updatedAt: new Date(),
   };
 
@@ -55,6 +55,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body?.params !== undefined && (body.params === null || (typeof body.params === "object" && !Array.isArray(body.params)))) {
     updates.params = body.params as Record<string, unknown> | null;
   }
+
+  // Cardio status — `conditioning_only` is THE signal that routes an exercise
+  // to cardio inputs (session card + editor target sheet both read it). It's
+  // set here directly (the exercise editor's Strength/Cardio toggle) so the
+  // user can change it, instead of it only existing from seed.
+  if (typeof body?.conditioningOnly === "boolean") updates.conditioningOnly = body.conditioningOnly;
 
   // Unilateral tag — visible + editable per exercise (Part 4). Your edit
   // overrides for your copy; the library value was only ever the default.
@@ -66,6 +72,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     updates.movementPattern = body.movementPattern as MovementPattern;
     updates.untagged = false;
+    // Structural tag ↔ flag link: tagging an exercise "conditioning" also sets
+    // the routing flag, so "tagged conditioning but shows strength inputs" (the
+    // Power Stairs drift) can't recur. An explicit conditioningOnly in the same
+    // request wins (it was applied above; the undefined-guard keeps it).
+    if (updates.movementPattern === "conditioning" && updates.conditioningOnly === undefined) {
+      updates.conditioningOnly = true;
+    }
   }
 
   if (body?.name !== undefined) {
@@ -80,7 +93,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     updates.description = d === "" ? null : d;
   }
 
-  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined && updates.unilateral === undefined && updates.params === undefined) {
+  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined && updates.unilateral === undefined && updates.params === undefined && updates.conditioningOnly === undefined) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 

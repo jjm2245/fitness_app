@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
+import { cardioFields, CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
 
 // Exercise target edit sheet (3.1). The values are the per-session GOAL; leave
 // anything blank to leave it unset. Invariant: stored values are never silently
@@ -69,6 +70,10 @@ export function TargetSheet({
   const [rirTarget, setRirTarget] = useState(ex.rirTarget ?? "");
 
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
+  // Which fields this exercise shows comes from the shared source, so the
+  // editor and the session card always agree (Stairmaster → min+level,
+  // Treadmill → min+speed+incline). Duration keeps its Single/Range toggle.
+  const cardioFieldSet = cardioFields(ex.exerciseName);
   const p = ex.params ?? {};
   const dur = p.duration_min;
   const durIsRange = Array.isArray(dur) && dur.length === 2;
@@ -78,6 +83,18 @@ export function TargetSheet({
   const [durB, setDurB] = useState(durIsRange ? String((dur as number[])[1]) : "");
   const [incline, setIncline] = useState(typeof p.incline === "number" ? String(p.incline) : "");
   const [speed, setSpeed] = useState(typeof p.speed === "number" ? String(p.speed) : "");
+  const [level, setLevel] = useState(typeof p.level === "number" ? String(p.level) : "");
+  const [distance, setDistance] = useState(typeof p.distance === "number" ? String(p.distance) : "");
+
+  // The non-duration fields, keyed for both render and save.
+  type ExtraField = Exclude<CardioField, "duration">;
+  const extraFieldState: Record<ExtraField, { value: string; set: (v: string) => void; label: string; decimal?: boolean }> = {
+    speed: { value: speed, set: setSpeed, label: "Speed", decimal: true },
+    incline: { value: incline, set: setIncline, label: "Incline" },
+    level: { value: level, set: setLevel, label: "Level" },
+    distance: { value: distance, set: setDistance, label: "Distance", decimal: true },
+  };
+  const extraFields = cardioFieldSet.filter((f): f is ExtraField => f !== "duration");
 
   function repRangeToStore(): string | null {
     if (repMode === "single") return repSingle.trim() === "" ? null : repSingle.trim();
@@ -113,21 +130,27 @@ export function TargetSheet({
     if (busy) return;
     setBusy(true);
     setErr(null);
-    // Merge over the exercise's existing params so unknown keys are preserved
-    // and blanked fields are unset (deleted), never left as stale/null.
+    // Merge over the exercise's existing params so keys this exercise doesn't
+    // show are PRESERVED (never silently dropped — e.g. a stored incline on a
+    // stair machine whose field-set is duration+level), while the fields it
+    // does show are written, or deleted when blanked.
     const params: Record<string, unknown> = { ...(ex.params ?? {}) };
-    if (durMode === "single") {
-      if (durSingle.trim() !== "") params.duration_min = Number(durSingle);
-      else delete params.duration_min;
-    } else if (durA.trim() !== "" && durB.trim() !== "") {
-      params.duration_min = [Number(durA), Number(durB)];
-    } else {
-      delete params.duration_min;
+    if (cardioFieldSet.includes("duration")) {
+      if (durMode === "single") {
+        if (durSingle.trim() !== "") params.duration_min = Number(durSingle);
+        else delete params.duration_min;
+      } else if (durA.trim() !== "" && durB.trim() !== "") {
+        params.duration_min = [Number(durA), Number(durB)];
+      } else {
+        delete params.duration_min;
+      }
     }
-    if (incline.trim() !== "") params.incline = Number(incline);
-    else delete params.incline;
-    if (speed.trim() !== "") params.speed = Number(speed);
-    else delete params.speed;
+    for (const f of extraFields) {
+      const key = CARDIO_FIELD_KEY[f];
+      const raw = extraFieldState[f].value;
+      if (raw.trim() !== "") params[key] = Number(raw);
+      else delete params[key];
+    }
     try {
       await api(`/api/exercises/${encodeURIComponent(ex.exerciseId)}`, {
         method: "PATCH",
@@ -171,27 +194,33 @@ export function TargetSheet({
       {ex.conditioningOnly ? (
         <form onSubmit={saveCardio}>
           <p className={styles.fieldNote}>What you&rsquo;re aiming for each session — leave anything blank to leave it unset.</p>
-          <div className={styles.field} style={{ marginTop: 10 }}>
-            <span className={styles.fieldLabel}>Duration (min)</span>
-            <div className={styles.movePair} style={{ marginBottom: 6 }}>
-              <button type="button" className={durMode === "single" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("single")}>Single</button>
-              <button type="button" className={durMode === "range" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("range")}>Range</button>
+          {cardioFieldSet.includes("duration") && (
+            <div className={styles.field} style={{ marginTop: 10 }}>
+              <span className={styles.fieldLabel}>Duration (min)</span>
+              <div className={styles.movePair} style={{ marginBottom: 6 }}>
+                <button type="button" className={durMode === "single" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("single")}>Single</button>
+                <button type="button" className={durMode === "range" ? styles.toggleActive : styles.toggleBtn} onClick={() => setDurMode("range")}>Range</button>
+              </div>
+              {durMode === "single" ? (
+                <div className={styles.fieldRow}>
+                  <NumField value={durSingle} onChange={setDurSingle} placeholder="30" />
+                </div>
+              ) : (
+                <div className={styles.fieldRow}>
+                  <NumField value={durA} onChange={setDurA} placeholder="5" />
+                  <NumField value={durB} onChange={setDurB} placeholder="15" />
+                </div>
+              )}
             </div>
-            {durMode === "single" ? (
-              <div className={styles.fieldRow}>
-                <NumField value={durSingle} onChange={setDurSingle} placeholder="30" />
-              </div>
-            ) : (
-              <div className={styles.fieldRow}>
-                <NumField value={durA} onChange={setDurA} placeholder="5" />
-                <NumField value={durB} onChange={setDurB} placeholder="15" />
-              </div>
-            )}
-          </div>
-          <div className={styles.fieldRow} style={{ marginTop: 10 }}>
-            <NumField label="Incline" value={incline} onChange={setIncline} placeholder="—" />
-            <NumField label="Speed" value={speed} onChange={setSpeed} placeholder="—" allowDecimal />
-          </div>
+          )}
+          {extraFields.length > 0 && (
+            <div className={styles.fieldRow} style={{ marginTop: 10 }}>
+              {extraFields.map((f) => {
+                const c = extraFieldState[f];
+                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} />;
+              })}
+            </div>
+          )}
           <p className={styles.fieldNote} style={{ marginTop: 8 }}>
             This target lives on the exercise — it applies to <strong>{ex.exerciseName}</strong> everywhere it&rsquo;s used.
           </p>
