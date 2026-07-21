@@ -7,6 +7,8 @@ import { Sheet } from "@/components/session/Sheet";
 import { NameSheet } from "./NameSheet";
 import { TargetSheet } from "./TargetSheet";
 import { AddExerciseSheet } from "./AddExerciseSheet";
+import { DayOrganizeSheet } from "./DayOrganizeSheet";
+import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
@@ -54,6 +56,7 @@ export function DayEditorView({
   const [renaming, setRenaming] = useState(false);
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const [editingExId, setEditingExId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -63,12 +66,34 @@ export function DayEditorView({
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
+  // Local exercise order for the selected day — reordered optimistically on drag
+  // / sort, re-synced whenever the server order (props) changes.
+  const serverExIds = selected ? selected.exercises.map((e) => e.id).join(",") : "";
+  const [exOrder, setExOrder] = useState<number[]>([]);
+  useEffect(() => {
+    setExOrder(selected ? selected.exercises.map((e) => e.id) : []);
+  }, [selected?.id, serverExIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const orderedExercises = exOrder
+    .map((id) => selected?.exercises.find((e) => e.id === id))
+    .filter((e): e is EditorExercise => e != null);
+
   const editingEx = selected?.exercises.find((e) => e.id === editingExId) ?? null;
 
-  async function moveDay(direction: "up" | "down") {
+  async function commitExOrder(ids: number[]) {
     if (!selected) return;
-    await api(`/api/program-days/${selected.id}/move`, { method: "POST", body: JSON.stringify({ direction }) });
+    setExOrder(ids); // optimistic
+    await api(`/api/program-days/${selected.id}/exercises/reorder`, { method: "POST", body: JSON.stringify({ orderedIds: ids }) });
     await onChanged();
+  }
+  function sortExercises(kind: "az" | "za" | "recent") {
+    if (!selected) return;
+    const list = [...selected.exercises];
+    if (kind === "recent") list.sort((a, b) => b.id - a.id); // serial id = creation order
+    else {
+      list.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+      if (kind === "za") list.reverse();
+    }
+    void commitExOrder(list.map((e) => e.id));
   }
 
   async function deleteDay() {
@@ -78,8 +103,6 @@ export function DayEditorView({
     setSelectedId(null);
     await onChanged();
   }
-
-  const dayPos = selected ? days.findIndex((d) => d.id === selected.id) : -1;
 
   return (
     <>
@@ -104,8 +127,7 @@ export function DayEditorView({
             label={`${noun} menu`}
             items={[
               { label: `Rename ${noun}…`, onSelect: () => setRenaming(true) },
-              { label: "Move left", onSelect: () => moveDay("up"), disabled: dayPos <= 0 },
-              { label: "Move right", onSelect: () => moveDay("down"), disabled: dayPos === days.length - 1 },
+              ...(days.length > 1 ? [{ label: "Organize order…", onSelect: () => setOrganizing(true) }] : []),
               { label: `Delete ${noun}…`, onSelect: () => setConfirmDelete(true), danger: true },
             ]}
           />
@@ -114,23 +136,43 @@ export function DayEditorView({
 
       {selected ? (
         <div className={styles.rowsCard}>
-          {selected.exercises.length === 0 && (
+          {orderedExercises.length === 0 ? (
             <p className={styles.emptyNote}>No exercises yet — add the first below.</p>
+          ) : (
+            <>
+              {orderedExercises.length > 1 && (
+                <div className={styles.sortRow}>
+                  <span className={styles.sortLabel}>Sort</span>
+                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("az")}>A–Z</button>
+                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("za")}>Z–A</button>
+                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("recent")}>Recent</button>
+                </div>
+              )}
+              <SortableList ids={orderedExercises.map((e) => String(e.id))} onReorder={(ids) => commitExOrder(ids.map(Number))}>
+                {orderedExercises.map((ex) => (
+                  <SortableRow key={ex.id} id={String(ex.id)}>
+                    {(grip) => (
+                      <div className={styles.row}>
+                        <span ref={grip.ref} {...grip.props} aria-label="Drag to reorder">⋮⋮</span>
+                        <button type="button" className={styles.rowBody} onClick={() => setEditingExId(ex.id)}>
+                          <span className={styles.rowMain}>
+                            <span className={styles.rowName}>
+                              <span className={styles.rowNameText}>{ex.exerciseName}</span>
+                              {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
+                            </span>
+                          </span>
+                          {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
+                          <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+                            <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </SortableRow>
+                ))}
+              </SortableList>
+            </>
           )}
-          {selected.exercises.map((ex) => (
-            <button key={ex.id} type="button" className={styles.row} onClick={() => setEditingExId(ex.id)}>
-              <span className={styles.rowMain}>
-                <span className={styles.rowName}>
-                  <span className={styles.rowNameText}>{ex.exerciseName}</span>
-                  {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
-                </span>
-              </span>
-              {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
-              <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
-                <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              </svg>
-            </button>
-          ))}
           <button type="button" className={styles.addRow} onClick={() => setAdding(true)}>
             + Add exercise
           </button>
@@ -192,6 +234,15 @@ export function DayEditorView({
       )}
       {adding && selected && (
         <AddExerciseSheet dayId={selected.id} noun={noun} onAdded={onChanged} onClose={() => setAdding(false)} />
+      )}
+      {organizing && selected && (
+        <DayOrganizeSheet
+          days={days}
+          noun={noun}
+          programId={selected.programId}
+          onChanged={onChanged}
+          onClose={() => setOrganizing(false)}
+        />
       )}
     </>
   );
