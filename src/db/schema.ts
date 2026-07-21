@@ -277,7 +277,11 @@ export const programExercises = pgTable("program_exercises", {
   exerciseId: text("exercise_id")
     .notNull()
     .references(() => exercises.id),
-  targetSets: integer("target_sets").notNull(),
+  // Nullable (all three): a program exercise can have NO target — a freshly
+  // added exercise reads "Set a target" rather than a fabricated 3 × 8–12 @ RIR 2.
+  // NULL target_sets = no target (never 0); rep_range / rir_target independently
+  // nullable (blank RIR = unknown, never defaulted).
+  targetSets: integer("target_sets"),
   repRange: text("rep_range"),
   rirTarget: numeric("rir_target"),
   orderIndex: integer("order_index").notNull().default(0),

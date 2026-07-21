@@ -9,19 +9,21 @@ import { programs, programDays, programExercises, exercises } from "@/db/schema"
 // exactly one code path, not a separate "seeded default" special case.
 
 export interface ProgramExerciseTargets {
-  targetSets: number;
+  targetSets: number | null;
   repRange: string | null;
   rirTarget: string | null;
 }
 
-// Generic novice pre-fill (spec §1) for a newly added exercise. This is a
-// *suggested starting value*, never a policy the engine reads — target_sets/
-// rep_range/rir_target are freely editable per exercise once added.
+// The SEED's PPL prescription (spec §1). A newly EDITOR-added exercise no longer
+// gets a fabricated target — it inserts all-null so it reads "Set a target"
+// (owner decision). This constant is only the seed's explicit starting value.
 export const DEFAULT_PROGRAM_EXERCISE_TARGETS: ProgramExerciseTargets = {
   targetSets: 3,
   repRange: "8-12",
   rirTarget: "2",
 };
+// A brand-new exercise has NO target until you set one.
+const NO_TARGET: ProgramExerciseTargets = { targetSets: null, repRange: null, rirTarget: null };
 
 export type Program = typeof programs.$inferSelect;
 export type ProgramDay = typeof programDays.$inferSelect;
@@ -239,7 +241,7 @@ export async function addExerciseToDay(
     .limit(1);
   const nextOrder = existing.length ? existing[0].orderIndex + 1 : 0;
 
-  const targets: ProgramExerciseTargets = { ...DEFAULT_PROGRAM_EXERCISE_TARGETS, ...overrides };
+  const targets: ProgramExerciseTargets = { ...NO_TARGET, ...overrides };
 
   const [row] = await db
     .insert(programExercises)
@@ -256,7 +258,7 @@ export async function addExerciseToDay(
 }
 
 export interface ProgramExerciseUpdate {
-  targetSets?: number;
+  targetSets?: number | null;
   repRange?: string | null;
   rirTarget?: string | null;
   dayId?: number;
@@ -299,6 +301,46 @@ export async function moveProgramExercise(id: number, direction: "up" | "down"):
   });
 }
 
+// Bulk reorder (phase 3.1) — supersedes the one-at-a-time move (drag + sort now
+// commit a whole ordering at once). Writes contiguous order_index 0..n-1 for the
+// given ids, SCOPED to the parent: the ids must be exactly the parent's current
+// children (no missing/extra), so there can be no gap, dupe, or cross-parent
+// contamination. Rejects a mismatched set rather than partially applying.
+export async function reorderDayExercises(dayId: number, orderedIds: number[]): Promise<void> {
+  const current = await db.select({ id: programExercises.id }).from(programExercises).where(eq(programExercises.dayId, dayId));
+  assertSameSet(current.map((r) => r.id), orderedIds);
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx
+        .update(programExercises)
+        .set({ orderIndex: i })
+        .where(and(eq(programExercises.id, orderedIds[i]), eq(programExercises.dayId, dayId)));
+    }
+  });
+}
+
+export async function reorderProgramDays(programId: number, orderedIds: number[]): Promise<void> {
+  const current = await db.select({ id: programDays.id }).from(programDays).where(eq(programDays.programId, programId));
+  assertSameSet(current.map((r) => r.id), orderedIds);
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx
+        .update(programDays)
+        .set({ orderIndex: i })
+        .where(and(eq(programDays.id, orderedIds[i]), eq(programDays.programId, programId)));
+    }
+  });
+}
+
+function assertSameSet(current: number[], given: number[]): void {
+  const a = new Set(current);
+  const b = new Set(given);
+  if (given.length !== new Set(given).size) throw new Error("reorder: duplicate ids");
+  if (a.size !== b.size || [...a].some((id) => !b.has(id))) {
+    throw new Error("reorder: id set does not match the parent's current children");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Seeding — builds a program from the seed's routine using the exact same
 // primitives as the editor (createProgram/addDay/addExerciseToDay), so the
@@ -321,10 +363,12 @@ export async function seedProgramFromRoutine(splitType: string, days: SeedRoutin
   for (const day of days) {
     const dayRow = await addDay(program.id, day.name);
     for (const ex of day.exercises) {
+      // The seed's PPL keeps its explicit prescription; only editor-added
+      // exercises are target-less. Cardio carries no set/rep target.
       await addExerciseToDay(
         dayRow.id,
         ex.exerciseId,
-        ex.conditioningOnly ? { targetSets: 1, repRange: null, rirTarget: null } : {}
+        ex.conditioningOnly ? { targetSets: null, repRange: null, rirTarget: null } : DEFAULT_PROGRAM_EXERCISE_TARGETS
       );
     }
   }

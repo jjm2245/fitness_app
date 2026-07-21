@@ -1,0 +1,1 @@
+ALTER TABLE "program_exercises" ALTER COLUMN "target_sets" DROP NOT NULL;

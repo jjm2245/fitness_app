@@ -6,7 +6,7 @@ export interface EditorExercise {
   id: number;
   dayId: number;
   exerciseId: string;
-  targetSets: number;
+  targetSets: number | null;
   repRange: string | null;
   rirTarget: string | null;
   orderIndex: number;

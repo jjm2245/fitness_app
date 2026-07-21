@@ -5,7 +5,7 @@
 export interface ProgramExerciseDetail {
   id: number;
   exerciseId: string;
-  targetSets: number;
+  targetSets: number | null;
   repRange: string | null;
   rirTarget: string | null;
   orderIndex: number;

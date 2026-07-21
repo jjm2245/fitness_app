@@ -16,6 +16,8 @@ import {
   updateProgramExercise,
   removeProgramExercise,
   moveProgramExercise,
+  reorderDayExercises,
+  reorderProgramDays,
   seedProgramFromRoutine,
   getOrCreateBlockLibrary,
   listBlocks,
@@ -174,14 +176,15 @@ describe("days", () => {
 });
 
 describe("program exercises", () => {
-  it("adds an exercise with default targets when no overrides given", async () => {
+  it("adds an exercise with NO target when no overrides given (reads 'Set a target')", async () => {
     const program = await makeProgram("test_program_ex_defaults");
     const day = await addDay(program.id, "Day");
     const row = await addExerciseToDay(day.id, EXERCISE_A);
 
-    expect(row.targetSets).toBe(DEFAULT_PROGRAM_EXERCISE_TARGETS.targetSets);
-    expect(row.repRange).toBe(DEFAULT_PROGRAM_EXERCISE_TARGETS.repRange);
-    expect(row.rirTarget).toBe(DEFAULT_PROGRAM_EXERCISE_TARGETS.rirTarget);
+    // 3.1: a freshly added exercise is target-less, not a fabricated 3 × 8–12.
+    expect(row.targetSets).toBeNull();
+    expect(row.repRange).toBeNull();
+    expect(row.rirTarget).toBeNull();
   });
 
   it("allows arbitrary rep-range overrides, not just the default literal", async () => {
@@ -211,7 +214,7 @@ describe("program exercises", () => {
     const exB = full?.days[0].exercises.find((e) => e.id === rowB.id);
     expect(exA?.targetSets).toBe(4);
     expect(exA?.repRange).toBe("10-15");
-    expect(exB?.targetSets).toBe(DEFAULT_PROGRAM_EXERCISE_TARGETS.targetSets);
+    expect(exB?.targetSets).toBeNull(); // untouched add stays target-less (3.1)
   });
 
   it("removes a program exercise", async () => {
@@ -237,6 +240,57 @@ describe("program exercises", () => {
     const ids = full?.days[0].exercises.map((e) => e.id);
     expect(ids).toEqual([rowB.id, rowA.id]);
   });
+
+  it("bulk-reorders a day's exercises into contiguous 0..n-1, scoped to the day", async () => {
+    const program = await makeProgram("test_program_bulk_reorder");
+    const d1 = await addDay(program.id, "Day 1");
+    const d2 = await addDay(program.id, "Day 2");
+    const a = await addExerciseToDay(d1.id, EXERCISE_A);
+    const b = await addExerciseToDay(d1.id, EXERCISE_B);
+    const c = await addExerciseToDay(d1.id, EXERCISE_A);
+    const other = await addExerciseToDay(d2.id, EXERCISE_B); // different day — must not move
+
+    // Reverse the order of day 1's exercises.
+    await reorderDayExercises(d1.id, [c.id, b.id, a.id]);
+
+    const full = await getProgramWithDays(program.id);
+    const day1 = full!.days.find((d) => d.id === d1.id)!;
+    expect(day1.exercises.map((e) => e.id)).toEqual([c.id, b.id, a.id]);
+    // Contiguous 0..n-1, no gaps/dupes.
+    expect(day1.exercises.map((e) => e.orderIndex)).toEqual([0, 1, 2]);
+    // Scoping: day 2 untouched.
+    const day2 = full!.days.find((d) => d.id === d2.id)!;
+    expect(day2.exercises.map((e) => e.id)).toEqual([other.id]);
+    expect(day2.exercises[0].orderIndex).toBe(0);
+  });
+
+  it("rejects a reorder whose id set doesn't match the parent (no partial apply)", async () => {
+    const program = await makeProgram("test_program_reorder_reject");
+    const day = await addDay(program.id, "Day");
+    const a = await addExerciseToDay(day.id, EXERCISE_A);
+    const b = await addExerciseToDay(day.id, EXERCISE_B);
+
+    await expect(reorderDayExercises(day.id, [a.id])).rejects.toThrow(); // missing one
+    await expect(reorderDayExercises(day.id, [a.id, b.id, 999999])).rejects.toThrow(); // extra
+    await expect(reorderDayExercises(day.id, [a.id, a.id])).rejects.toThrow(); // dupe
+
+    // Order unchanged after rejected attempts.
+    const full = await getProgramWithDays(program.id);
+    expect(full!.days[0].exercises.map((e) => e.id)).toEqual([a.id, b.id]);
+  });
+
+  it("bulk-reorders a program's days into contiguous 0..n-1", async () => {
+    const program = await makeProgram("test_program_day_reorder");
+    const d1 = await addDay(program.id, "Day 1");
+    const d2 = await addDay(program.id, "Day 2");
+    const d3 = await addDay(program.id, "Day 3");
+
+    await reorderProgramDays(program.id, [d3.id, d1.id, d2.id]);
+
+    const full = await getProgramWithDays(program.id);
+    expect(full!.days.map((d) => d.id)).toEqual([d3.id, d1.id, d2.id]);
+    expect(full!.days.map((d) => d.orderIndex)).toEqual([0, 1, 2]);
+  });
 });
 
 describe("seedProgramFromRoutine", () => {
@@ -253,7 +307,7 @@ describe("seedProgramFromRoutine", () => {
     expect(full?.days[0].exercises[0].targetSets).toBe(DEFAULT_PROGRAM_EXERCISE_TARGETS.targetSets);
   });
 
-  it("gives conditioning-only exercises 1 set and no rep range", async () => {
+  it("gives conditioning-only exercises no set/rep/rir target (never '1 set')", async () => {
     const program = await seedProgramFromRoutine("test_program_seed_conditioning", [
       {
         name: "cardio",
@@ -264,7 +318,9 @@ describe("seedProgramFromRoutine", () => {
 
     const full = await getProgramWithDays(program.id);
     const ex = full?.days[0].exercises[0];
-    expect(ex?.targetSets).toBe(1);
+    // 3.1: cardio has no sets/reps target — the chip shows the prescription
+    // (duration/incline/speed from exercises.params), never "1 set".
+    expect(ex?.targetSets).toBeNull();
     expect(ex?.repRange).toBeNull();
     expect(ex?.rirTarget).toBeNull();
   });
