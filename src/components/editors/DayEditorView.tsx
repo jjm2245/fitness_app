@@ -11,7 +11,7 @@ import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
 import { cardioFields } from "@/lib/cardioFields";
-import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
+import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
 // day's quiet exercise rows at a time, edit-by-sheet, add-by-sheet, day ⋯.
@@ -47,8 +47,7 @@ function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
   }
   if (ex.targetSets == null) return { text: "Set a target", muted: true };
   const reps = ex.repRange ? ` × ${ex.repRange.replace("-", "–")}` : ex.targetSets === 1 ? " set" : " sets";
-  const tag = rirToEffortTag(ex.rirTarget);
-  const effort = tag ? ` · ${TARGET_EFFORT_LABEL[tag]}` : "";
+  const effort = ex.effortTarget ? ` · ${TARGET_EFFORT_LABEL[ex.effortTarget]}` : "";
   return { text: `${ex.targetSets}${reps}${effort}`, muted: false };
 }
 

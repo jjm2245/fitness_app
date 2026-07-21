@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { rirToEffortTag, effortTagToRirStore, TARGET_EFFORT_OPTIONS, TARGET_EFFORT_LABEL } from "../targetEffort";
+import { rirToEffortTag, rirForEffortTarget, TARGET_EFFORT_OPTIONS, TARGET_EFFORT_LABEL } from "../targetEffort";
 
-// The target's effort model rides on the legacy numeric rir_target until the
-// effort_target column lands. These tests lock (1) the bucket that must match
-// the migration backfill, (2) byte-identical no-edit round-trip, and (3) that
-// interim writes re-bucket to the same tag (so they migrate losslessly).
+// effort_target is the authoritative tag; rir_target is kept as its projection
+// (progression reads the number). These tests lock (1) the bucket that matches
+// the migration backfill + the session-line display, (2) that a no-edit save
+// keeps rir_target byte-identical (so existing rows never shift progression),
+// and (3) that a changed tag writes a representative that re-buckets losslessly.
 describe("targetEffort", () => {
-  it("buckets rir_target → tag exactly as the migration backfill will", () => {
+  it("buckets rir_target → tag exactly as the migration backfill / session line do", () => {
     expect(rirToEffortTag(null)).toBeNull();
     expect(rirToEffortTag("")).toBeNull();
     expect(rirToEffortTag("0")).toBe("to_failure");
@@ -17,21 +18,22 @@ describe("targetEffort", () => {
     expect(rirToEffortTag("5")).toBe("more_in_me");
   });
 
-  it("preserves the original rir_target byte-identical on a no-edit save", () => {
-    // tag unchanged from what the stored rir maps to → write the ORIGINAL string
-    expect(effortTagToRirStore(rirToEffortTag("5"), "5")).toBe("5"); // relaxed, prod value
-    expect(effortTagToRirStore(rirToEffortTag("2"), "2")).toBe("2"); // near failure, the common one
-    expect(effortTagToRirStore(rirToEffortTag("1"), "1")).toBe("1"); // to failure
-    expect(effortTagToRirStore(null, null)).toBeNull();
+  it("keeps rir_target byte-identical when the tag is unchanged (no-edit save)", () => {
+    // tag === initialTag → return the ORIGINAL number untouched (progression
+    // for existing rows never moves on deploy or a no-edit save)
+    expect(rirForEffortTarget("more_in_me", "more_in_me", "5")).toBe("5"); // relaxed, prod value
+    expect(rirForEffortTarget("near_failure", "near_failure", "2")).toBe("2"); // the 40 rows
+    expect(rirForEffortTarget("to_failure", "to_failure", "1")).toBe("1");
+    expect(rirForEffortTarget(null, null, null)).toBeNull();
   });
 
-  it("writes a re-bucketable representative when the tag changes", () => {
-    expect(effortTagToRirStore("to_failure", "2")).toBe("0");
-    expect(effortTagToRirStore("more_in_me", "2")).toBe("4");
-    expect(effortTagToRirStore(null, "2")).toBeNull(); // effort cleared
-    // and each representative buckets back to the same tag → lossless migration
-    expect(rirToEffortTag(effortTagToRirStore("to_failure", "2"))).toBe("to_failure");
-    expect(rirToEffortTag(effortTagToRirStore("more_in_me", "2"))).toBe("more_in_me");
+  it("writes a re-bucketable representative only when the tag changes", () => {
+    expect(rirForEffortTarget("to_failure", "near_failure", "2")).toBe("0");
+    expect(rirForEffortTarget("more_in_me", "near_failure", "2")).toBe("4");
+    expect(rirForEffortTarget(null, "near_failure", "2")).toBeNull(); // effort cleared
+    // each representative buckets back to the same tag → lossless
+    expect(rirToEffortTag(rirForEffortTarget("to_failure", "near_failure", "2"))).toBe("to_failure");
+    expect(rirToEffortTag(rirForEffortTarget("more_in_me", "near_failure", "2"))).toBe("more_in_me");
   });
 
   it("labels the easiest level 'Relaxed' in the target voice (session values kept)", () => {

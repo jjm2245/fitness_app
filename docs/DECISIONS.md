@@ -2572,12 +2572,24 @@ representative (`to→"0"`, `near→"2"`, `relaxed→"4"`) that re-buckets to th
 tag, so interim writes migrate losslessly. Round-trip proven on a throwaway copy:
 `3 / "8-12" / "2"` and Stairmaster `[5,15]` unchanged on no-edit save.
 
-**GATE — proposed migration (paused for owner go).** Additive
-`ALTER TABLE program_exercises ADD COLUMN effort_target "effort"` + backfill from
-`rir_target` per the bucket above. Prod `rir_target` today: null×16, "1"×1,
-"2"×40, "5"×2 → after: to_failure×1, near_failure×40, more_in_me×2, null×16;
-`rir_target` kept (nothing dropped). **Progression consequence to confirm:**
-progression's numeric `targetRir` (StrengthCard → `/api/progression`) would
-derive from the tag via `effort.ts` (near_failure→1), shifting the 40 `rir=2`
-rows from targetRir 2→1 — unless progression keeps reading the legacy numeric.
-Owner decides; `src/core/*` untouched either way.
+**Migration 0023 — `effort_target` (approved; applied LOCAL, prod held for go).**
+Additive `ALTER TABLE program_exercises ADD COLUMN effort_target "effort"` +
+backfill from `rir_target` (0–1→to_failure, 2–3→near_failure, 4+→more_in_me,
+null→none). `effort_target` is now the **authoritative tag** — the pills edit it,
+the editor chip reads it natively, and it's directly comparable to
+`set_logs.effort`. Prod `rir_target` today null×16/"1"×1/"2"×40/"5"×2 → backfill:
+to_failure×1, near_failure×40, more_in_me×2, none×16.
+
+**Progression (owner's call).** Chose option (b): `rir_target` is **kept as the
+number progression reads**, now a projection of the tag written in sync on save
+(never hand-edited) — so there is one authoritative input (the tag) and progression
+keeps full-resolution numbers with **zero change on deploy**. Rejected the "derive
+via a target-specific mapping" option because it needed a second tag→RIR mapping
+contradicting `effort.ts` and pinned `more_in_me→5` to today's data. Byte-identical
+guaranteed by `rirForEffortTarget()` (tag unchanged → keep original number; changed
+→ representative `to→"0"/near→"2"/relaxed→"4"` that re-buckets losslessly). The
+session target-reference line still derives its label from the (consistent)
+`rir_target` bucket, so no new plumbing through the offline session stack.
+**Proof (throwaway copy of the real prod rows):** all 40 `rir=2` rows →
+`near_failure`, progression `targetRir` 2→2; every row unchanged; 0 rows shifted.
+`src/core/*` untouched.

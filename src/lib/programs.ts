@@ -2,6 +2,7 @@ import "dotenv/config";
 import { and, eq, gt, lt, asc, desc, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { programs, programDays, programExercises, exercises } from "@/db/schema";
+import type { EffortTag } from "./effort";
 
 // Spec §7a: a program is data the user owns, not app structure. These are the
 // only read/write paths for programs/program_days/program_exercises — the
@@ -11,6 +12,7 @@ import { programs, programDays, programExercises, exercises } from "@/db/schema"
 export interface ProgramExerciseTargets {
   targetSets: number | null;
   repRange: string | null;
+  effortTarget: EffortTag | null;
   rirTarget: string | null;
 }
 
@@ -20,10 +22,11 @@ export interface ProgramExerciseTargets {
 export const DEFAULT_PROGRAM_EXERCISE_TARGETS: ProgramExerciseTargets = {
   targetSets: 3,
   repRange: "8-12",
+  effortTarget: "near_failure", // matches the rir_target "2" projection
   rirTarget: "2",
 };
 // A brand-new exercise has NO target until you set one.
-const NO_TARGET: ProgramExerciseTargets = { targetSets: null, repRange: null, rirTarget: null };
+const NO_TARGET: ProgramExerciseTargets = { targetSets: null, repRange: null, effortTarget: null, rirTarget: null };
 
 export type Program = typeof programs.$inferSelect;
 export type ProgramDay = typeof programDays.$inferSelect;
@@ -143,6 +146,7 @@ export async function getProgramWithDays(id: number): Promise<ProgramWithDays | 
           exerciseId: programExercises.exerciseId,
           targetSets: programExercises.targetSets,
           repRange: programExercises.repRange,
+          effortTarget: programExercises.effortTarget,
           rirTarget: programExercises.rirTarget,
           orderIndex: programExercises.orderIndex,
           exerciseName: exercises.name,
@@ -250,6 +254,7 @@ export async function addExerciseToDay(
       exerciseId,
       targetSets: targets.targetSets,
       repRange: targets.repRange,
+      effortTarget: targets.effortTarget,
       rirTarget: targets.rirTarget,
       orderIndex: nextOrder,
     })
@@ -260,6 +265,7 @@ export async function addExerciseToDay(
 export interface ProgramExerciseUpdate {
   targetSets?: number | null;
   repRange?: string | null;
+  effortTarget?: EffortTag | null;
   rirTarget?: string | null;
   dayId?: number;
 }

@@ -9,9 +9,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "exerciseId is required" }, { status: 400 });
   }
 
-  const overrides: { targetSets?: number; repRange?: string | null; rirTarget?: string | null } = {};
+  const EFFORTS = new Set(["more_in_me", "near_failure", "to_failure"]);
+  const overrides: { targetSets?: number; repRange?: string | null; effortTarget?: "more_in_me" | "near_failure" | "to_failure" | null; rirTarget?: string | null } = {};
   if (typeof body?.targetSets === "number") overrides.targetSets = body.targetSets;
   if (typeof body?.repRange === "string" || body?.repRange === null) overrides.repRange = body.repRange;
+  if (body?.effortTarget === null || (typeof body?.effortTarget === "string" && EFFORTS.has(body.effortTarget))) overrides.effortTarget = body.effortTarget;
   if (typeof body?.rirTarget === "string" || body?.rirTarget === null) overrides.rirTarget = body.rirTarget;
 
   const row = await addExerciseToDay(Number(id), exerciseId, overrides);

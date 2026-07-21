@@ -8,6 +8,7 @@ export interface EditorExercise {
   exerciseId: string;
   targetSets: number | null;
   repRange: string | null;
+  effortTarget: "more_in_me" | "near_failure" | "to_failure" | null;
   rirTarget: string | null;
   orderIndex: number;
   exerciseName: string;

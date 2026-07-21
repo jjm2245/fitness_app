@@ -38,19 +38,21 @@ export function rirToEffortTag(rir: string | number | null | undefined): EffortT
 }
 
 // A tag → representative `rir_target` string that re-buckets to the same tag
-// (to failure → "0", near failure → "2", relaxed → "4"). Used only for the
-// interim write; a no-edit save preserves the original string instead (below).
+// (to failure → "0", near failure → "2", relaxed → "4"). Used only when the tag
+// actually changes; a no-edit save preserves the original string instead.
 const TAG_TO_RIR: Record<EffortTag, string> = {
   to_failure: "0",
   near_failure: "2",
   more_in_me: "4",
 };
 
-// Resolve what to store in `rir_target` given the chosen tag and the value the
-// sheet opened with. If the tag is unchanged from what the original rir mapped
-// to, write back the ORIGINAL string byte-identically (no silent rewrite);
-// otherwise write the representative for the newly chosen tag.
-export function effortTagToRirStore(tag: EffortTag | null, originalRir: string | null): string | null {
-  if (tag === rirToEffortTag(originalRir)) return originalRir;
+// `rir_target` is a PROJECTION of the authoritative `effort_target` tag, kept in
+// sync on save so the progression engine (which reads the number) stays
+// consistent — and never hand-edited. If the tag is unchanged from what the row
+// opened with, keep the ORIGINAL number byte-identically (a no-edit save is a
+// no-op, and existing rows never silently shift progression on deploy); only a
+// changed tag writes its representative.
+export function rirForEffortTarget(tag: EffortTag | null, initialTag: EffortTag | null, originalRir: string | null): string | null {
+  if (tag === initialTag) return originalRir;
   return tag === null ? null : TAG_TO_RIR[tag];
 }

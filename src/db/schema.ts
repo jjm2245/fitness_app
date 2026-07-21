@@ -283,6 +283,11 @@ export const programExercises = pgTable("program_exercises", {
   // nullable (blank RIR = unknown, never defaulted).
   targetSets: integer("target_sets"),
   repRange: text("rep_range"),
+  // Effort target (v4): the authoritative input is the 3-level tag `effort_target`
+  // (same enum the session logs, so target vs actual are comparable). `rir_target`
+  // is KEPT as the numeric the progression engine reads — a projection of the tag,
+  // written in sync on save, never hand-edited. See targetEffort.ts / DECISIONS.
+  effortTarget: effortEnum("effort_target"),
   rirTarget: numeric("rir_target"),
   orderIndex: integer("order_index").notNull().default(0),
 });

@@ -5,7 +5,7 @@ import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
 import { cardioFields, CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
-import { TARGET_EFFORT_OPTIONS, rirToEffortTag, effortTagToRirStore, type EffortTag } from "@/lib/targetEffort";
+import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -74,9 +74,10 @@ export function TargetSheet({
   const [repSingle, setRepSingle] = useState(initRepRange.includes("-") ? "" : initRepRange);
   const [repA, setRepA] = useState(initRepRange.includes("-") ? initRepRange.split("-")[0] : "");
   const [repB, setRepB] = useState(initRepRange.includes("-") ? initRepRange.split("-")[1] : "");
-  // Effort adopts the session's 3-level scale; stored (for now) on the legacy
-  // numeric rir_target via the bucket shim so it round-trips + migrates cleanly.
-  const [effort, setEffort] = useState<EffortTag | null>(rirToEffortTag(ex.rirTarget));
+  // Effort adopts the session's 3-level scale. `effort_target` is the
+  // authoritative tag; `rir_target` is kept in sync as its projection on save
+  // (progression reads the number). Init from the native tag.
+  const [effort, setEffort] = useState<EffortTag | null>(ex.effortTarget);
 
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
   const cardioFieldSet = cardioFields(ex.exerciseName);
@@ -129,7 +130,8 @@ export function TargetSheet({
         body: JSON.stringify({
           targetSets: Number(targetSets),
           repRange: repRangeToStore(),
-          rirTarget: effortTagToRirStore(effort, ex.rirTarget ?? null),
+          effortTarget: effort,
+          rirTarget: rirForEffortTarget(effort, ex.effortTarget, ex.rirTarget ?? null),
         }),
       });
       await onChanged();
@@ -198,7 +200,7 @@ export function TargetSheet({
       } else {
         await api(`/api/program-exercises/${ex.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ targetSets: null, repRange: null, rirTarget: null }),
+          body: JSON.stringify({ targetSets: null, repRange: null, effortTarget: null, rirTarget: null }),
         });
       }
       await onChanged();
