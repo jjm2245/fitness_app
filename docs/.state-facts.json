@@ -1,13 +1,13 @@
 {
   "migrations": {
-    "count": 22,
-    "latest": "0021_session_exercise_completed",
-    "expected": 22
+    "count": 23,
+    "latest": "0022_next_komodo",
+    "expected": 23
   },
   "tests": {
     "files": 13,
-    "cases": 147
+    "cases": 150
   },
   "tables": 19,
-  "routes": 34
+  "routes": 36
 }
