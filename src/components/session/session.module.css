@@ -974,48 +974,189 @@
   font-size: 0.95rem;
 }
 
-/* Add-sheet groups. */
-.addGroup {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  overflow: hidden;
+/* ---------- Add-sheet: drill-in navigator ---------- */
+
+/* "Programs" / "Blocks" section headers on Screen 1. */
+.navSectionHead {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  margin: 16px 2px 2px;
 }
-.addGroupHeader {
-  width: 100%;
-  min-height: 48px;
+/* A container row (program / blocks / day): body + optional quick-add + chevron. */
+.navRow {
+  display: flex;
+  align-items: stretch;
+  min-height: 56px;
+  border-bottom: 1px solid var(--hairline);
+}
+.navRowBody {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--card);
+  gap: 10px;
+  padding: 10px 4px;
+  background: transparent;
   border: none;
-  border-radius: 0;
   color: var(--text);
-  font-size: 0.95rem;
   text-align: left;
+  font-size: 1rem;
 }
-.addGroupHeader:hover {
-  background: var(--card);
+.navRowName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
-.addGroupCount {
+.navRowName > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.navBadge {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.navRowMeta {
+  flex-shrink: 0;
   color: var(--text-3);
   font-size: 0.82rem;
 }
-.addChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 10px 14px; /* the final pill terminates cleanly */
+.navQuickAdd {
+  flex-shrink: 0;
+  width: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  color: var(--accent);
 }
-.addChip {
+.navRowChev {
+  flex-shrink: 0;
+  width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.navChevron {
+  color: var(--text-3);
+}
+/* Back header on Screens 2/3 (kept out of the drag zone so it stays tappable). */
+.navBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-height: 40px;
-  font-size: 0.85rem;
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--raised);
-  border: 1px solid var(--hairline);
+  margin: 2px 0 4px;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 0.98rem;
+  font-weight: 500;
+}
+/* "Add all · N exercises" hero on Screen 3. */
+.addAllHero {
+  width: 100%;
+  min-height: 46px;
+  margin: 4px 0 8px;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+/* One exercise row on Screen 3 (name + target ref + +/✓). */
+.addExRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding-right: 2px;
+  border-bottom: 1px solid var(--hairline);
+}
+.addExRowDone {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.addExMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 2px;
+}
+.addExName {
+  font-size: 0.98rem;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.addExTarget {
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
+.addExBtn,
+.addExBtnDone {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.addExBtn {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+.addExBtnDone {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-fg);
+}
+/* Sticky footer bar: running added count + Done. */
+.addFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.addFooterCount {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.addFooterDone {
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 /* New-unit sheet fields (tokens, not browser defaults). */

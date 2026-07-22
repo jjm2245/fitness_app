@@ -2647,3 +2647,40 @@ program page had no subtitle before); blocks = "Reusable exercise bundles you
 attach to any session — finishers, warm-ups, extras. Not tied to a day or a
 program." Verified: `order_index` unchanged by viewing lenses; drag-in-Custom
 works; both subtitles wrap in full. `src/core/*` untouched.
+
+## Session Add-exercise picker → drill-in navigator (2026-07-22)
+
+Rebuilt `AddSheet.tsx` from a flat/accordion list into a **drill-in navigator**
+(one flat, full-width level at a time): Screen 1 sources (search + a row per
+program, active first with an `active` badge, + a Blocks row) → Screen 2 a
+program's days / the block library's blocks (back header, `N ex`, chevron, quick
+`+`) → Screen 3 a day/block's exercises (`Add all · N` hero, each a `+`→`✓`
+add/remove row with its target reference line + tint). A sticky footer shows the
+running "N added this session · Done". A nav stack drives back.
+
+**No dedupe** (removed the label-dedupe): a day-Abs and a block-Abs are distinct
+objects, each reachable under its own source — verified both show on prod-mirror
+data. **Every program is navigable** (not filtered to active) — the old flat list
+mixed all programs' days with blocks unlabeled; now each program is its own drill
+row and the inactive "hi"/Hiii is a labeled row, not loose. Sourcing is unchanged
+server-side (`listPrograms` already excludes the block library); only presentation
+changed. **Re-tap `✓` toggles-off safely**: `removeOccurrence` is destructive to
+logged sets, so the parent (`removeFromPalette`) only un-adds occurrences with NO
+logged sets/cardio — the picker never deletes logged work; a logged exercise is
+kept (remove it from its card). Adding a day (`onAddMany`) carries its
+prescriptions into the occurrence (targets ride along, whatever program) but
+**never prefills** the log inputs — the StrengthCard still opens on its static
+defaults (`load = bodyweight ? 0 : 45`, `reps = 8`), and the target shows only as
+the reference line; adding from a non-active program does not change the active
+program (session-local `addOccurrence`, no program/day writes). Log page feeds
+`activeProgramId` (from the `/api/programs` summaries), `addedIds` + count (from
+loggables), `onAddMany`, and the safe `onRemove`.
+
+**Flagged — "Add today · up-next day" hero omitted.** There is no reusable
+up-next-day logic in the codebase (only a static "Ready when you are" label and a
+"Last · <composite label>" on Home; `workout_logs.program_day` is a concatenation
+of whatever was logged, not a single day, so it can't yield a reliable next day).
+Per the deliverable's instruction I omitted the hero rather than fabricate one;
+every day is still reachable via Programs → active program → days. `src/core/*`
+untouched. (The bottom-left "N" over the sheet footer in dev is the Next.js dev
+indicator — absent in prod.)

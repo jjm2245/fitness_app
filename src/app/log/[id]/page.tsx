@@ -57,6 +57,7 @@ export default function LogSessionPage() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "notfound">("loading");
   const [blocks, setBlocks] = useState<BlockDetail[]>([]);
   const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
+  const [activeProgramId, setActiveProgramId] = useState<number | null>(null);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
   const [sessionCardio, setSessionCardio] = useState<SessionCardio[]>([]);
@@ -138,13 +139,16 @@ export default function LogSessionPage() {
       if (cancelled) return;
       setBlocks(blocksRes);
 
-      const summaries = await fetch("/api/programs").then((r) => (r.ok ? r.json() : []));
+      const summaries = (await fetch("/api/programs").then((r) => (r.ok ? r.json() : []))) as { id: number; active: boolean }[];
       const full = await Promise.all(
-        (summaries as { id: number }[]).map((p) =>
+        summaries.map((p) =>
           fetch(`/api/programs/${p.id}`).then((r) => (r.ok ? (r.json() as Promise<ProgramDetail>) : null))
         )
       );
-      if (!cancelled) setAllPrograms(full.filter((p): p is ProgramDetail => p !== null));
+      if (!cancelled) {
+        setAllPrograms(full.filter((p): p is ProgramDetail => p !== null));
+        setActiveProgramId(summaries.find((p) => p.active)?.id ?? null);
+      }
     })();
     const onFocus = () => { if (document.visibilityState === "visible") handleSync(); };
     window.addEventListener("online", handleSync);
@@ -174,6 +178,9 @@ export default function LogSessionPage() {
     }));
   }, [occurrences]);
 
+  // Exercise ids currently in the session — the picker shows ✓ + tint for these.
+  const addedIds = useMemo(() => new Set(loggables.map((l) => l.exerciseId)), [loggables]);
+
   // The session's first card WITH logged sets hosts the one-time tap hint.
   const firstWithSetsId = useMemo(() => {
     const withSets = new Set(sessionSets.map((s) => s.instanceId));
@@ -198,6 +205,28 @@ export default function LogSessionPage() {
   async function addFromPalette(e: ProgramExerciseDetail, source: string) {
     await addOccurrence(sessionId, attachFrom(e), source);
     await refreshSession();
+  }
+
+  // Add a whole day/block: its exercises carry their prescriptions (targets
+  // ride along in the occurrence; they are NEVER prefilled into the log inputs).
+  // Skips exercises already in the session, then refreshes once.
+  async function addManyFromPalette(items: ProgramExerciseDetail[], source: string) {
+    const present = new Set(loggables.map((l) => l.exerciseId));
+    const toAdd = items.filter((e) => !present.has(e.exerciseId));
+    for (const e of toAdd) await addOccurrence(sessionId, attachFrom(e), source);
+    if (toAdd.length) await refreshSession();
+  }
+
+  // Safe un-add from the picker (toggle off a ✓ row): remove occurrence(s) of
+  // this exercise that have NO logged sets/cardio. removeOccurrence is
+  // destructive to logged work, so a logged exercise is kept (remove it from its
+  // card instead) — the picker never deletes logged sets.
+  async function removeFromPalette(exerciseId: string) {
+    const loggedInstances = new Set([...sessionSets, ...sessionCardio].map((s) => s.instanceId));
+    const targets = loggables.filter((l) => l.exerciseId === exerciseId && !loggedInstances.has(l.instanceId));
+    if (targets.length === 0) return;
+    for (const t of targets) await removeOccurrence(sessionId, t.instanceId);
+    await onSessionChanged();
   }
 
   async function addAdhoc(r: ExerciseSearchResult) {
@@ -322,7 +351,12 @@ export default function LogSessionPage() {
         <AddSheet
           programs={allPrograms}
           blocks={blocks}
+          activeProgramId={activeProgramId}
+          addedIds={addedIds}
+          sessionCount={loggables.length}
           onAdd={addFromPalette}
+          onAddMany={addManyFromPalette}
+          onRemove={removeFromPalette}
           onAddAdhoc={addAdhoc}
           onClose={() => setAddOpen(false)}
         />
