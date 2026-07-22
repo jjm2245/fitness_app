@@ -72,6 +72,10 @@ export function DayEditorView({
   const [organizing, setOrganizing] = useState(false);
   const [editingExId, setEditingExId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  // The exercise-list view. "custom" shows the stored order_index and is the only
+  // mode where drag is enabled; A–Z/Z–A/Recent are non-destructive display lenses
+  // that never write order_index (a hand-tuned order survives a detour through one).
+  const [viewMode, setViewMode] = useState<"custom" | "az" | "za" | "recent">("custom");
 
   // Keep the selection stable across refreshes; fall back to the first.
   const selected = days.find((d) => d.id === selectedId) ?? days[0] ?? null;
@@ -90,6 +94,21 @@ export function DayEditorView({
     .map((id) => selected?.exercises.find((e) => e.id === id))
     .filter((e): e is EditorExercise => e != null);
 
+  // Each day opens in its saved custom order; switching days leaves any lens.
+  useEffect(() => { setViewMode("custom"); }, [selected?.id]);
+
+  // A lens sorts the DISPLAY only — never the stored order_index.
+  function sortedView(kind: "az" | "za" | "recent"): EditorExercise[] {
+    const list = [...(selected?.exercises ?? [])];
+    if (kind === "recent") list.sort((a, b) => b.id - a.id); // serial id = creation order
+    else {
+      list.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+      if (kind === "za") list.reverse();
+    }
+    return list;
+  }
+  const displayExercises = viewMode === "custom" ? orderedExercises : sortedView(viewMode);
+
   const editingEx = selected?.exercises.find((e) => e.id === editingExId) ?? null;
 
   async function commitExOrder(ids: number[]) {
@@ -98,15 +117,12 @@ export function DayEditorView({
     await api(`/api/program-days/${selected.id}/exercises/reorder`, { method: "POST", body: JSON.stringify({ orderedIds: ids }) });
     await onChanged();
   }
-  function sortExercises(kind: "az" | "za" | "recent") {
-    if (!selected) return;
-    const list = [...selected.exercises];
-    if (kind === "recent") list.sort((a, b) => b.id - a.id); // serial id = creation order
-    else {
-      list.sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
-      if (kind === "za") list.reverse();
-    }
-    void commitExOrder(list.map((e) => e.id));
+  // Commit the currently-visible (lens) order into order_index and return to
+  // Custom — the "alphabetize, then hand-tweak" path. Uses the same bulk endpoint.
+  function saveAsCustom() {
+    const ids = displayExercises.map((e) => e.id);
+    setViewMode("custom");
+    void commitExOrder(ids);
   }
 
   async function deleteDay() {
@@ -116,6 +132,23 @@ export function DayEditorView({
     setSelectedId(null);
     await onChanged();
   }
+
+  // The tappable row body (name + chip + chevron), shared by the draggable Custom
+  // rows and the read-only lens rows so they render identically.
+  const rowBody = (ex: EditorExercise) => (
+    <button type="button" className={styles.rowBody} onClick={() => setEditingExId(ex.id)}>
+      <span className={styles.rowMain}>
+        <span className={styles.rowName}>
+          <span className={styles.rowNameText}>{ex.exerciseName}</span>
+          {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
+        </span>
+      </span>
+      {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
+      <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
+        <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      </svg>
+    </button>
+  );
 
   return (
     <>
@@ -149,41 +182,53 @@ export function DayEditorView({
 
       {selected ? (
         <div className={styles.rowsCard}>
-          {orderedExercises.length === 0 ? (
+          {displayExercises.length === 0 ? (
             <p className={styles.emptyNote}>No exercises yet — add the first below.</p>
           ) : (
             <>
-              {orderedExercises.length > 1 && (
-                <div className={styles.sortRow}>
-                  <span className={styles.sortLabel}>Sort</span>
-                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("az")}>A–Z</button>
-                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("za")}>Z–A</button>
-                  <button type="button" className={styles.sortChip} onClick={() => sortExercises("recent")}>Recent</button>
-                </div>
+              {displayExercises.length > 1 && (
+                <>
+                  <div className={styles.sortRow}>
+                    <span className={styles.sortLabel}>View</span>
+                    {(["custom", "az", "za", "recent"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className={viewMode === m ? styles.sortChipActive : styles.sortChip}
+                        onClick={() => setViewMode(m)}
+                      >
+                        {m === "custom" ? "Custom" : m === "az" ? "A–Z" : m === "za" ? "Z–A" : "Recent"}
+                      </button>
+                    ))}
+                  </div>
+                  {viewMode !== "custom" && (
+                    <button type="button" className={styles.saveCustomBtn} onClick={saveAsCustom}>
+                      Save as custom order
+                    </button>
+                  )}
+                </>
               )}
-              <SortableList ids={orderedExercises.map((e) => String(e.id))} onReorder={(ids) => commitExOrder(ids.map(Number))}>
-                {orderedExercises.map((ex) => (
-                  <SortableRow key={ex.id} id={String(ex.id)}>
-                    {(grip) => (
-                      <div className={styles.row}>
-                        <span ref={grip.ref} {...grip.props} aria-label="Drag to reorder">⋮⋮</span>
-                        <button type="button" className={styles.rowBody} onClick={() => setEditingExId(ex.id)}>
-                          <span className={styles.rowMain}>
-                            <span className={styles.rowName}>
-                              <span className={styles.rowNameText}>{ex.exerciseName}</span>
-                              {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
-                            </span>
-                          </span>
-                          {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
-                          <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
-                            <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-                  </SortableRow>
-                ))}
-              </SortableList>
+              {viewMode === "custom" ? (
+                <SortableList ids={displayExercises.map((e) => String(e.id))} onReorder={(ids) => commitExOrder(ids.map(Number))}>
+                  {displayExercises.map((ex) => (
+                    <SortableRow key={ex.id} id={String(ex.id)}>
+                      {(grip) => (
+                        <div className={styles.row}>
+                          <span ref={grip.ref} {...grip.props} aria-label="Drag to reorder">⋮⋮</span>
+                          {rowBody(ex)}
+                        </div>
+                      )}
+                    </SortableRow>
+                  ))}
+                </SortableList>
+              ) : (
+                displayExercises.map((ex) => (
+                  <div key={ex.id} className={styles.row}>
+                    <span className={styles.gripSpacer} aria-hidden="true" />
+                    {rowBody(ex)}
+                  </div>
+                ))
+              )}
             </>
           )}
           <button type="button" className={styles.addRow} onClick={() => setAdding(true)}>

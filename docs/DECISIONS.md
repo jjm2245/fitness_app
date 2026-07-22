@@ -2593,3 +2593,25 @@ session target-reference line still derives its label from the (consistent)
 **Proof (throwaway copy of the real prod rows):** all 40 `rir=2` rows →
 `near_failure`, progression `targetRir` 2→2; every row unchanged; 0 rows shifted.
 `src/core/*` untouched.
+
+## Exercise list — sorts become non-destructive lenses (2026-07-21)
+
+**Supersedes the earlier "sort writes `order_index`" decision** (from the reorder
+pass). A hand-dragged arrangement was lost the instant you tapped A–Z/Z–A/Recent,
+with no way back — so a hand-tuned order must survive a detour through a sort.
+
+New model (additive, `order_index` unchanged, no schema): `order_index` is the
+persisted **Custom** order — drag edits it and it's always preserved. A–Z / Z–A /
+Recent are **non-destructive view lenses**: they reorder the display only and
+never write `order_index`. A **Custom** chip (the default, drag-enabled, shows the
+stored order) is the only mode where drag is on; drag is off in the lenses (grip
+replaced by a spacer). **"Save as custom order"** in a lens commits the visible
+order into `order_index` via the existing bulk reorder endpoint and returns to
+Custom — the one-tap "alphabetize, then hand-tweak" path.
+
+Scope: exercise lists only, in the shared `DayEditorView` (so **blocks get the
+same model**). **Day/block reordering is untouched** — it stays the drag +
+Organize-order flow. Verified on a throwaway copy of a real day: lens leaves
+`order_index` non-alphabetical/unchanged; Custom returns the hand order; Save-as-
+custom writes contiguous `0..n-1` (no gap/dupe); a drag-commit persists + survives
+reload. `src/core/*` untouched.

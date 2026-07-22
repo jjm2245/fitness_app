@@ -226,6 +226,34 @@
   border: 1px solid var(--hairline);
   color: var(--text-2);
 }
+/* The active view lens (Custom / A–Z / Z–A / Recent). */
+.sortChipActive {
+  min-height: 30px;
+  font-size: 0.76rem;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
+/* Holds the row's left edge steady when the drag grip is absent (lens modes). */
+.gripSpacer {
+  flex-shrink: 0;
+  width: 22px;
+}
+/* "Save as custom order" — commits the visible lens order into order_index. */
+.saveCustomBtn {
+  align-self: flex-start;
+  margin: 4px 12px 0;
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
 /* Rows inside the day Organize modal. */
 .organizeRow {
   display: flex;
