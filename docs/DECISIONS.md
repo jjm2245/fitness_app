@@ -2628,3 +2628,22 @@ is DayEditorView-local state). "Save as custom order" condensed from a full row 
 a compact right-aligned icon on the VIEW row (lens-only; same `saveAsCustom`
 handler). Drag still enabled only in Custom. Blocks parity holds. No schema/logic/
 copy change; `src/core/*` untouched.
+
+## Removed "Save as custom order" + set program/blocks subtitles (2026-07-22)
+
+**Removed the "Save as custom order" control entirely** (program + blocks) and its
+exclusive `saveAsCustom` handler — reverses the two previous entries that added it.
+Since the lenses are non-destructive (A–Z/Z–A/Recent are throwaway views over the
+persisted Custom `order_index`), the only thing it did was overwrite the
+hand-arranged order with a lens's order — a way to lose the arrangement the
+non-destructive model exists to protect. New model: **Custom is the one persisted
+order (drag to change it); the other three are views.** `commitExOrder`, the bulk
+reorder endpoint, `order_index`, and drag-in-Custom are untouched (drag still calls
+`commitExOrder`); the dead `.saveCustomBtn` CSS was removed too (grep-clean).
+
+**Section subtitles set** (role-distinguishing copy; they already wrap): program =
+"Your training plan — ordered days your sessions follow in sequence." (added — the
+program page had no subtitle before); blocks = "Reusable exercise bundles you
+attach to any session — finishers, warm-ups, extras. Not tied to a day or a
+program." Verified: `order_index` unchanged by viewing lenses; drag-in-Custom
+works; both subtitles wrap in full. `src/core/*` untouched.

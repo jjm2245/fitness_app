@@ -118,13 +118,6 @@ export function DayEditorView({
     await api(`/api/program-days/${selected.id}/exercises/reorder`, { method: "POST", body: JSON.stringify({ orderedIds: ids }) });
     await onChanged();
   }
-  // Commit the currently-visible (lens) order into order_index and return to
-  // Custom — the "alphabetize, then hand-tweak" path. Uses the same bulk endpoint.
-  function saveAsCustom() {
-    const ids = displayExercises.map((e) => e.id);
-    setViewMode("custom");
-    void commitExOrder(ids);
-  }
 
   async function deleteDay() {
     if (!selected) return;
@@ -200,19 +193,6 @@ export function DayEditorView({
                       {m === "az" ? "A–Z" : m === "za" ? "Z–A" : m === "recent" ? "Recent" : "Custom"}
                     </button>
                   ))}
-                  {viewMode !== "custom" && (
-                    <button
-                      type="button"
-                      className={styles.saveCustomBtn}
-                      onClick={saveAsCustom}
-                      aria-label="Save this order as the custom order"
-                      title="Save as custom order"
-                    >
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path d="M8 2.5v6.4M5.2 6.3 8 9.1l2.8-2.8M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  )}
                 </div>
               )}
               {viewMode === "custom" ? (

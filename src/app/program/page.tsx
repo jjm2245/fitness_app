@@ -83,6 +83,7 @@ export default function ProgramEditorPage() {
           />
         )}
       </div>
+      <p className={styles.hintLine}>Your training plan — ordered days your sessions follow in sequence.</p>
 
       {!loaded ? (
         <p className={styles.hintLine}>Loading…</p>

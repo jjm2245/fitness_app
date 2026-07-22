@@ -26,7 +26,7 @@ export default function BlocksEditorPage() {
       <div className={styles.titleRow}>
         <h1 className={styles.title}>Reusable blocks</h1>
       </div>
-      <p className={styles.hintLine}>Named exercise sets you attach to any session in one tap — always optional.</p>
+      <p className={styles.hintLine}>Reusable exercise bundles you attach to any session — finishers, warm-ups, extras. Not tied to a day or a program.</p>
 
       {!loaded ? (
         <p className={styles.hintLine}>Loading…</p>

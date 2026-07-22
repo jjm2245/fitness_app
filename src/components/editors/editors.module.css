@@ -241,28 +241,6 @@
   flex-shrink: 0;
   width: 22px;
 }
-/* "Save as custom order" — a compact right-aligned icon on the VIEW row (lens
-   only) that commits the visible order into order_index. */
-.saveCustomBtn {
-  margin-left: auto;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
-  padding: 0;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--accent);
-}
-.saveCustomBtn svg {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-}
 /* Rows inside the day Organize modal. */
 .organizeRow {
   display: flex;
