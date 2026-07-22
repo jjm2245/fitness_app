@@ -2684,3 +2684,42 @@ Per the deliverable's instruction I omitted the hero rather than fabricate one;
 every day is still reachable via Programs → active program → days. `src/core/*`
 untouched. (The bottom-left "N" over the sheet footer in dev is the Next.js dev
 indicator — absent in prod.)
+
+## Add-exercise picker → append-only refinements (2026-07-22)
+
+**GATE cleared (duplicates representable).** Read-only prod: the only unique
+indexes on `session_exercises` are `client_instance_id` and the `id` PK — there is
+**no `(workout_log_id, exercise_id)` unique constraint**, and `set_logs`/
+`cardio_logs` key to `session_exercise_id` (160/166 set_logs non-null), so two
+occurrences of the same exercise keep their sets separate. No schema change.
+
+Refinements to `AddSheet.tsx` (presentation + add-behavior; sourcing unchanged):
+- **Append-only** — `+` always appends another occurrence and never toggles off.
+  Duplicates allowed (add-order = session order); an exercise added ≥1× shows a
+  subtle `×N`. The picker NEVER removes an occurrence (the previous "re-tap
+  un-adds unlogged" behavior was deleting exercises). Parent now passes
+  `addedCounts` (a Map) instead of `addedIds`.
+- **Flatten blocks** — each block is its own row under BLOCKS on Screen 1,
+  drilling straight to its exercises (removed the intermediate Blocks container).
+  Programs still drill program → days → exercises; the asymmetry is correct.
+- **Removed the "reusable" badge** from blocks (the BLOCKS header says it); kept
+  the `active` badge on the active program.
+- **Day-list is nav-only** — removed the quick-`+` on the day-list screen.
+- **Demoted "Add all"** from the gradient hero to a small secondary text button
+  in the exercise-screen header; it appends the whole day/block once, in order.
+  **Transient Undo**: after an Add-all the footer offers "Undo" that reverses just
+  that batch (`onAddMany` returns the new instanceIds; `undoAddAll` removes only
+  the freshly-added occurrences with NO logged sets/cardio — a logged occurrence
+  is never deleted). Cleared on the next add or a navigation.
+- **Remember location** — the nav stack lifted to the log page (`addNav`,
+  descriptor-based `{screen, programId?/dayId?}`), so reopening the sheet during
+  the session restores the last container browsed; missing containers fall back to
+  sources. Per-session (log-page lifetime), no persistence.
+
+**Guardrail held:** the picker never deletes an occurrence — logged or unlogged —
+except the Undo of a just-made Add-all of unlogged rows. No prefill (targets stay
+the reference line; StrengthCard opens on static defaults); adding from a
+non-active program doesn't switch active or write to any program/day/block.
+Verified in-app: `×2` after two taps + two separate session cards; Add-all → Undo
+reverses only the batch (kept the manual adds); reopen lands on `‹ Abs` not root;
+day rows have no `+`. `src/core/*` untouched.

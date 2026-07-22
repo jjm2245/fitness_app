@@ -9,7 +9,7 @@ import { StrengthCard } from "@/components/session/StrengthCard";
 import { CardioCard } from "@/components/session/CardioCard";
 import { FinishSheet } from "@/components/session/FinishSheet";
 import { SessionHeader } from "@/components/session/SessionHeader";
-import { AddSheet } from "@/components/session/AddSheet";
+import { AddSheet, type AddLoc } from "@/components/session/AddSheet";
 import sessionStyles from "@/components/session/session.module.css";
 import type {
   BlockDetail,
@@ -58,6 +58,9 @@ export default function LogSessionPage() {
   const [blocks, setBlocks] = useState<BlockDetail[]>([]);
   const [allPrograms, setAllPrograms] = useState<ProgramDetail[]>([]);
   const [activeProgramId, setActiveProgramId] = useState<number | null>(null);
+  // Remembered picker location for THIS session's lifetime (survives sheet
+  // open/close so add→log→add doesn't force re-drilling program→day).
+  const [addNav, setAddNav] = useState<AddLoc[]>([{ screen: "sources" }]);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [sessionSets, setSessionSets] = useState<SessionSet[]>([]);
   const [sessionCardio, setSessionCardio] = useState<SessionCardio[]>([]);
@@ -178,8 +181,13 @@ export default function LogSessionPage() {
     }));
   }, [occurrences]);
 
-  // Exercise ids currently in the session — the picker shows ✓ + tint for these.
-  const addedIds = useMemo(() => new Set(loggables.map((l) => l.exerciseId)), [loggables]);
+  // How many occurrences of each exercise are in the session — the picker shows
+  // a ×N count. Append-only: adding never removes; duplicates are allowed.
+  const addedCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of loggables) m.set(l.exerciseId, (m.get(l.exerciseId) ?? 0) + 1);
+    return m;
+  }, [loggables]);
 
   // The session's first card WITH logged sets hosts the one-time tap hint.
   const firstWithSetsId = useMemo(() => {
@@ -207,25 +215,28 @@ export default function LogSessionPage() {
     await refreshSession();
   }
 
-  // Add a whole day/block: its exercises carry their prescriptions (targets
-  // ride along in the occurrence; they are NEVER prefilled into the log inputs).
-  // Skips exercises already in the session, then refreshes once.
-  async function addManyFromPalette(items: ProgramExerciseDetail[], source: string) {
-    const present = new Set(loggables.map((l) => l.exerciseId));
-    const toAdd = items.filter((e) => !present.has(e.exerciseId));
-    for (const e of toAdd) await addOccurrence(sessionId, attachFrom(e), source);
-    if (toAdd.length) await refreshSession();
+  // Add a whole day/block (append): its exercises carry their prescriptions
+  // (targets ride along in the occurrence; NEVER prefilled into the log inputs).
+  // Appends ALL items in day order (duplicates allowed), refreshes once, and
+  // returns the new occurrence instanceIds so the picker can offer a batch Undo.
+  async function addManyFromPalette(items: ProgramExerciseDetail[], source: string): Promise<string[]> {
+    const ids: string[] = [];
+    for (const e of items) {
+      const occ = await addOccurrence(sessionId, attachFrom(e), source);
+      ids.push(occ.instanceId);
+    }
+    if (items.length) await refreshSession();
+    return ids;
   }
 
-  // Safe un-add from the picker (toggle off a ✓ row): remove occurrence(s) of
-  // this exercise that have NO logged sets/cardio. removeOccurrence is
-  // destructive to logged work, so a logged exercise is kept (remove it from its
-  // card instead) — the picker never deletes logged sets.
-  async function removeFromPalette(exerciseId: string) {
-    const loggedInstances = new Set([...sessionSets, ...sessionCardio].map((s) => s.instanceId));
-    const targets = loggables.filter((l) => l.exerciseId === exerciseId && !loggedInstances.has(l.instanceId));
-    if (targets.length === 0) return;
-    for (const t of targets) await removeOccurrence(sessionId, t.instanceId);
+  // The ONLY removal the picker can trigger: reverse a just-made "Add all" batch.
+  // Removes only the freshly-added occurrences that have NO logged sets/cardio —
+  // a logged occurrence is never deleted (the guardrail is absolute).
+  async function undoAddAll(instanceIds: string[]) {
+    const logged = new Set([...sessionSets, ...sessionCardio].map((s) => s.instanceId));
+    const toRemove = instanceIds.filter((id) => !logged.has(id));
+    if (toRemove.length === 0) return;
+    for (const id of toRemove) await removeOccurrence(sessionId, id);
     await onSessionChanged();
   }
 
@@ -352,11 +363,13 @@ export default function LogSessionPage() {
           programs={allPrograms}
           blocks={blocks}
           activeProgramId={activeProgramId}
-          addedIds={addedIds}
+          addedCounts={addedCounts}
           sessionCount={loggables.length}
+          nav={addNav}
+          onNav={setAddNav}
           onAdd={addFromPalette}
           onAddMany={addManyFromPalette}
-          onRemove={removeFromPalette}
+          onUndo={undoAddAll}
           onAddAdhoc={addAdhoc}
           onClose={() => setAddOpen(false)}
         />

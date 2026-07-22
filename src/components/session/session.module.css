@@ -984,28 +984,24 @@
   color: var(--text-3);
   margin: 16px 2px 2px;
 }
-/* A container row (program / blocks / day): body + optional quick-add + chevron. */
+/* A nav row (program / day / block): full-width, chevron = "go inside". */
 .navRow {
-  display: flex;
-  align-items: stretch;
-  min-height: 56px;
-  border-bottom: 1px solid var(--hairline);
-}
-.navRowBody {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 4px;
+  min-height: 56px;
+  padding: 10px 2px 10px 4px;
   background: transparent;
   border: none;
+  border-bottom: 1px solid var(--hairline);
   color: var(--text);
   text-align: left;
   font-size: 1rem;
 }
 .navRowName {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1032,27 +1028,12 @@
   color: var(--text-3);
   font-size: 0.82rem;
 }
-.navQuickAdd {
-  flex-shrink: 0;
-  width: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.35rem;
-  line-height: 1;
-  background: transparent;
-  border: none;
-  color: var(--accent);
-}
 .navRowChev {
   flex-shrink: 0;
-  width: 30px;
+  width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  padding: 0;
 }
 .navChevron {
   color: var(--text-3);
@@ -1071,19 +1052,24 @@
   font-size: 0.98rem;
   font-weight: 500;
 }
-/* "Add all · N exercises" hero on Screen 3. */
-.addAllHero {
-  width: 100%;
-  min-height: 46px;
-  margin: 4px 0 8px;
-  border-radius: var(--radius);
-  background: var(--accent-grad);
-  color: var(--accent-fg);
+/* Exercise-screen header row: back on the left, small "Add all" on the right. */
+.navBackRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.addAllBtn {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 4px 10px;
+  background: transparent;
   border: none;
-  font-size: 0.95rem;
+  color: var(--accent);
+  font-size: 0.85rem;
   font-weight: 500;
 }
-/* One exercise row on Screen 3 (name + target ref + +/✓). */
+/* One exercise row on Screen 3 (name + target ref + ×N count + append +). */
 .addExRow {
   display: flex;
   align-items: center;
@@ -1091,9 +1077,6 @@
   min-height: 56px;
   padding-right: 2px;
   border-bottom: 1px solid var(--hairline);
-}
-.addExRowDone {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .addExMain {
   flex: 1;
@@ -1114,8 +1097,13 @@
   font-size: 0.78rem;
   color: var(--text-3);
 }
-.addExBtn,
-.addExBtnDone {
+.addExCount {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+.addExBtn {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
@@ -1126,18 +1114,11 @@
   justify-content: center;
   font-size: 1.25rem;
   line-height: 1;
-}
-.addExBtn {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent);
 }
-.addExBtnDone {
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--accent-fg);
-}
-/* Sticky footer bar: running added count + Done. */
+/* Sticky footer bar: running added count + (transient Undo) + Done. */
 .addFooter {
   display: flex;
   align-items: center;
@@ -1147,6 +1128,20 @@
 .addFooterCount {
   font-size: 0.85rem;
   color: var(--text-2);
+}
+.addFooterActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.addFooterUndo {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font-size: 0.9rem;
 }
 .addFooterDone {
   min-height: 40px;

@@ -9,25 +9,27 @@ import { cardioFields } from "@/lib/cardioFields";
 import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import type { BlockDetail, ProgramDetail, ProgramExerciseDetail } from "./shared";
 
-// The session Add-exercise picker as a DRILL-IN navigator (not a flat/accordion
-// list). One flat, full-width level at a time:
-//   Screen 1 sources  → search + program rows (active first) + a Blocks row
-//   Screen 2 container → a program's days, or the block library's blocks
-//   Screen 3 items     → a day/block's exercises, each +/✓ to add/remove
-// No dedupe: a day-Abs and a block-Abs are distinct objects, each reachable
-// under its own source. Every program is navigable (not filtered); active is
-// just first. Adding a day carries its prescriptions (targets ride along in the
-// occurrence) but never prefills the log inputs.
+// The session Add-exercise picker: a DRILL-IN, APPEND-ONLY navigator.
+//   Screen 1 sources  → search + a row per program (active first) + a row per
+//                       block (flattened — blocks drill straight to exercises)
+//   Screen 2 days     → a program's days (nav-only)
+//   Screen 3 exercises→ a day/block's exercises, each `+` appends another
+//                       occurrence (duplicates allowed, add-order = session
+//                       order); a `×N` count shows how many are in the session.
+// The picker NEVER removes an occurrence — removal is deliberate, in the session
+// view. The one exception is a transient Undo of a just-made "Add all" batch
+// (unlogged rows only). Location is remembered across open/close via `nav`.
 
-type View =
-  | { s: "sources" }
-  | { s: "program"; prog: ProgramDetail }
-  | { s: "blocks" }
-  | { s: "day"; source: string; label: string; items: ProgramExerciseDetail[] };
+// A remembered location (persisted on the log page for the session's lifetime).
+// `day` covers both a program day and a block — both are program_days, so a
+// single dayId resolves either.
+export type AddLoc =
+  | { screen: "sources" }
+  | { screen: "program"; programId: number }
+  | { screen: "day"; dayId: number };
 
-// The target reference line shown under an exercise (same source the editor
-// chip + session card use): strength "3 × 8–12 · near failure", cardio fields,
-// or null when there's no target.
+// The target reference line under an exercise (same source the editor chip +
+// session card read): strength "3 × 8–12 · near failure", cardio fields, or null.
 function targetRef(ex: ProgramExerciseDetail): string | null {
   if (ex.conditioningOnly) {
     const p = ex.params ?? {};
@@ -61,66 +63,114 @@ export function AddSheet({
   programs,
   blocks,
   activeProgramId,
-  addedIds,
+  addedCounts,
   sessionCount,
+  nav,
+  onNav,
   onAdd,
   onAddMany,
-  onRemove,
+  onUndo,
   onAddAdhoc,
   onClose,
 }: {
   programs: ProgramDetail[];
   blocks: BlockDetail[];
   activeProgramId: number | null;
-  addedIds: Set<string>;
+  addedCounts: Map<string, number>;
   sessionCount: number;
+  nav: AddLoc[];
+  onNav: (nav: AddLoc[]) => void;
   onAdd: (ex: ProgramExerciseDetail, source: string) => void;
-  onAddMany: (items: ProgramExerciseDetail[], source: string) => void;
-  onRemove: (exerciseId: string) => void;
+  onAddMany: (items: ProgramExerciseDetail[], source: string) => Promise<string[]>;
+  onUndo: (instanceIds: string[]) => void;
   onAddAdhoc: (r: ExerciseSearchResult) => void;
   onClose: () => void;
 }) {
-  const [stack, setStack] = useState<View[]>([{ s: "sources" }]);
-  const view = stack[stack.length - 1];
-  const push = (v: View) => setStack((s) => [...s, v]);
-  const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+  // The freshly-added "Add all" batch (occurrence instanceIds), offered for a
+  // transient Undo until the next add or navigation. Sheet-local by design.
+  const [lastBatch, setLastBatch] = useState<string[] | null>(null);
 
-  // Active program first, then the rest in their given order.
+  const current = nav[nav.length - 1] ?? { screen: "sources" };
+  const push = (loc: AddLoc) => { setLastBatch(null); onNav([...nav, loc]); };
+  const back = () => { setLastBatch(null); if (nav.length > 1) onNav(nav.slice(0, -1)); };
+
   const orderedPrograms = [...programs].sort((a, b) =>
     a.id === activeProgramId ? -1 : b.id === activeProgramId ? 1 : 0
   );
 
+  // Resolve a dayId → its exercises + labels (a program day or a block).
+  function resolveDay(dayId: number): { items: ProgramExerciseDetail[]; label: string; source: string } | null {
+    for (const p of programs) for (const d of p.days) if (d.id === dayId) {
+      return { items: d.exercises, label: prettyDayName(d.name), source: prettyDayName(d.name) };
+    }
+    for (const b of blocks) if (b.id === dayId) return { items: b.exercises, label: b.name, source: b.name };
+    return null;
+  }
+
+  function handleAdd(ex: ProgramExerciseDetail, source: string) {
+    setLastBatch(null);
+    onAdd(ex, source);
+  }
+  async function handleAddAll(items: ProgramExerciseDetail[], source: string) {
+    const ids = await onAddMany(items, source);
+    setLastBatch(ids);
+  }
+  function handleUndo() {
+    if (lastBatch && lastBatch.length) onUndo(lastBatch);
+    setLastBatch(null);
+  }
+
   const footer = (
     <div className={styles.addFooter}>
       <span className={styles.addFooterCount}>{sessionCount} added this session</span>
-      <button type="button" className={styles.addFooterDone} onClick={onClose}>Done</button>
+      <span className={styles.addFooterActions}>
+        {lastBatch && lastBatch.length > 0 && (
+          <button type="button" className={styles.addFooterUndo} onClick={handleUndo}>Undo</button>
+        )}
+        <button type="button" className={styles.addFooterDone} onClick={onClose}>Done</button>
+      </span>
     </div>
   );
 
-  // A container row (program / blocks / day) — full-width, chevron = "go inside".
-  // `quickAdd` (days/blocks) adds the whole thing without opening.
-  const NavRow = ({ label, badge, count, onOpen, quickAdd }: {
-    label: string; badge?: string; count: string; onOpen: () => void; quickAdd?: () => void;
-  }) => (
-    <div className={styles.navRow}>
-      <button type="button" className={styles.navRowBody} onClick={onOpen}>
-        <span className={styles.navRowName}>{label}{badge && <span className={styles.navBadge}>{badge}</span>}</span>
-        <span className={styles.navRowMeta}>{count}</span>
-      </button>
-      {quickAdd && (
-        <button type="button" className={styles.navQuickAdd} onClick={quickAdd} aria-label={`Add all of ${label}`}>+</button>
-      )}
-      <button type="button" className={styles.navRowChev} onClick={onOpen} aria-label={`Open ${label}`}><Chevron /></button>
-    </div>
+  // A nav row (program / day / block) — chevron drills in. No add affordance.
+  const NavRow = ({ label, badge, count, onOpen }: { label: string; badge?: string; count: string; onOpen: () => void }) => (
+    <button type="button" className={styles.navRow} onClick={onOpen}>
+      <span className={styles.navRowName}><span>{label}</span>{badge && <span className={styles.navBadge}>{badge}</span>}</span>
+      <span className={styles.navRowMeta}>{count}</span>
+      <span className={styles.navRowChev}><Chevron /></span>
+    </button>
   );
 
-  const Body = () => {
-    if (view.s === "sources") {
+  const ExerciseList = ({ items, label, source }: { items: ProgramExerciseDetail[]; label: string; source: string }) => (
+    <>
+      <div className={styles.navBackRow}>
+        <button type="button" className={styles.navBack} onClick={back}>‹ {label}</button>
+        {items.length > 0 && (
+          <button type="button" className={styles.addAllBtn} onClick={() => handleAddAll(items, source)}>Add all · {items.length}</button>
+        )}
+      </div>
+      {items.map((ex) => {
+        const ref = targetRef(ex);
+        const n = addedCounts.get(ex.exerciseId) ?? 0;
+        return (
+          <div key={ex.id} className={styles.addExRow}>
+            <span className={styles.addExMain}>
+              <span className={styles.addExName}>{ex.exerciseName}</span>
+              {ref && <span className={styles.addExTarget}>{ref}</span>}
+            </span>
+            {n > 0 && <span className={styles.addExCount}>×{n}</span>}
+            <button type="button" className={styles.addExBtn} onClick={() => handleAdd(ex, source)} aria-label={`Add ${ex.exerciseName}`}>+</button>
+          </div>
+        );
+      })}
+    </>
+  );
+
+  function Body() {
+    if (current.screen === "sources") {
       return (
         <>
-          <div>
-            <ExerciseSearch onPick={onAddAdhoc} placeholder="Search library / curated, or create custom…" />
-          </div>
+          <div><ExerciseSearch onPick={onAddAdhoc} placeholder="Search library / curated, or create custom…" /></div>
           <div className={styles.navSectionHead}>Programs</div>
           {orderedPrograms.map((prog) => (
             <NavRow
@@ -128,94 +178,44 @@ export function AddSheet({
               label={prog.splitType}
               badge={prog.id === activeProgramId ? "active" : undefined}
               count={`${prog.days.length} ${prog.days.length === 1 ? "day" : "days"}`}
-              onOpen={() => push({ s: "program", prog })}
+              onOpen={() => push({ screen: "program", programId: prog.id })}
             />
           ))}
           <div className={styles.navSectionHead}>Blocks</div>
-          <NavRow
-            label="Blocks"
-            badge="reusable"
-            count={`${blocks.length} ${blocks.length === 1 ? "block" : "blocks"}`}
-            onOpen={() => push({ s: "blocks" })}
-          />
+          {blocks.map((b) => (
+            <NavRow key={`b${b.id}`} label={b.name} count={`${b.exercises.length} ex`} onOpen={() => push({ screen: "day", dayId: b.id })} />
+          ))}
         </>
       );
     }
 
-    if (view.s === "program") {
-      const prog = view.prog;
+    if (current.screen === "program") {
+      const prog = programs.find((p) => p.id === current.programId);
+      if (!prog) return <SourcesFallback />;
       return (
         <>
           <button type="button" className={styles.navBack} onClick={back}>
             ‹ {prog.splitType}{prog.id === activeProgramId && <span className={styles.navBadge}>active</span>}
           </button>
-          {prog.days.map((d) => {
-            const label = prettyDayName(d.name);
-            return (
-              <NavRow
-                key={`d${d.id}`}
-                label={label}
-                count={`${d.exercises.length} ex`}
-                onOpen={() => push({ s: "day", source: label, label, items: d.exercises })}
-                quickAdd={() => onAddMany(d.exercises, label)}
-              />
-            );
-          })}
-        </>
-      );
-    }
-
-    if (view.s === "blocks") {
-      return (
-        <>
-          <button type="button" className={styles.navBack} onClick={back}>
-            ‹ Blocks<span className={styles.navBadge}>reusable</span>
-          </button>
-          {blocks.map((b) => (
-            <NavRow
-              key={`b${b.id}`}
-              label={b.name}
-              count={`${b.exercises.length} ex`}
-              onOpen={() => push({ s: "day", source: b.name, label: b.name, items: b.exercises })}
-              quickAdd={() => onAddMany(b.exercises, b.name)}
-            />
+          {prog.days.map((d) => (
+            <NavRow key={`d${d.id}`} label={prettyDayName(d.name)} count={`${d.exercises.length} ex`} onOpen={() => push({ screen: "day", dayId: d.id })} />
           ))}
         </>
       );
     }
 
-    // view.s === "day" — exercises in a day/block
+    // current.screen === "day"
+    const day = resolveDay(current.dayId);
+    if (!day) return <SourcesFallback />;
+    return <ExerciseList items={day.items} label={day.label} source={day.source} />;
+  }
+
+  // When a remembered container no longer exists, drop back to sources.
+  function SourcesFallback() {
     return (
-      <>
-        <button type="button" className={styles.navBack} onClick={back}>‹ {view.label}</button>
-        {view.items.length > 0 && (
-          <button type="button" className={styles.addAllHero} onClick={() => onAddMany(view.items, view.source)}>
-            Add all · {view.items.length} exercise{view.items.length === 1 ? "" : "s"}
-          </button>
-        )}
-        {view.items.map((ex) => {
-          const added = addedIds.has(ex.exerciseId);
-          const ref = targetRef(ex);
-          return (
-            <div key={ex.id} className={`${styles.addExRow} ${added ? styles.addExRowDone : ""}`}>
-              <span className={styles.addExMain}>
-                <span className={styles.addExName}>{ex.exerciseName}</span>
-                {ref && <span className={styles.addExTarget}>{ref}</span>}
-              </span>
-              <button
-                type="button"
-                className={added ? styles.addExBtnDone : styles.addExBtn}
-                onClick={() => (added ? onRemove(ex.exerciseId) : onAdd(ex, view.source))}
-                aria-label={added ? `Remove ${ex.exerciseName}` : `Add ${ex.exerciseName}`}
-              >
-                {added ? "✓" : "+"}
-              </button>
-            </div>
-          );
-        })}
-      </>
+      <button type="button" className={styles.navBack} onClick={() => onNav([{ screen: "sources" }])}>‹ Back to sources</button>
     );
-  };
+  }
 
   return (
     <Sheet title="Add exercise" subtitle="Browse a program or block; tap ＋ to add. Add several, then Done." onClose={onClose} footer={footer}>
