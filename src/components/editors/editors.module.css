@@ -516,26 +516,36 @@
   font-weight: 500;
 }
 
-/* Sets + Reps on one row. */
-.compactRow {
+/* Sets + Reps as one balanced row: a label/toggle head, then evenly-sized boxes.
+   The head cells flex to match the boxes below — Sets(1)+Reps(1) in Single,
+   Sets(1)+Reps(2) in Range — so Sets is never wider than a rep box, and the two
+   states stay aligned. Boxes are flex:1 siblings (via .fieldHalf), always even. */
+.srHead {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
+  margin-bottom: 4px;
 }
-.setsCol {
-  width: 84px;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+.srHeadSets {
+  flex: 1;
+  min-width: 0;
 }
-.repsCol {
+.srHeadReps {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
+.srHeadRepsWide {
+  flex: 2;
+}
+.srBoxes {
+  display: flex;
+  gap: 8px;
+}
+/* Segmented toggle head, reused by the cardio Duration block. */
 .repsHead {
   display: flex;
   align-items: center;

@@ -301,33 +301,27 @@ export function TargetSheet({
         </form>
       ) : (
         <form onSubmit={saveStrength}>
-          <div className={styles.compactRow}>
-            <div className={styles.setsCol}>
-              <span className={styles.fieldLabel}>Sets <span className={styles.anchorReq}>*</span></span>
-              <input
-                className={`${styles.fieldInput} ${anchorError ? styles.inputErr : ""}`}
-                inputMode="numeric"
-                value={targetSets}
-                onChange={(e) => setTargetSets(digits(e.target.value))}
-                placeholder="3"
-              />
+          {/* Sets + Reps share ONE row of evenly-sized boxes: Sets is always one
+              box (= a rep box); Reps is one box (Single) or two (Range). The
+              label/toggle head aligns above the boxes; the toggle sits beside the
+              Reps label so it never widens Sets or breaks the row. */}
+          <div className={styles.srHead}>
+            <span className={`${styles.fieldLabel} ${styles.srHeadSets}`}>Sets <span className={styles.anchorReq}>*</span></span>
+            <div className={`${styles.srHeadReps} ${repMode === "range" ? styles.srHeadRepsWide : ""}`}>
+              <span className={styles.fieldLabel}>Reps</span>
+              <SegToggle mode={repMode} onSet={setRepMode} />
             </div>
-            <div className={styles.repsCol}>
-              <div className={styles.repsHead}>
-                <span className={styles.fieldLabel}>Reps</span>
-                <SegToggle mode={repMode} onSet={setRepMode} />
-              </div>
-              {repMode === "single" ? (
-                <div className={styles.fieldRow}>
-                  <NumField value={repSingle} onChange={setRepSingle} placeholder="10" />
-                </div>
-              ) : (
-                <div className={styles.fieldRow}>
-                  <NumField value={repA} onChange={setRepA} placeholder="8" />
-                  <NumField value={repB} onChange={setRepB} placeholder="12" />
-                </div>
-              )}
-            </div>
+          </div>
+          <div className={styles.srBoxes}>
+            <NumField value={targetSets} onChange={setTargetSets} placeholder="3" error={anchorError} />
+            {repMode === "single" ? (
+              <NumField value={repSingle} onChange={setRepSingle} placeholder="10" />
+            ) : (
+              <>
+                <NumField value={repA} onChange={setRepA} placeholder="8" />
+                <NumField value={repB} onChange={setRepB} placeholder="12" />
+              </>
+            )}
           </div>
           {EffortPills}
           {anchorError && <p className={styles.errText} style={{ marginTop: 8 }}>Add sets to save this target.</p>}
