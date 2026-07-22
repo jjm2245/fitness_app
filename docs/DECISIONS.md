@@ -2723,3 +2723,71 @@ non-active program doesn't switch active or write to any program/day/block.
 Verified in-app: `×2` after two taps + two separate session cards; Add-all → Undo
 reverses only the batch (kept the manual adds); reopen lands on `‹ Abs` not root;
 day rows have no `+`. `src/core/*` untouched.
+
+## PROPOSAL — per-exercise logging fields + add-exercise fix (2026-07-22, report-only)
+
+Investigation round; nothing built. Read-only prod; the one local repro write
+(tagging Air Bike) was reverted.
+
+**A. "＋ Add an exercise" on My-exercises goes nowhere — diagnosed.** The page's
+`onPick` only closes the sheet + reloads the manage list (exercises/page.tsx);
+the only writes live inside ExerciseSearch (POST custom; PATCH movementPattern on
+Tag & add). Repro: picked library "Air Bike" → Tag & add → PATCH 200 (row became
+`mp=conditioning, untagged=false, conditioning_only=true` — the structural link
+working) → sheet closed → row absent, because `/api/exercises/manage` excludes
+`source='library'` (manage/route.ts:28). Silent success, invisible result — the
+known manage-query limitation, exactly. Picking an already-tagged library row is
+worse: no write at all happens. Only create-custom works end-to-end (source=
+'custom' is included). **Fix shape (not built):** make the manage list include
+library rows the user has claimed — zero-schema first (include `source='library'
+AND (untagged=false OR referenced by program/session/logs)`), graduating to an
+explicit additive claimed-marker column only if that over-includes.
+
+**B/C. Per-exercise logging fields — the model (proposal, paused).**
+Prod facts (read-only): 878 exercises (834 library / 41 curated / 3 custom, 15
+cardio); `params` on 4 rows, key-sets {duration_min,speed}×2,
+{duration_min,incline,level}×1, {duration_min,incline,speed}×1. `set_logs.load`
+and `set_logs.reps` are NOT NULL; `cardio_logs` has NO weight/load column — so a
+mixed weight+duration entry is **not representable today in either log table**;
+the mixed case is a storage question before a rendering one.
+
+- **Storage:** additive `exercises.log_fields jsonb` (NULL = inherit defaults).
+  NOT inside `params` — params holds prescription VALUES keyed by field name; a
+  config key would collide. DDL: `ALTER TABLE exercises ADD COLUMN log_fields
+  jsonb;` (878 rows all NULL after; no backfill). PAUSED.
+- **Precedence:** override (`log_fields`) → name-default (`cardioFields(name)`)
+  → type-default (strength weight/reps/effort; cardio duration+distance).
+  `cardioFields()` becomes the default-provider only, read through one resolver
+  (e.g. `lib/logFields.ts`) that every current reader (CardioCard, TargetSheet,
+  editor chips, AddSheet targetRef) goes through.
+- **Session cards:** router is `conditioning_only` (log page → StrengthCard |
+  CardioCard). CardioCard is already field-driven (smallest change); StrengthCard
+  is a weight+reps state machine (offsets/lanes/drops) — keep it whole. New
+  router: config has reps → StrengthCard; else the metric card (CardioCard
+  extended with an optional weight cell). `conditioning_only` stays as the
+  default-provider input, retiring as the router when this builds.
+- **Targets:** render target inputs from the same resolver. Anchor rule
+  generalizes: **sets anchors when 'reps' is in the config; else duration; else
+  the first metric** (Farmer's Walk → duration anchors).
+- **Progression readers (all, cited):** core/progression.ts + core/stallBuster.ts
+  + core/machineTracking.ts via lib/coreAdapters.ts (reads set_logs ONLY) via
+  /api/progression + /api/exercises/[id]/last-session; StrengthCard
+  checkProgression. core/volume.ts is DORMANT (no production importers; Stats is
+  a locked placeholder) — the volume-math landmine is smaller than framed. Guard
+  = the existing invariant (core reads set_logs only, schema.ts §cardio comment):
+  mixed exercises log to cardio_logs (+ additive `load numeric` column, PAUSED),
+  so they produce no progression signal by construction — graceful, no crash; the
+  progression menu only exists on StrengthCard.
+- **"Both" type NOT needed** — the field list subsumes it (owner's assumption
+  holds). Farmer's Walk = strength-typed exercise whose config swaps reps for
+  duration/distance: editor "Fields" row → metric card + weight cell →
+  cardio_logs row with load. Which log table an entry lands in derives from the
+  config (reps present → set_logs; else cardio_logs).
+- **Phasing:** 0) the A-fix + an "Edit exercise →" link from the target sheet
+  (trivial nav: TargetSheet has `exerciseId`; push `/exercises?edit=<id>` + a
+  query-param open on the exercises page — WRINKLE: the link silently no-opens
+  for library-sourced exercises until the A-fix lands, and there's no by-id
+  manage-shaped endpoint if we ever want to open the sheet in place). 1)
+  `log_fields` column + resolver + editor Fields row + target sheet/chips read it.
+  2) `cardio_logs.load` column + the metric-card weight cell + router change.
+  Both DDLs additive and PAUSED for sign-off.
