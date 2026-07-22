@@ -72,10 +72,11 @@ export function DayEditorView({
   const [organizing, setOrganizing] = useState(false);
   const [editingExId, setEditingExId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
-  // The exercise-list view. "custom" shows the stored order_index and is the only
-  // mode where drag is enabled; A–Z/Z–A/Recent are non-destructive display lenses
-  // that never write order_index (a hand-tuned order survives a detour through one).
-  const [viewMode, setViewMode] = useState<"custom" | "az" | "za" | "recent">("custom");
+  // The exercise-list view. Opens on A–Z (a display lens); "custom" shows the
+  // stored order_index and is the only mode where drag is enabled. The lenses are
+  // non-destructive — they never write order_index, and the view is editor-local:
+  // sessions always follow the stored order regardless of which lens is shown.
+  const [viewMode, setViewMode] = useState<"custom" | "az" | "za" | "recent">("az");
 
   // Keep the selection stable across refreshes; fall back to the first.
   const selected = days.find((d) => d.id === selectedId) ?? days[0] ?? null;
@@ -94,8 +95,8 @@ export function DayEditorView({
     .map((id) => selected?.exercises.find((e) => e.id === id))
     .filter((e): e is EditorExercise => e != null);
 
-  // Each day opens in its saved custom order; switching days leaves any lens.
-  useEffect(() => { setViewMode("custom"); }, [selected?.id]);
+  // Each day opens on the A–Z lens; switching days resets the view.
+  useEffect(() => { setViewMode("az"); }, [selected?.id]);
 
   // A lens sorts the DISPLAY only — never the stored order_index.
   function sortedView(kind: "az" | "za" | "recent"): EditorExercise[] {
@@ -187,26 +188,32 @@ export function DayEditorView({
           ) : (
             <>
               {displayExercises.length > 1 && (
-                <>
-                  <div className={styles.sortRow}>
-                    <span className={styles.sortLabel}>View</span>
-                    {(["custom", "az", "za", "recent"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={viewMode === m ? styles.sortChipActive : styles.sortChip}
-                        onClick={() => setViewMode(m)}
-                      >
-                        {m === "custom" ? "Custom" : m === "az" ? "A–Z" : m === "za" ? "Z–A" : "Recent"}
-                      </button>
-                    ))}
-                  </div>
+                <div className={styles.sortRow}>
+                  <span className={styles.sortLabel}>View</span>
+                  {(["az", "za", "recent", "custom"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={viewMode === m ? styles.sortChipActive : styles.sortChip}
+                      onClick={() => setViewMode(m)}
+                    >
+                      {m === "az" ? "A–Z" : m === "za" ? "Z–A" : m === "recent" ? "Recent" : "Custom"}
+                    </button>
+                  ))}
                   {viewMode !== "custom" && (
-                    <button type="button" className={styles.saveCustomBtn} onClick={saveAsCustom}>
-                      Save as custom order
+                    <button
+                      type="button"
+                      className={styles.saveCustomBtn}
+                      onClick={saveAsCustom}
+                      aria-label="Save this order as the custom order"
+                      title="Save as custom order"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M8 2.5v6.4M5.2 6.3 8 9.1l2.8-2.8M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </button>
                   )}
-                </>
+                </div>
               )}
               {viewMode === "custom" ? (
                 <SortableList ids={displayExercises.map((e) => String(e.id))} onReorder={(ids) => commitExOrder(ids.map(Number))}>

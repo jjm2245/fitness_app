@@ -2615,3 +2615,16 @@ Organize-order flow. Verified on a throwaway copy of a real day: lens leaves
 `order_index` non-alphabetical/unchanged; Custom returns the hand order; Save-as-
 custom writes contiguous `0..n-1` (no gap/dupe); a drag-commit persists + survives
 reload. `src/core/*` untouched.
+
+## Section subtitles + sort-chip polish (2026-07-22, layout only)
+
+Section subtitles (`.hintLine`, shared by blocks/equipment/exercises) now wrap
+instead of truncating with an ellipsis. Exercise-list VIEW chips reordered to
+**A–Z, Z–A, Recent, Custom** and the **default view is now A–Z** (was Custom) —
+display-only: it never writes `order_index`, so sessions still follow the stored
+Custom order (verified: the Abs block's stored `order_index` stayed non-alphabetical
+despite the A–Z default view; `getProgram` orders by `order_index`, and `viewMode`
+is DayEditorView-local state). "Save as custom order" condensed from a full row to
+a compact right-aligned icon on the VIEW row (lens-only; same `saveAsCustom`
+handler). Drag still enabled only in Custom. Blocks parity holds. No schema/logic/
+copy change; `src/core/*` untouched.

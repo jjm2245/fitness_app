@@ -42,9 +42,7 @@
   margin-top: 4px;
   font-size: 0.82rem;
   color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
 /* ---------- day / block pill tabs ---------- */
@@ -207,6 +205,7 @@
 .sortRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px 12px 2px;
 }
@@ -242,17 +241,27 @@
   flex-shrink: 0;
   width: 22px;
 }
-/* "Save as custom order" — commits the visible lens order into order_index. */
+/* "Save as custom order" — a compact right-aligned icon on the VIEW row (lens
+   only) that commits the visible order into order_index. */
 .saveCustomBtn {
-  align-self: flex-start;
-  margin: 4px 12px 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   min-height: 32px;
-  padding: 0 12px;
-  font-size: 0.78rem;
+  padding: 0;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent);
+}
+.saveCustomBtn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 /* Rows inside the day Organize modal. */
 .organizeRow {
