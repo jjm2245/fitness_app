@@ -172,6 +172,20 @@
   border-radius: 50%;
   background: var(--accent);
 }
+/* Compact create-custom action on the Exercises page — smaller and less
+   integrated than the old full-width add row. */
+.newCustomBtn {
+  align-self: flex-start;
+  min-height: 34px;
+  margin: 8px 0 2px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
 /* A read-only value shown where an input would be (library name, current tag). */
 .readonlyName {
   flex: 1;

@@ -2846,3 +2846,26 @@ FORWARD-ONLY — the past is never rewritten.** Old sessions keep the fields the
 were logged with; a warning fires before saving a field change on an exercise
 with logged history; progression gets an indicator that the fields changed, not
 a reinterpretation of old data. (Phase 2 implements; recorded now.)
+
+## Exercises polish — create-custom, pagination, Logged chip, cancels (2026-07-22)
+
+The Exercises page's "＋ Add an exercise" sheet (library search) is GONE — with
+the full catalog visible, picking a library row was a no-op by definition on
+this page. Replaced by a compact "＋ New custom exercise" pill (visible on every
+tab) opening a direct create flow: name → create → movement-pattern tag/skip
+(same POST /custom + PATCH movementPattern path, so the tag↔flag link still
+fires); on finish the list reloads and the new custom's edit sheet opens. A
+thin/empty search (≤5 matches) offers "Not finding what you need? Create your
+own exercise" with the search text pre-filled as the draft name. The dead
+`ExerciseSearch` re-export was removed from ExerciseDetailSheet.
+
+"See 50 more" pagination past the 150-row initial cap (repeatable to the end;
+"Showing N of M." updates; search filters the full set and resets the window).
+Perf: plain appended rows, verified at 200 with no jank; worst case ~880 simple
+rows — acceptable; windowing is the mitigation if it ever matters. A "Logged"
+filter chip (right-aligned on the tab row, off by default, page-local state)
+composes with every tab — e.g. Library+Logged = library rows with ≥1 logged
+entry. Cancelable edits in the edit sheet: Rename… (library) gains Cancel back
+to read-only; name drafts show Cancel once dirty; Tag Change… gains Cancel that
+resets the picker — verified all three cancel with zero writes (Air Bike
+byte-identical after cancels). No schema; `src/core/*` untouched.

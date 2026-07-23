@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
-import { ExerciseSearch } from "@/components/ExerciseSearch";
 import { MOVEMENT_PATTERNS, suggestMovementPattern } from "@/lib/movementPatterns";
 import styles from "./editors.module.css";
 import { api } from "./types";
@@ -150,6 +149,19 @@ export function ExerciseDetailSheet({
             >
               Save
             </button>
+            {/* One-tap way out of the edit state: discards the draft, saves
+                nothing. Always shown mid-rename (library); shown once the draft
+                differs elsewhere — never stranded in an edit state. */}
+            {(renaming || nameDirty) && (
+              <button
+                type="button"
+                className={styles.quietBtn}
+                disabled={busy}
+                onClick={() => { setName(ex.name); setRenaming(false); }}
+              >
+                Cancel
+              </button>
+            )}
           </div>
           {ex.kind === "named_on_ref" && ex.canonicalName && (
             <>
@@ -245,6 +257,14 @@ export function ExerciseDetailSheet({
               onClick={() => { patch({ movementPattern: pattern }); setEditingTag(false); }}
             >
               Save
+            </button>
+            <button
+              type="button"
+              className={styles.quietBtn}
+              disabled={busy}
+              onClick={() => { setEditingTag(false); setPattern(ex.movementPattern ?? suggestMovementPattern(ex.name) ?? ""); }}
+            >
+              Cancel
             </button>
           </div>
         )}
@@ -413,6 +433,3 @@ function CollapsePicker({ ex, onCollapse, busy }: { ex: ManagedExercise; onColla
     </div>
   );
 }
-
-// Re-exported so the list page can render tag-on-add through the same search.
-export { ExerciseSearch };
