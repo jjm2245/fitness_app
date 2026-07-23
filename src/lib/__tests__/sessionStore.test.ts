@@ -637,7 +637,7 @@ describe("cardio (separate store, synced/pending like sets)", () => {
     mockOffline();
     await logCardio({
       sessionId: id, instanceId: inst, date, exerciseId: "treadmill_incline_walk", exerciseName: "Treadmill",
-      durationMin: 30, incline: 12, speed: 3, distance: null, level: null, notes: null,
+      durationMin: 30, incline: 12, speed: 3, distance: null, level: null, load: null, effort: null, notes: null,
     });
     let entries = await getSessionCardio(id);
     expect(entries).toHaveLength(1);
@@ -658,7 +658,7 @@ describe("cardio (separate store, synced/pending like sets)", () => {
     mockOnline();
     const row = await logCardio({
       sessionId: id, instanceId: inst, date, exerciseId: "stair_machine", exerciseName: "Stairs",
-      durationMin: 10, incline: null, speed: null, distance: null, level: 5, notes: null,
+      durationMin: 10, incline: null, speed: null, distance: null, level: 5, load: null, effort: null, notes: null,
     });
     await sync();
     mockOffline();

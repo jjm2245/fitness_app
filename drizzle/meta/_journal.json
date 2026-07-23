@@ -176,6 +176,13 @@
       "when": 1784777748653,
       "tag": "0024_light_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784836821199,
+      "tag": "0025_ordinary_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

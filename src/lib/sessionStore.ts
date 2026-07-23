@@ -137,6 +137,10 @@ export interface SessionCardio {
   speed: number | null;
   distance: number | null;
   level: number | null;
+  // Mixed logging (Phase 2): a metric entry can carry a load + an effort tag
+  // (same enum values as set_logs, so target-vs-actual stays comparable).
+  load: number | null;
+  effort: string | null;
   notes: string | null;
   serverId: number | null;
   syncState: CardioSyncState;
@@ -558,6 +562,8 @@ export interface ServerSession {
     speed: string | null;
     distance: string | null;
     level: string | null;
+    load?: string | null;
+    effort?: string | null;
     notes: string | null;
   }>;
 }
@@ -669,6 +675,8 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       speed: c.speed != null ? Number(c.speed) : null,
       distance: c.distance != null ? Number(c.distance) : null,
       level: c.level != null ? Number(c.level) : null,
+      load: c.load != null ? Number(c.load) : null,
+      effort: c.effort ?? null,
       notes: c.notes,
       serverId: c.id,
       syncState: "synced",
@@ -974,6 +982,8 @@ export interface LogCardioInput {
   speed: number | null;
   distance: number | null;
   level: number | null;
+  load: number | null;
+  effort: string | null;
   notes: string | null;
 }
 
@@ -1229,6 +1239,8 @@ async function runSync(): Promise<SyncResult> {
             speed: row.speed,
             distance: row.distance,
             level: row.level,
+            load: row.load,
+            effort: row.effort,
             notes: row.notes,
           }),
         });

@@ -13,8 +13,13 @@ interface CardioPayload {
   speed?: number | null;
   distance?: number | null;
   level?: number | null;
+  // Mixed logging (Phase 2): optional load + effort tag (set_logs' enum values).
+  load?: number | null;
+  effort?: string | null;
   notes?: string | null;
 }
+
+const EFFORT_VALUES = new Set(["more_in_me", "near_failure", "to_failure"]);
 
 const num = (v: number | null | undefined) => (v == null ? null : v.toString());
 
@@ -55,6 +60,8 @@ export async function POST(request: NextRequest) {
         speed: num(body.speed),
         distance: num(body.distance),
         level: num(body.level),
+        load: num(body.load),
+        effort: body.effort && EFFORT_VALUES.has(body.effort) ? (body.effort as "more_in_me" | "near_failure" | "to_failure") : null,
         notes: body.notes ?? null,
       })
       .returning();

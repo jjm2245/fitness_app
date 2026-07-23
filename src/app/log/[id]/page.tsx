@@ -11,6 +11,7 @@ import { FinishSheet } from "@/components/session/FinishSheet";
 import { SessionHeader } from "@/components/session/SessionHeader";
 import { AddSheet, type AddLoc } from "@/components/session/AddSheet";
 import sessionStyles from "@/components/session/session.module.css";
+import { routesToStrength } from "@/lib/logFields";
 import type {
   BlockDetail,
   CardControls,
@@ -254,6 +255,7 @@ export default function LogSessionPage() {
         provenance: r.source,
         untagged: r.untagged,
         unilateral: r.unilateral ?? false,
+        logFields: r.logFields ?? null,
       },
       "Ad-hoc"
     );
@@ -330,7 +332,10 @@ export default function LogSessionPage() {
               onMoveDown: () => move(ex.instanceId, "down"),
               onRemove: () => remove(ex.instanceId),
             };
-            return ex.conditioningOnly ? (
+            // THE router (Phase 2): the resolved CONFIG decides — reps →
+            // StrengthCard + set_logs; else the metric card + cardio_logs.
+            // conditioning_only only seeds the default field set now.
+            return !routesToStrength({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
               <CardioCard
                 key={ex.instanceId}
                 ex={ex}

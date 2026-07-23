@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { exercises, cardioLogs, workoutLogs } from "@/db/schema";
+import { exercises, cardioLogs, workoutLogs, setLogs } from "@/db/schema";
+import { routesToStrength } from "@/lib/logFields";
 import { loadSetLogInputsForExercise } from "@/lib/coreAdapters";
 import { toSessionSummaries } from "@/core/machineTracking";
 import { sessionsFromOldestToNewest } from "@/core/progression";
@@ -22,7 +23,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const [exercise] = await db.select().from(exercises).where(eq(exercises.id, exerciseId));
 
-  if (exercise?.conditioningOnly) {
+  // Phase 2: the CONFIG routes (reps → strength; else metric), same rule as
+  // the session card router — not conditioning_only.
+  const metricRouted =
+    exercise != null &&
+    !routesToStrength({ name: exercise.name, conditioningOnly: exercise.conditioningOnly, logFields: exercise.logFields });
+
+  if (metricRouted) {
     const [last] = await db
       .select({
         date: workoutLogs.date,
@@ -31,13 +38,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         speed: cardioLogs.speed,
         distance: cardioLogs.distance,
         level: cardioLogs.level,
+        load: cardioLogs.load,
+        effort: cardioLogs.effort,
       })
       .from(cardioLogs)
       .innerJoin(workoutLogs, eq(cardioLogs.workoutLogId, workoutLogs.id))
       .where(eq(cardioLogs.exerciseId, exerciseId))
       .orderBy(desc(workoutLogs.date))
       .limit(1);
-    return NextResponse.json({ cardio: last ?? null });
+    // Mixed-history honesty: a converted exercise may carry strength history
+    // in set_logs. Surface a flag so the card can say "earlier strength
+    // history exists" instead of a bare "no prior data". Past rows untouched.
+    const [strengthRow] = await db
+      .select({ id: setLogs.id })
+      .from(setLogs)
+      .where(eq(setLogs.exerciseId, exerciseId))
+      .limit(1);
+    return NextResponse.json({ cardio: last ?? null, hasStrengthHistory: strengthRow != null });
   }
 
   const allSets = await loadSetLogInputsForExercise(exerciseId);

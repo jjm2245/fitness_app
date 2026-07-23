@@ -6,7 +6,7 @@ import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
 import { CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
-import { resolveMetricFields } from "@/lib/logFields";
+import { resolveLogFields, resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
@@ -65,7 +65,13 @@ export function TargetSheet({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const isCardio = ex.conditioningOnly;
+  // Phase 2: the CONFIG routes the sheet's branch (reps -> strength target on
+  // program_exercises; else the metric target on exercises.params) — the same
+  // rule as the session card router. conditioning_only no longer decides.
+  const fieldSource = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
+  const isCardio = !routesToStrength(fieldSource);
+  // Effort is a target field wherever the config includes it (metric branch).
+  const metricHasEffort = resolveLogFields(fieldSource).includes("effort");
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -80,10 +86,16 @@ export function TargetSheet({
   // Effort adopts the session's 3-level scale. `effort_target` is the
   // authoritative tag; `rir_target` is kept in sync as its projection on save
   // (progression reads the number). Init from the native tag.
-  const [effort, setEffort] = useState<EffortTag | null>(ex.effortTarget);
+  // Metric branch reads its effort target from params (a tag string); the
+  // strength branch keeps the native effort_target column.
+  const [effort, setEffort] = useState<EffortTag | null>(
+    isCardio
+      ? ((((ex.params ?? {}) as Record<string, unknown>).effort as EffortTag | undefined) ?? null)
+      : ex.effortTarget
+  );
 
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
-  const cardioFieldSet = resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields });
+  const cardioFieldSet = resolveMetricFields(fieldSource);
   const p = ex.params ?? {};
   const dur = p.duration_min;
   const durIsRange = Array.isArray(dur) && dur.length === 2;
@@ -97,11 +109,11 @@ export function TargetSheet({
   const [distance, setDistance] = useState(typeof p.distance === "number" ? String(p.distance) : "");
 
   type ExtraField = Exclude<CardioField, "duration">;
-  const extraFieldState: Record<ExtraField, { value: string; set: (v: string) => void; label: string; decimal?: boolean }> = {
+  const extraFieldState: Record<ExtraField, { value: string; set: (v: string) => void; label: React.ReactNode; decimal?: boolean }> = {
     speed: { value: speed, set: setSpeed, label: "Speed", decimal: true },
     incline: { value: incline, set: setIncline, label: "Incline" },
     level: { value: level, set: setLevel, label: "Level" },
-    distance: { value: distance, set: setDistance, label: "Distance", decimal: true },
+    distance: { value: distance, set: setDistance, label: <>Distance (mi) <span className={styles.anchorReq}>*</span></>, decimal: true },
   };
   const extraFields = cardioFieldSet.filter((f): f is ExtraField => f !== "duration");
 
@@ -109,11 +121,16 @@ export function TargetSheet({
   // A cardio target only counts as "set" when it has a Duration — incline/speed
   // alone is an invalid target (reads "Set a target").
   const durationComplete = durMode === "single" ? durSingle.trim() !== "" : durA.trim() !== "" && durB.trim() !== "";
-  const initialOpted = isCardio ? durationComplete : ex.targetSets != null;
+  // Generalized anchor (Phase 2): reps configured -> Sets anchors (strength
+  // branch, unchanged). Otherwise at least ONE of duration or distance
+  // satisfies it — either alone, or both as a compound target.
+  const distanceComplete = cardioFieldSet.includes("distance") && distance.trim() !== "";
+  const metricAnchor = durationComplete || distanceComplete;
+  const initialOpted = isCardio ? metricAnchor : ex.targetSets != null;
   const [opted, setOpted] = useState(initialOpted);
 
   const setsComplete = targetSets.trim() !== "";
-  const anchorValid = isCardio ? durationComplete : setsComplete;
+  const anchorValid = isCardio ? metricAnchor : setsComplete;
 
   function repRangeToStore(): string | null {
     if (repMode === "single") return repSingle.trim() === "" ? null : repSingle.trim();
@@ -163,6 +180,12 @@ export function TargetSheet({
       if (raw.trim() !== "") params[key] = Number(raw);
       else delete params[key];
     }
+    // Effort target for a metric exercise lives in params (a tag string, the
+    // same enum values as everywhere) — only when the config includes effort.
+    if (metricHasEffort) {
+      if (effort) params.effort = effort;
+      else delete params.effort;
+    }
     return params;
   }
 
@@ -195,6 +218,7 @@ export function TargetSheet({
       if (isCardio) {
         const params: Record<string, unknown> = { ...(ex.params ?? {}) };
         delete params.duration_min;
+        delete params.effort;
         for (const f of extraFields) delete params[CARDIO_FIELD_KEY[f]];
         await api(`/api/exercises/${encodeURIComponent(ex.exerciseId)}`, {
           method: "PATCH",
@@ -288,11 +312,12 @@ export function TargetSheet({
             <div className={styles.fieldRow} style={{ marginTop: 10 }}>
               {extraFields.map((f) => {
                 const c = extraFieldState[f];
-                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} />;
+                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} error={f === "distance" && anchorError} />;
               })}
             </div>
           )}
-          {anchorError && <p className={styles.errText} style={{ marginTop: 8 }}>Add a duration to save this target.</p>}
+          {metricHasEffort && EffortPills}
+          {anchorError && <p className={styles.errText} style={{ marginTop: 8 }}>Add a duration or distance to save this target.</p>}
           <p className={styles.fieldNote} style={{ marginTop: 8 }}>
             Lives on the exercise — applies to <strong>{ex.exerciseName}</strong> everywhere it&rsquo;s used.
           </p>

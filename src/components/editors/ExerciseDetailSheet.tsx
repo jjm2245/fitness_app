@@ -4,21 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
 import { MOVEMENT_PATTERNS, suggestMovementPattern } from "@/lib/movementPatterns";
-import { ALL_LOG_FIELDS, defaultLogFields, hasFieldOverride, resolveLogFields, type LogField } from "@/lib/logFields";
+import {
+  closestProfile,
+  defaultLogFields,
+  FIELD_UNITS,
+  hasFieldOverride,
+  LOG_FIELD_PROFILES,
+  matchProfile,
+  resolveLogFields,
+  type LogField,
+  type LogFieldProfile,
+} from "@/lib/logFields";
 import styles from "./editors.module.css";
 import { api } from "./types";
-
-// Chip labels for the eight-field vocabulary (Logs & targets editor).
-const FIELD_LABELS: Record<LogField, string> = {
-  weight: "Weight",
-  reps: "Reps",
-  effort: "Effort",
-  duration: "Duration",
-  distance: "Distance",
-  level: "Level",
-  speed: "Speed",
-  incline: "Incline",
-};
 
 export interface ManagedExercise {
   id: string;
@@ -78,39 +76,25 @@ export function ExerciseDetailSheet({
   const [section, setSection] = useState<null | "collapse" | "remove">(null);
   const [removeErr, setRemoveErr] = useState<string | null>(null);
 
-  // ── Logs & targets (Phase 1) ── the draft field set, initialized from the
-  // resolver (override → name-default → type-default) and re-synced whenever
-  // the saved config or the Type preset changes.
-  const [draftFields, setDraftFields] = useState<LogField[]>(() => resolveLogFields(ex));
+  // ── Logs & targets (Phase 2: the PROFILE picker) ── six named field sets,
+  // no Custom option. NULL (inherit) stays NULL; picking a non-default profile
+  // writes its named set; picking the default profile (or Reset) writes NULL so
+  // future default improvements keep flowing through.
+  const resolvedFields = resolveLogFields(ex);
+  const defaultFields = defaultLogFields(ex);
+  const defaultProfile = matchProfile(defaultFields); // always non-null (defaults ARE profiles)
+  const currentProfile = matchProfile(resolvedFields); // null = legacy/custom override
+  const isCustomConfig = currentProfile === null;
+  const nearest = isCustomConfig ? closestProfile(resolvedFields) : null;
+
   // A pending save held behind the forward-only history warning (logged
-  // exercises only). null = no confirm step open. The payload is what we'd
-  // PATCH: an array, or null for Reset-to-default.
+  // exercises only). "closed" = no confirm step open. The payload is what we'd
+  // PATCH: an array, or null for inherit/Reset.
   const [pendingFields, setPendingFields] = useState<LogField[] | null | "closed">("closed");
   useEffect(() => {
-    setDraftFields(resolveLogFields(ex));
     setPendingFields("closed");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ex.id, ex.conditioningOnly, JSON.stringify(ex.logFields ?? null)]);
-
-  const savedFields = resolveLogFields(ex);
-  const fieldsDirty = JSON.stringify(draftFields) !== JSON.stringify(savedFields);
-  const toggleField = (f: LogField) =>
-    setDraftFields((cur) => (cur.includes(f) ? cur.filter((x) => x !== f) : ALL_LOG_FIELDS.filter((x) => cur.includes(x) || x === f)));
-
-  // Effect boundary (no silent no-ops): this phase, StrengthCard is untouched
-  // and CardioCard renders only metric cells — so a config whose full effect
-  // can't materialize yet gets an explicit note. Strength-typed: reps removed
-  // or any metric field added; cardio-typed: any strength field added.
-  const boundaryNote = (() => {
-    const metric = ["duration", "distance", "level", "speed", "incline"] as LogField[];
-    const strengthGroup = ["weight", "reps", "effort"] as LogField[];
-    if (!ex.conditioningOnly) {
-      if (!draftFields.includes("reps") || draftFields.some((f) => metric.includes(f))) return true;
-    } else if (draftFields.some((f) => strengthGroup.includes(f))) {
-      return true;
-    }
-    return false;
-  })();
 
   // Save path: logged history → forward-only warning first; else save directly.
   function requestFieldSave(payload: LogField[] | null) {
@@ -122,6 +106,17 @@ export function ExerciseDetailSheet({
     setPendingFields("closed");
     void patch({ logFields: payload });
   }
+  function pickProfile(p: LogFieldProfile) {
+    if (currentProfile?.id === p.id) return; // already this profile — no write
+    // Picking the profile the default already IS = inherit (NULL), never a
+    // frozen copy of the default set.
+    const matchesDefault = p.id === defaultProfile?.id;
+    requestFieldSave(matchesDefault ? null : p.fields);
+  }
+
+  // The fields line under a profile: "weight lb · duration min · distance mi · effort".
+  const fieldsLine = (fields: LogField[]) =>
+    fields.map((f) => (FIELD_UNITS[f] ? `${f} ${FIELD_UNITS[f]}` : f)).join(" · ");
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -330,53 +325,53 @@ export function ExerciseDetailSheet({
         <span className={styles.fieldNote}>The pattern makes it substitutable; tagging Conditioning also marks it cardio.</span>
       </div>
 
-      {/* ── Logs & targets (Phase 1) — the per-exercise field config. Chips
-             pre-filled from the resolver; Reset writes NULL (inherit, so future
-             default improvements flow through). ── */}
+      {/* ── Logs & targets (Phase 2) — the PROFILE picker. Six named field
+             sets; the resolved default is highlighted "(default)"; a stored
+             override that matches none renders as the honest read-only Custom
+             state (exits: pick a profile or Reset). ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Logs &amp; targets</span>
-        <div className={styles.fieldChips}>
-          {ALL_LOG_FIELDS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              className={draftFields.includes(f) ? styles.fieldChipOn : styles.fieldChip}
-              onClick={() => toggleField(f)}
-              aria-pressed={draftFields.includes(f)}
-            >
-              {FIELD_LABELS[f]}
-            </button>
-          ))}
-        </div>
-        {draftFields.length === 0 && (
-          <span className={styles.errText}>At least one field is required.</span>
-        )}
-        {boundaryNote && (
-          <span className={styles.fieldNote}>Takes effect when mixed logging ships (next update).</span>
-        )}
-        {hasFieldOverride(ex) && (
+        {isCustomConfig && nearest && (
           <span className={styles.fieldNote}>
-            Edited — default for {ex.conditioningOnly ? "Cardio" : "Strength"} is{" "}
-            {defaultLogFields(ex).map((f) => FIELD_LABELS[f]).join(" · ")} ·{" "}
+            Custom config — closest: {nearest.profile.label} (±{nearest.diff} {nearest.diff === 1 ? "field" : "fields"}) ·{" "}
+            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => requestFieldSave(null)}>
+              Reset to default
+            </button>
+            <br />
+            Fields: {fieldsLine(resolvedFields)}
+          </span>
+        )}
+        <div className={styles.profileList}>
+          {LOG_FIELD_PROFILES.map((p) => {
+            const selected = currentProfile?.id === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={selected ? styles.profileRowActive : styles.profileRow}
+                onClick={() => pickProfile(p)}
+                aria-pressed={selected}
+                disabled={busy}
+              >
+                <span className={styles.profileMain}>
+                  <span className={styles.profileLabel}>
+                    {p.label}
+                    {defaultProfile?.id === p.id && <span className={styles.profileDefault}> (default)</span>}
+                  </span>
+                  {selected && <span className={styles.profileFields}>{fieldsLine(p.fields)}</span>}
+                </span>
+                <span className={selected ? styles.profileDotOn : styles.profileDot} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+        {hasFieldOverride(ex) && !isCustomConfig && (
+          <span className={styles.fieldNote}>
+            Edited — default is {defaultProfile?.label} ·{" "}
             <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => requestFieldSave(null)}>
               Reset to default
             </button>
           </span>
-        )}
-        {(fieldsDirty || pendingFields !== "closed") && (
-          <div className={styles.fieldRow} style={{ marginTop: 6 }}>
-            <button
-              type="button"
-              className={styles.quietBtn}
-              disabled={busy || draftFields.length === 0 || !fieldsDirty}
-              onClick={() => requestFieldSave(draftFields)}
-            >
-              Save fields
-            </button>
-            <button type="button" className={styles.quietBtn} disabled={busy} onClick={() => { setDraftFields(savedFields); setPendingFields("closed"); }}>
-              Cancel
-            </button>
-          </div>
         )}
         {pendingFields !== "closed" && (
           <div className={styles.warnBox} style={{ marginTop: 8 }}>

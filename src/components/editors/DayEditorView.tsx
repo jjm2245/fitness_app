@@ -10,7 +10,7 @@ import { AddExerciseSheet } from "./AddExerciseSheet";
 import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
-import { resolveMetricFields } from "@/lib/logFields";
+import { resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
@@ -24,24 +24,28 @@ import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 // Cardio never shows "1 set" — it shows the prescription (duration/incline/speed)
 // from exercises.params, or "Set a target".
 function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
-  if (ex.conditioningOnly) {
-    // Same field-set source the target sheet + session card read, so the chip
-    // shows exactly the fields this exercise prescribes (min+level for a stair
-    // machine, min+speed+incline for a treadmill). Duration is the anchor: with
-    // no duration the target is invalid (incline/speed alone) → "Set a target".
+  const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
+  if (!routesToStrength(src)) {
+    // Metric-routed (the same config router as the session card + target
+    // sheet). Anchor generalized: a duration OR a distance makes the target
+    // valid; neither → "Set a target". Effort target reads from params.effort.
     const p = ex.params ?? {};
     const dur = p.duration_min;
     const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
-    if (!hasDuration) return { text: "Set a target", muted: true };
+    const hasDistance = typeof p.distance === "number";
+    if (!hasDuration && !hasDistance) return { text: "Set a target", muted: true };
     const parts: string[] = [];
-    for (const f of resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields })) {
+    for (const f of resolveMetricFields(src)) {
       if (f === "duration") {
         if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
         else if (typeof dur === "number") parts.push(`${dur} min`);
       } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
       else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);
       else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
-      else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} dist`);
+      else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} mi`);
+    }
+    if (typeof p.effort === "string" && p.effort in TARGET_EFFORT_LABEL) {
+      parts.push(TARGET_EFFORT_LABEL[p.effort as keyof typeof TARGET_EFFORT_LABEL]);
     }
     return { text: parts.join(" · "), muted: false };
   }

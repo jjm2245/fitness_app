@@ -50,6 +50,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       speed: cardioLogs.speed,
       distance: cardioLogs.distance,
       level: cardioLogs.level,
+      load: cardioLogs.load,
+      effort: cardioLogs.effort,
       notes: cardioLogs.notes,
     })
     .from(cardioLogs)

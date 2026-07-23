@@ -426,6 +426,12 @@ export const cardioLogs = pgTable("cardio_logs", {
   speed: numeric("speed"),
   distance: numeric("distance"),
   level: numeric("level"),
+  // Mixed logging (Phase 2): a metric-routed exercise can carry a load (e.g.
+  // a loaded carry's weight) and an effort tag. `effort` mirrors set_logs
+  // exactly (same pgEnum, same values) so target-vs-actual stays comparable.
+  // Core never reads cardio_logs — the set_logs-only invariant is untouched.
+  load: numeric("load"),
+  effort: effortEnum("effort"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

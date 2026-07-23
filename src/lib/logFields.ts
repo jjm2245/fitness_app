@@ -55,11 +55,97 @@ export function sanitizeOverride(raw: unknown): LogField[] | null {
   return ALL_LOG_FIELDS.filter((f) => set.has(f));
 }
 
+// ── Profiles (Phase 2) ── the six named field sets the editor's picker offers.
+// No Custom option: a stored override that matches none renders as the honest
+// read-only "Custom config" state until the user picks a profile or Resets.
+export interface LogFieldProfile {
+  id: string;
+  label: string;
+  fields: LogField[];
+}
+
+export const LOG_FIELD_PROFILES: LogFieldProfile[] = [
+  { id: "strength", label: "Strength", fields: ["weight", "reps", "effort"] },
+  { id: "cardio_machine", label: "Cardio machine", fields: ["duration", "distance", "level"] },
+  { id: "treadmill", label: "Treadmill-style", fields: ["duration", "distance", "speed", "incline"] },
+  { id: "distance_cardio", label: "Distance cardio", fields: ["duration", "distance"] },
+  { id: "loaded_carry", label: "Loaded carry", fields: ["weight", "duration", "distance", "effort"] },
+  { id: "timed_hold", label: "Timed hold", fields: ["weight", "duration"] },
+];
+
+// Display units for the picker's fields line and the session cells. Unitless
+// fields (reps/effort/level/speed/incline) render bare.
+export const FIELD_UNITS: Partial<Record<LogField, string>> = {
+  weight: "lb",
+  duration: "min",
+  distance: "mi",
+};
+
 /** The default field set for an exercise, ignoring any override — what a NULL
- * log_fields inherits (used for the "default for <type> is …" editor line). */
+ * log_fields inherits (used for the "(default)" highlight + Reset).
+ *
+ * Phase 2: the cardio name-guess maps onto the NEAREST profile so defaults and
+ * profiles speak the same sets (a resolver-layer mapping — no rows written):
+ *   treadmill/run guess (has speed/incline)      → Treadmill-style
+ *   stair/bike/row guess (has level)             → Cardio machine
+ *   everything else (duration+distance fallback) → Distance cardio
+ * Net visible diff vs the raw guess: duration+level machines gain a
+ * blank-optional distance cell; treadmills gain distance. */
 export function defaultLogFields(ex: Pick<LogFieldSource, "name" | "conditioningOnly">): LogField[] {
-  if (ex.conditioningOnly) return cardioFields(ex.name) as LogField[];
-  return ["weight", "reps", "effort"];
+  if (!ex.conditioningOnly) return profileById("strength").fields;
+  const guess = cardioFields(ex.name);
+  if (guess.includes("speed") || guess.includes("incline")) return profileById("treadmill").fields;
+  if (guess.includes("level")) return profileById("cardio_machine").fields;
+  return profileById("distance_cardio").fields;
+}
+
+function profileById(id: string): LogFieldProfile {
+  return LOG_FIELD_PROFILES.find((p) => p.id === id)!;
+}
+
+/** THE card/branch router (Phase 2): reps in the resolved set → the strength
+ * card + set_logs; otherwise the metric card + cardio_logs. `conditioning_only`
+ * no longer routes anything — it only seeds the default field set above. */
+export function routesToStrength(ex: LogFieldSource): boolean {
+  return resolveLogFields(ex).includes("reps");
+}
+
+/** The profile a field set IS (set equality), or null (custom config). */
+export function matchProfile(fields: LogField[]): LogFieldProfile | null {
+  const set = new Set(fields);
+  return (
+    LOG_FIELD_PROFILES.find((p) => p.fields.length === set.size && p.fields.every((f) => set.has(f))) ?? null
+  );
+}
+
+/** The nearest profile to a non-matching set (min symmetric difference; ties →
+ * first in the list) — feeds the honest "Custom config — closest: X (±N)". */
+export function closestProfile(fields: LogField[]): { profile: LogFieldProfile; diff: number } {
+  const set = new Set(fields);
+  let best = LOG_FIELD_PROFILES[0];
+  let bestDiff = Infinity;
+  for (const p of LOG_FIELD_PROFILES) {
+    const pset = new Set(p.fields);
+    let diff = 0;
+    for (const f of set) if (!pset.has(f)) diff++;
+    for (const f of pset) if (!set.has(f)) diff++;
+    if (diff < bestDiff) {
+      best = p;
+      bestDiff = diff;
+    }
+  }
+  return { profile: best, diff: bestDiff };
+}
+
+/** The metric card's cell order: weight first, then the metrics in render
+ * order, then effort last (reps never appears here — reps routes strength). */
+export function resolveCardFields(ex: LogFieldSource): LogField[] {
+  const fields = new Set(resolveLogFields(ex));
+  const out: LogField[] = [];
+  if (fields.has("weight")) out.push("weight");
+  for (const f of METRIC_ORDER) if (fields.has(f)) out.push(f);
+  if (fields.has("effort")) out.push("effort");
+  return out;
 }
 
 /** The resolved field set: override → name-default → type-default. */

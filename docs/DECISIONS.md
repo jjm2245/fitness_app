@@ -2918,3 +2918,69 @@ immediately; Reset → NULL → name-guess (Duration+Level) returned everywhere.
 Stairmaster `params` `[5,15]` byte-identical throughout — field-config saves
 never touch `params`. Resolver precedence locked by 7 unit tests. Blocks parity
 structural (same TargetSheet/DayEditorView engine).
+
+## Phase 2 — mixed logging (2026-07-23, migration 0025)
+
+**Migration 0025 (additive, prod PAUSED for sign-off):** `cardio_logs` gains
+`load numeric` + `effort "effort"` — effort mirrors set_logs exactly (the same
+pgEnum more_in_me/near_failure/to_failure, nullable like set_logs' effort), so
+target-vs-actual stays comparable. Local applied; `EXPECTED_MIGRATIONS` 25→26.
+
+**Profiles replace the chips.** Six named sets in `lib/logFields.ts`
+(LOG_FIELD_PROFILES): Strength w/r/e · Cardio machine dur/dist/level ·
+Treadmill-style dur/dist/speed/incline · Distance cardio dur/dist · Loaded
+carry w/dur/dist/e · Timed hold w/dur. **Default mapping (resolver layer, no
+rows written):** the cardio name-guess maps to the nearest profile — guess has
+speed/incline → Treadmill-style; has level → Cardio machine; else → Distance
+cardio. Consequence stated plainly: duration+level machines (Stairmaster) and
+treadmills gain ONE blank-optional distance cell (+ distance as an anchor
+alternative); everything else identical. Picking the default profile writes
+NULL (inherit), same as Reset — never a frozen copy. Non-matching stored
+overrides render honestly: "Custom config — closest: <profile> (±N fields)" +
+read-only field list, no highlight, never coerced (verified with an all-8
+override; prod's ONE override — Power Stairs [weight,effort,duration,level] —
+is exactly this case: closest Loaded carry ±2, routes metric before AND after,
+zero deploy diff, and its weight/effort cells finally materialize).
+
+**Router is the config.** `routesToStrength` (reps resolved → StrengthCard +
+set_logs; else metric card + cardio_logs) now drives: the session card router,
+TargetSheet's branch, DayEditorView's chip, AddSheet's reference, and the
+last-session route. `conditioning_only` demotes to default-provider (grep: its
+only remaining conditional use is the Type-preset toggle's own highlight).
+**Fixed point PROVEN on prod (read-only):** all 878 rows, 0 routing changes for
+NULL-config rows. Gap found & fixed in verification: the ad-hoc add path
+(search route → ExerciseSearchResult → addAdhoc) didn't carry log_fields — a
+configured exercise added ad-hoc routed by defaults. Known edge (pre-existing
+class): a swap keeps the occurrence's original config snapshot, same as
+conditioning_only always did; swaps never cross the routing boundary.
+
+**Metric card extended.** Cells from `resolveCardFields` (weight → metrics →
+effort), units lb/min/mi; effort = the same 3 enum values in session voice.
+Blank-optional (empty configured cells log null); the one guard stays
+duration-or-distance. Verified Farmer's Walk (Loaded carry): lb·min·mi·effort
+cells; weight+minutes-only log → ONE cardio_logs row {load:135, duration:5,
+distance:null, effort:null}; guard rejected weight-only; zero set_logs rows.
+
+**Target sheet generalized.** Metric fields from the resolver minus weight
+(weight is logged data, never a target); effort renders as the 3-pill selector
+where configured, stored in `params.effort` (tag string, additive jsonb key).
+Anchor: reps → Sets* (unchanged); else duration OR distance (either alone or
+both = compound "x mi under x min"); error copy "Add a duration or distance…".
+Verified: blocked with neither; saves with distance-only, duration-only, both.
+Units on inputs (min/mi) and cells (lb/min/mi). Chips + AddSheet refs show the
+same (e.g. "5 min · 0.5 mi · near failure").
+
+**Mixed history — chosen behavior (§6):** past logs never rewritten (set_logs
+md5 identical through convert→reset, 2b2834…); the forward-only warning fires
+on conversion AND on Reset; old sessions keep their mode (the occurrence
+snapshot routes them — old strength sets render in the StrengthCard exactly as
+logged); the NEW mode's card reference line reads "last — no prior data in this
+mode · earlier strength history exists" (via a hasStrengthHistory flag on the
+last-session route); the server session payload still returns the old sets.
+Honest edge flagged: an OLD-session StrengthCard for a converted exercise gets
+the metric-shaped last-session response, so its own "last" line reads "no prior
+data" — read-only reference, not data loss.
+
+**Boundary notes removed** — everything materializes now. Core untouched and
+still set_logs-only (metric-routed exercises produce no progression signal by
+construction). 168 tests; Stairmaster `[5,15]` byte-identical end to end.
