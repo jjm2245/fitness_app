@@ -2791,3 +2791,58 @@ the mixed case is a storage question before a rendering one.
   `log_fields` column + resolver + editor Fields row + target sheet/chips read it.
   2) `cardio_logs.load` column + the metric-card weight cell + router change.
   Both DDLs additive and PAUSED for sign-off.
+
+## Exercise section — Track A rework (2026-07-22, no schema)
+
+**Manage list broadened (the add-bug fix).** `/api/exercises/manage` dropped its
+`source != 'library'` filter and now returns EVERY exercise — supersedes the
+narrower "tagged-or-referenced" Phase-0 proxy: with the full catalog visible,
+reachability is total by construction. Tag & add and already-tagged picks no
+longer succeed invisibly; Power Stairs (graduated library row) is reachable and
+editable. Payload is the full catalog (~880 rows) — fine for a single user;
+consequence flagged: the Train page's "N tagged" count (it counts manage rows
+with `untagged=false`) now counts tagged exercises across the WHOLE catalog
+(previously non-library only) — more truthful, slightly larger number.
+
+**List (exercise-section v2).** Four tabs over the full catalog — All (default),
+Library (under library names; renamed rows get a small accent dot + a
+`renamed "<my name>"` subline hint), Renamed (my names), Custom. Tab membership:
+Library = rows with a `canonical_name`; Renamed = those where `name` differs;
+Custom = rows with no canonical reference (true customs + the two curated
+originals with no library twin — same classification the old kind logic used, so
+nothing recategorized). Prod reconciliation (read-only): All 878 = Library 873 +
+Custom 5; Renamed 2 ⊂ Library. Rows went quiet: the LIBRARY NAME / CUSTOM /
+YOUR NAME → LIBRARY pills are gone; the subline carries
+`kind-word · primary muscle · equipment · N logged` (kind-word only where the
+tab doesn't imply it); the dot is the only inline marker. New subheader set.
+**Scale approach:** one manage fetch, client-side search over name+canonical,
+A–Z within tab, rendering capped at 150 rows with a "Showing 150 of N — keep
+typing to narrow" note (search-first).
+
+**Edit sheet — one sheet, three variants by kind.** Library: name read-only +
+"Rename…" reveals the input (renaming is the deliberate act that creates the
+Renamed entry); no Collapse/Remove. Renamed: name editable, library name always
+visible + one-tap "Use library name"; no Collapse/Remove. Custom: name editable;
+Collapse-into-library and Remove live ONLY here. All variants: Description,
+Type toggle (unchanged behavior — still the session router until Phase 2; the
+structural tag↔flag link intact), Unilateral, a **Tag row** (current pattern or
+"untagged" + Change… → the pattern picker, through the same PATCH that auto-sets
+`conditioning_only` for `conditioning` — verified on a throwaway: Air Bike
+tagged Conditioning via the sheet → `conditioning_only=true`; reverted), and a
+**view-only Equipment row** ("Manage in Equipment →" navigates to /equipment;
+inline unit add/edit removed from this sheet). Kind line under the title
+("Library exercise" / "Renamed · library: <name> · N logged" / "Custom · yours")
+replaces the badge pair. The Fields row is NOT added — Phase 1 adds it under Tag
+once the `log_fields` DDL is approved.
+
+**Target-sheet edit link (C11).** TargetSheet gained a quiet "Edit exercise →"
+→ `/exercises?edit=<id>`; the exercises page opens that sheet from the query
+param (read once, then stripped so closing doesn't reopen). Works for
+library-sourced exercises because of the manage broadening — verified via
+`?edit=lib_Power_Stairs` and by clicking through from a program target sheet.
+
+**Owner decision recorded for the field-config phases: field edits are
+FORWARD-ONLY — the past is never rewritten.** Old sessions keep the fields they
+were logged with; a warning fires before saving a field change on an exercise
+with logged history; progression gets an indicator that the fields changed, not
+a reinterpretation of old data. (Phase 2 implements; recorded now.)

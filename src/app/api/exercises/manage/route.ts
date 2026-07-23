@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
-import { eq, ne, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { exercises, exerciseMuscles, setLogs, cardioLogs } from "@/db/schema";
 
-// GET /api/exercises/manage — the exercises worth managing: everything that
-// isn't a raw library row (curated + custom). Each is classified into one of
-// three kinds the user asked to tell apart (Part 3b):
+// GET /api/exercises/manage — EVERY exercise, library included (the Exercises
+// section shows the full catalog; the old `source != 'library'` filter made a
+// tagged library pick succeed invisibly — the add-flow bug). Each row is
+// classified into one of three kinds:
 //   library_name   — uses the library's own name (name == canonicalName)
-//   named_on_ref   — a precise display name on a library reference (name differs)
-//   custom         — a from-scratch custom with no library link
+//   named_on_ref   — renamed: a personal display name on a library reference
+//   custom         — no library link (from-scratch customs + a couple of
+//                    curated originals with no library twin)
 // Plus a logged-usage count so "collapse to library" can warn about history.
+// ~880 rows / ~150KB for a single user — fine as one payload; the page
+// search-filters client-side and caps rendering.
 export async function GET() {
   const rows = await db
     .select({
@@ -26,7 +30,6 @@ export async function GET() {
       description: exercises.description,
     })
     .from(exercises)
-    .where(ne(exercises.source, "library"))
     .orderBy(exercises.name);
 
   const setUse = await db

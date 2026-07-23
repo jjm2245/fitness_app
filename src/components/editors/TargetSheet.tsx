@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
@@ -62,6 +63,7 @@ export function TargetSheet({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const isCardio = ex.conditioningOnly;
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -332,6 +334,18 @@ export function TargetSheet({
           <button type="button" className={styles.linkRemove} style={{ marginTop: 10 }} onClick={removeTarget} disabled={busy}>Remove target</button>
         </form>
       )}
+
+      {/* Quiet nav to the full exercise editor — for everything the target
+          inputs don't cover (rename, type, tag, equipment). Works for
+          library-sourced exercises too (the manage list now includes them). */}
+      <button
+        type="button"
+        className={styles.linkRemove}
+        style={{ marginTop: 14 }}
+        onClick={() => { onClose(); router.push(`/exercises?edit=${encodeURIComponent(ex.exerciseId)}`); }}
+      >
+        Edit exercise →
+      </button>
 
       <div className={styles.sectionLabel}>Remove</div>
       {confirmRemove ? (

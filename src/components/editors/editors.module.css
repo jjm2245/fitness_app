@@ -163,6 +163,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The one inline marker in the exercise list: a personalized (renamed) library
+   row on the Library tab. Everything else is subline text — no pills. */
+.renamedDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* A read-only value shown where an input would be (library name, current tag). */
+.readonlyName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.95rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* The single quiet target chip (program rows) — reference, not a control. */
 .rowChip {
   font-size: 0.78rem;

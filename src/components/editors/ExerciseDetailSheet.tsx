@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
 import { ExerciseSearch } from "@/components/ExerciseSearch";
+import { MOVEMENT_PATTERNS, suggestMovementPattern } from "@/lib/movementPatterns";
 import styles from "./editors.module.css";
 import { api } from "./types";
 
@@ -36,16 +38,14 @@ interface LibResult {
   source: string;
 }
 
-export const KIND_LABEL: Record<ManagedExercise["kind"], string> = {
-  library_name: "library name",
-  named_on_ref: "your name → library",
-  custom: "custom",
-};
-
-// The exercise detail sheet — everything the six always-visible buttons did,
-// behind one tap: rename, description, unilateral, equipment associations,
-// collapse-into-library (destructive-adjacent merge, copy kept), history-safe
-// remove (409 + Keep). Sections disclose on demand within the sheet.
+// The exercise edit sheet — ONE sheet, three variants by kind (exercise-section
+// v2): Library (name read-only; Rename… is the deliberate act that creates a
+// Renamed entry), Renamed (my name editable, library name always visible +
+// one-tap revert), Custom (name editable; Collapse/Remove live ONLY here).
+// All variants share Description, the Type toggle (still the router this
+// round), Unilateral, a Tag row (pattern edits go through the same PATCH that
+// auto-sets conditioning_only for `conditioning` — never around it), and a
+// VIEW-ONLY Equipment row that navigates to the Equipment section.
 export function ExerciseDetailSheet({
   ex,
   onChanged,
@@ -55,10 +55,14 @@ export function ExerciseDetailSheet({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const [name, setName] = useState(ex.name);
+  const [renaming, setRenaming] = useState(false); // Library variant: Rename… reveals the input
   const [description, setDescription] = useState(ex.description ?? "");
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<null | "equipment" | "collapse" | "remove">(null);
+  const [editingTag, setEditingTag] = useState(false);
+  const [pattern, setPattern] = useState(ex.movementPattern ?? suggestMovementPattern(ex.name) ?? "");
+  const [section, setSection] = useState<null | "collapse" | "remove">(null);
   const [removeErr, setRemoveErr] = useState<string | null>(null);
 
   async function patch(body: Record<string, unknown>) {
@@ -105,48 +109,66 @@ export function ExerciseDetailSheet({
     }
   }
 
+  // Kind line under the title — replaces the old badge pair.
+  const kindLine =
+    ex.kind === "library_name"
+      ? "Library exercise"
+      : ex.kind === "named_on_ref"
+      ? `Renamed · library: ${ex.canonicalName} · ${ex.loggedCount} logged`
+      : "Custom · yours";
+
+  const patternLabel = ex.movementPattern
+    ? MOVEMENT_PATTERNS.find((p) => p.value === ex.movementPattern)?.label ?? ex.movementPattern
+    : null;
+
+  const nameDirty = name.trim() !== "" && name.trim() !== ex.name;
+
   return (
-    <Sheet
-      title={ex.name}
-      subtitle={
-        <>
-          <span className={styles.badge}>{KIND_LABEL[ex.kind]}</span>
-          {ex.untagged && <span className={styles.badgeWarn} style={{ marginLeft: 6 }}>untagged</span>}
-          {ex.loggedCount > 0 && <span className={styles.sheetRowMuted} style={{ marginLeft: 6 }}>· {ex.loggedCount} logged</span>}
-        </>
-      }
-      onClose={onClose}
-    >
-      {ex.kind === "named_on_ref" && ex.canonicalName && (
-        <p className={styles.fieldNote}>Library reference: {ex.canonicalName}</p>
+    <Sheet title={ex.name} subtitle={<span className={styles.sheetRowMuted}>{kindLine}</span>} onClose={onClose}>
+      {/* ── Name (variant-specific) ── */}
+      {ex.kind === "library_name" && !renaming ? (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Name</span>
+          <div className={styles.fieldRow}>
+            <span className={styles.readonlyName}>{ex.name}</span>
+            <button type="button" className={styles.quietBtn} onClick={() => setRenaming(true)}>
+              Rename…
+            </button>
+          </div>
+          <span className={styles.fieldNote}>Renaming keeps the library reference — your name shows everywhere, the library name stays underneath.</span>
+        </div>
+      ) : (
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Name</span>
+          <div className={styles.fieldRow}>
+            <input className={styles.fieldInput} value={name} onChange={(e) => setName(e.target.value)} />
+            <button
+              type="button"
+              className={styles.quietBtn}
+              disabled={busy || !nameDirty}
+              onClick={() => { patch({ name: name.trim() }); setRenaming(false); }}
+            >
+              Save
+            </button>
+          </div>
+          {ex.kind === "named_on_ref" && ex.canonicalName && (
+            <>
+              <span className={styles.fieldNote}>Library name: {ex.canonicalName}</span>
+              <button
+                type="button"
+                className={styles.quietBtn}
+                style={{ marginTop: 6, alignSelf: "flex-start" }}
+                disabled={busy}
+                onClick={() => { setName(ex.canonicalName!); patch({ name: ex.canonicalName }); }}
+              >
+                Use library name
+              </button>
+            </>
+          )}
+        </div>
       )}
 
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Name</span>
-        <div className={styles.fieldRow}>
-          <input className={styles.fieldInput} value={name} onChange={(e) => setName(e.target.value)} />
-          <button
-            type="button"
-            className={styles.quietBtn}
-            disabled={busy || name.trim() === "" || name === ex.name}
-            onClick={() => patch({ name: name.trim() })}
-          >
-            Save
-          </button>
-        </div>
-        {ex.kind === "named_on_ref" && ex.canonicalName && (
-          <button
-            type="button"
-            className={styles.quietBtn}
-            style={{ marginTop: 6, alignSelf: "flex-start" }}
-            disabled={busy}
-            onClick={() => { setName(ex.canonicalName!); patch({ name: ex.canonicalName }); }}
-          >
-            Use library name
-          </button>
-        )}
-      </div>
-
+      {/* ── Description (all variants) ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Description</span>
         <textarea
@@ -167,6 +189,7 @@ export function ExerciseDetailSheet({
         </button>
       </div>
 
+      {/* ── Type (unchanged behavior: still the session router this round) ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Type</span>
         <div className={styles.movePair}>
@@ -194,6 +217,41 @@ export function ExerciseDetailSheet({
         </span>
       </div>
 
+      {/* ── Tag (movement pattern) — edits go through the same PATCH path that
+             auto-sets conditioning_only for the conditioning pattern ── */}
+      <div className={styles.field} style={{ marginTop: 12 }}>
+        <span className={styles.fieldLabel}>Tag</span>
+        {!editingTag ? (
+          <div className={styles.fieldRow}>
+            <span className={styles.readonlyName}>
+              {patternLabel ?? <span className={styles.sheetRowMuted}>untagged</span>}
+            </span>
+            <button type="button" className={styles.quietBtn} onClick={() => setEditingTag(true)}>
+              Change…
+            </button>
+          </div>
+        ) : (
+          <div className={styles.fieldRow}>
+            <select className={styles.fieldInput} value={pattern} onChange={(e) => setPattern(e.target.value)}>
+              <option value="">Choose a pattern…</option>
+              {MOVEMENT_PATTERNS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={styles.quietBtn}
+              disabled={busy || !pattern || pattern === ex.movementPattern}
+              onClick={() => { patch({ movementPattern: pattern }); setEditingTag(false); }}
+            >
+              Save
+            </button>
+          </div>
+        )}
+        <span className={styles.fieldNote}>The pattern makes it substitutable; tagging Conditioning also marks it cardio.</span>
+      </div>
+
+      {/* ── Unilateral (unchanged) ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Unilateral</span>
         <div className={styles.movePair}>
@@ -216,29 +274,64 @@ export function ExerciseDetailSheet({
         </div>
       </div>
 
-      <div className={styles.sectionLabel}>More</div>
-      <div className={styles.sheetList}>
-        <button type="button" className={styles.sheetRow} onClick={() => setSection(section === "equipment" ? null : "equipment")}>
-          <span style={{ flex: 1 }}>Equipment units</span>
-          <span className={styles.sheetRowMuted}>{section === "equipment" ? "Close" : "Manage"}</span>
-        </button>
-        {section === "equipment" && <EquipmentPanel exerciseId={ex.id} />}
+      {/* ── Equipment (view-only; managing units lives in the Equipment section) ── */}
+      <EquipmentView exerciseId={ex.id} onManage={() => { onClose(); router.push("/equipment"); }} />
 
-        <button type="button" className={styles.sheetRow} onClick={() => setSection(section === "collapse" ? null : "collapse")}>
-          <span style={{ flex: 1 }}>Collapse into library…</span>
-          <span className={styles.sheetRowMuted}>{section === "collapse" ? "Close" : "Merge"}</span>
-        </button>
-        {section === "collapse" && <CollapsePicker ex={ex} onCollapse={collapse} busy={busy} />}
+      {/* ── Custom-only: Collapse + Remove ── */}
+      {ex.kind === "custom" && (
+        <>
+          <div className={styles.sectionLabel}>More</div>
+          <div className={styles.sheetList}>
+            <button type="button" className={styles.sheetRow} onClick={() => setSection(section === "collapse" ? null : "collapse")}>
+              <span style={{ flex: 1 }}>Collapse into library…</span>
+              <span className={styles.sheetRowMuted}>{section === "collapse" ? "Close" : "Merge"}</span>
+            </button>
+            {section === "collapse" && <CollapsePicker ex={ex} onCollapse={collapse} busy={busy} />}
 
-        <button type="button" className={styles.sheetRow} onClick={() => { setSection(section === "remove" ? null : "remove"); setRemoveErr(null); }}>
-          <span style={{ flex: 1, color: "var(--danger)" }}>Remove exercise</span>
-          <span className={styles.sheetRowMuted}>{section === "remove" ? "Close" : ""}</span>
-        </button>
-        {section === "remove" && (
-          <RemoveBox ex={ex} err={removeErr} busy={busy} onRemove={removeExercise} onCancel={() => setSection(null)} />
-        )}
-      </div>
+            <button type="button" className={styles.sheetRow} onClick={() => { setSection(section === "remove" ? null : "remove"); setRemoveErr(null); }}>
+              <span style={{ flex: 1, color: "var(--danger)" }}>Remove exercise</span>
+              <span className={styles.sheetRowMuted}>{section === "remove" ? "Close" : ""}</span>
+            </button>
+            {section === "remove" && (
+              <RemoveBox ex={ex} err={removeErr} busy={busy} onRemove={removeExercise} onCancel={() => setSection(null)} />
+            )}
+          </div>
+        </>
+      )}
     </Sheet>
+  );
+}
+
+// View-only unit list + a nav row to the Equipment section (unit add/edit was
+// removed from this sheet — that's the Equipment section's job).
+function EquipmentView({ exerciseId, onManage }: { exerciseId: string; onManage: () => void }) {
+  const [rows, setRows] = useState<ExerciseEquipment[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
+    if (res.ok) setRows(await res.json());
+    setLoaded(true);
+  }, [exerciseId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div className={styles.field} style={{ marginTop: 12 }}>
+      <span className={styles.fieldLabel}>Equipment</span>
+      {!loaded ? (
+        <span className={styles.sheetRowMuted}>Loading…</span>
+      ) : rows.length === 0 ? (
+        <span className={styles.fieldNote}>No units yet — they appear automatically the first time you log with one.</span>
+      ) : (
+        <span className={styles.fieldNote}>
+          {rows.map((m) => m.label + (m.loggedCount > 0 ? ` (${m.loggedCount} logged)` : "")).join(" · ")}
+        </span>
+      )}
+      <button type="button" className={styles.quietBtn} style={{ marginTop: 6, alignSelf: "flex-start" }} onClick={onManage}>
+        Manage in Equipment →
+      </button>
+    </div>
   );
 }
 
@@ -317,82 +410,6 @@ function CollapsePicker({ ex, onCollapse, busy }: { ex: ManagedExercise; onColla
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function EquipmentPanel({ exerciseId }: { exerciseId: string }) {
-  const [rows, setRows] = useState<ExerciseEquipment[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [label, setLabel] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`);
-    if (res.ok) setRows(await res.json());
-    setLoaded(true);
-  }, [exerciseId]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  async function add() {
-    const l = label.trim();
-    if (!l || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: crypto.randomUUID(), label: l, notes: note.trim() || undefined }),
-      });
-      if (res.ok) { setLabel(""); setNote(""); await load(); }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(equipmentId: string) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment/${encodeURIComponent(equipmentId)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) await load();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className={styles.warnBox} style={{ marginTop: 8 }}>
-      <p style={{ marginBottom: 8 }}>
-        Units for this exercise. Context-bound types (cable/selectorized/Smith/plate-loaded) track each unit as its own
-        lane when logging.
-      </p>
-      {!loaded ? (
-        <p className={styles.sheetRowMuted}>Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className={styles.sheetRowMuted}>No units yet — add one, or they appear automatically the first time you log with one.</p>
-      ) : (
-        <div className={styles.sheetList}>
-          {rows.map((m) => (
-            <div key={m.id} className={`${styles.sheetRow} ${styles.sheetRowStatic}`}>
-              <span style={{ flex: 1 }}>
-                {m.label}
-                {m.notes ? <span className={styles.sheetRowMuted}> · {m.notes}</span> : null}
-                {m.loggedCount > 0 ? <span className={styles.sheetRowMuted}> · {m.loggedCount} logged</span> : null}
-              </span>
-              <button type="button" className={styles.quietBtn} onClick={() => remove(m.id)} disabled={busy}>Remove</button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className={styles.fieldRow} style={{ marginTop: 8 }}>
-        <input className={styles.fieldInput} value={label} onChange={(e) => setLabel(e.target.value)} placeholder='unit label, e.g. "by the mirror"' />
-        <button type="button" className={styles.quietBtn} onClick={add} disabled={busy || !label.trim()}>Add</button>
-      </div>
     </div>
   );
 }
