@@ -172,20 +172,6 @@
   border-radius: 50%;
   background: var(--accent);
 }
-/* Compact create-custom action on the Exercises page — smaller and less
-   integrated than the old full-width add row. */
-.newCustomBtn {
-  align-self: flex-start;
-  min-height: 34px;
-  margin: 8px 0 2px;
-  padding: 4px 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--accent);
-}
 /* A read-only value shown where an input would be (library name, current tag). */
 .readonlyName {
   flex: 1;
@@ -357,34 +343,140 @@
   flex-shrink: 0;
 }
 
-/* ---------- search + filter chips ---------- */
+/* ---------- exercises header: search + create, view dropdown, Logged switch ---------- */
 
 .searchRow {
   margin-top: 12px;
-}
-.filterRow {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  align-items: stretch;
+}
+/* Compact outlined create button at the right end of the search row — same
+   height as the search field. */
+.searchAddBtn {
+  flex-shrink: 0;
+  width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  line-height: 1;
+  border-radius: var(--radius);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+/* One row: view dropdown (left) + Logged-only switch (right). */
+.viewRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 8px;
 }
-.filterChip {
-  min-height: 32px;
-  font-size: 0.8rem;
-  padding: 4px 12px;
+.viewDropWrap {
+  position: relative;
+}
+.viewDropBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.88rem;
+  font-weight: 500;
   border-radius: var(--radius-pill);
   background: var(--card);
   border: 1px solid var(--hairline);
+  color: var(--text);
+}
+/* Click-away scrim under the menu (page-local dropdown, no portal needed). */
+.viewMenuScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.viewMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 31;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.viewMenuItem,
+.viewMenuItemActive {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.viewMenuItemActive {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.viewMenuCount {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* "Logged only" label + small switch. */
+.switchRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.switchLabel {
+  font-size: 0.82rem;
   color: var(--text-2);
 }
-.filterChipActive {
-  min-height: 32px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 4px 12px;
+.switchTrack {
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
   border-radius: var(--radius-pill);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  position: relative;
+  transition: background 0.15s ease;
+}
+.switchTrackOn {
   background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.15s ease;
+}
+.switchTrackOn .switchKnob {
+  transform: translateX(14px);
+  background: var(--accent-fg);
 }
 
 /* ---------- sheet fields ---------- */

@@ -99,12 +99,25 @@ export default function ExercisesPage() {
     return parts.filter(Boolean).join(" · ");
   }
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "library", label: "Library" },
-    { id: "renamed", label: "Renamed" },
-    { id: "custom", label: "Custom" },
+  // View dropdown options with their (total) counts — counts deliberately
+  // ignore the search + Logged filter; they describe the catalog, not the view.
+  const [viewOpen, setViewOpen] = useState(false);
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      library: rows.filter((e) => e.canonicalName != null).length,
+      renamed: rows.filter((e) => e.canonicalName != null && e.name !== e.canonicalName).length,
+      custom: rows.filter((e) => e.canonicalName == null).length,
+    }),
+    [rows]
+  );
+  const VIEWS: { id: Tab; label: string; menuLabel: string }[] = [
+    { id: "all", label: "All exercises", menuLabel: "All" },
+    { id: "library", label: "Library", menuLabel: "Library" },
+    { id: "renamed", label: "Renamed", menuLabel: "Renamed" },
+    { id: "custom", label: "Custom", menuLabel: "Custom" },
   ];
+  const currentView = VIEWS.find((v) => v.id === tab)!;
 
   return (
     <main className={styles.page}>
@@ -123,29 +136,59 @@ export default function ExercisesPage() {
           placeholder="Search exercises…"
           type="search"
         />
-      </div>
-      <div className={styles.filterRow}>
-        {TABS.map((t) => (
-          <button key={t.id} type="button" className={tab === t.id ? styles.filterChipActive : styles.filterChip} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
         <button
           type="button"
-          className={loggedOnly ? styles.filterChipActive : styles.filterChip}
-          style={{ marginLeft: "auto" }}
-          onClick={() => setLoggedOnly((v) => !v)}
-          aria-pressed={loggedOnly}
+          className={styles.searchAddBtn}
+          onClick={() => setCreating({ draft: "" })}
+          aria-label="New custom exercise"
+          title="New custom exercise"
         >
-          Logged
+          ＋
         </button>
       </div>
 
-      {/* Compact create action — visible on every tab (creation is the point on
-          Custom, but a custom is creatable from anywhere). */}
-      <button type="button" className={styles.newCustomBtn} onClick={() => setCreating({ draft: "" })}>
-        ＋ New custom exercise
-      </button>
+      {/* View dropdown (left) + Logged-only switch (right) — replaces the tab row. */}
+      <div className={styles.viewRow}>
+        <div className={styles.viewDropWrap}>
+          <button type="button" className={styles.viewDropBtn} onClick={() => setViewOpen((v) => !v)} aria-expanded={viewOpen}>
+            {currentView.label}
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </button>
+          {viewOpen && (
+            <>
+              <div className={styles.viewMenuScrim} onClick={() => setViewOpen(false)} />
+              <div className={styles.viewMenu} role="menu">
+                {VIEWS.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    role="menuitem"
+                    className={tab === v.id ? styles.viewMenuItemActive : styles.viewMenuItem}
+                    onClick={() => { setTab(v.id); setViewOpen(false); }}
+                  >
+                    <span>{v.menuLabel}</span>
+                    <span className={styles.viewMenuCount}>{counts[v.id]}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          className={styles.switchRow}
+          role="switch"
+          aria-checked={loggedOnly}
+          onClick={() => setLoggedOnly((v) => !v)}
+        >
+          <span className={styles.switchLabel}>Logged only</span>
+          <span className={`${styles.switchTrack} ${loggedOnly ? styles.switchTrackOn : ""}`}>
+            <span className={styles.switchKnob} />
+          </span>
+        </button>
+      </div>
 
       <div className={styles.rowsCard}>
         {!loaded ? (
