@@ -151,6 +151,12 @@ export const exercises = pgTable("exercises", {
   // (grip, ROM, setup quirks). Never required; useful signal for the LLM later.
   description: text("description"),
   params: jsonb("params"), // e.g. cardio { duration_min, incline, speed }
+  // Per-exercise logging-field config (Phase 1): a JSON array of field names
+  // (weight/reps/effort/duration/distance/level/speed/incline). NULL = inherit
+  // the defaults (cardioFields name-guess / type default) — so default
+  // improvements keep flowing through untouched rows. Resolved ONLY via
+  // lib/logFields.ts; core never reads this (set_logs-only invariant).
+  logFields: jsonb("log_fields"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

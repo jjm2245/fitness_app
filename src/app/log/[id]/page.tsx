@@ -174,6 +174,7 @@ export default function LogSessionPage() {
       conditioningOnly: o.conditioningOnly,
       target: o.targetSets != null ? { targetSets: o.targetSets, repRange: o.repRange, rirTarget: o.rirTarget } : null,
       params: o.params,
+      logFields: o.logFields,
       source: o.source,
       provenance: o.provenance,
       untagged: o.untagged,
@@ -208,6 +209,7 @@ export default function LogSessionPage() {
     repRange: e.repRange,
     rirTarget: e.rirTarget,
     params: e.params,
+    logFields: e.logFields ?? null,
   });
 
   async function addFromPalette(e: ProgramExerciseDetail, source: string) {

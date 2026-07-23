@@ -4,8 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
 import { MOVEMENT_PATTERNS, suggestMovementPattern } from "@/lib/movementPatterns";
+import { ALL_LOG_FIELDS, defaultLogFields, hasFieldOverride, resolveLogFields, type LogField } from "@/lib/logFields";
 import styles from "./editors.module.css";
 import { api } from "./types";
+
+// Chip labels for the eight-field vocabulary (Logs & targets editor).
+const FIELD_LABELS: Record<LogField, string> = {
+  weight: "Weight",
+  reps: "Reps",
+  effort: "Effort",
+  duration: "Duration",
+  distance: "Distance",
+  level: "Level",
+  speed: "Speed",
+  incline: "Incline",
+};
 
 export interface ManagedExercise {
   id: string;
@@ -19,6 +32,7 @@ export interface ManagedExercise {
   day: string | null;
   loadType: string;
   description: string | null;
+  logFields?: unknown;
   kind: "library_name" | "named_on_ref" | "custom";
   loggedCount: number;
   primaryMuscle: string | null;
@@ -63,6 +77,51 @@ export function ExerciseDetailSheet({
   const [pattern, setPattern] = useState(ex.movementPattern ?? suggestMovementPattern(ex.name) ?? "");
   const [section, setSection] = useState<null | "collapse" | "remove">(null);
   const [removeErr, setRemoveErr] = useState<string | null>(null);
+
+  // ── Logs & targets (Phase 1) ── the draft field set, initialized from the
+  // resolver (override → name-default → type-default) and re-synced whenever
+  // the saved config or the Type preset changes.
+  const [draftFields, setDraftFields] = useState<LogField[]>(() => resolveLogFields(ex));
+  // A pending save held behind the forward-only history warning (logged
+  // exercises only). null = no confirm step open. The payload is what we'd
+  // PATCH: an array, or null for Reset-to-default.
+  const [pendingFields, setPendingFields] = useState<LogField[] | null | "closed">("closed");
+  useEffect(() => {
+    setDraftFields(resolveLogFields(ex));
+    setPendingFields("closed");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ex.id, ex.conditioningOnly, JSON.stringify(ex.logFields ?? null)]);
+
+  const savedFields = resolveLogFields(ex);
+  const fieldsDirty = JSON.stringify(draftFields) !== JSON.stringify(savedFields);
+  const toggleField = (f: LogField) =>
+    setDraftFields((cur) => (cur.includes(f) ? cur.filter((x) => x !== f) : ALL_LOG_FIELDS.filter((x) => cur.includes(x) || x === f)));
+
+  // Effect boundary (no silent no-ops): this phase, StrengthCard is untouched
+  // and CardioCard renders only metric cells — so a config whose full effect
+  // can't materialize yet gets an explicit note. Strength-typed: reps removed
+  // or any metric field added; cardio-typed: any strength field added.
+  const boundaryNote = (() => {
+    const metric = ["duration", "distance", "level", "speed", "incline"] as LogField[];
+    const strengthGroup = ["weight", "reps", "effort"] as LogField[];
+    if (!ex.conditioningOnly) {
+      if (!draftFields.includes("reps") || draftFields.some((f) => metric.includes(f))) return true;
+    } else if (draftFields.some((f) => strengthGroup.includes(f))) {
+      return true;
+    }
+    return false;
+  })();
+
+  // Save path: logged history → forward-only warning first; else save directly.
+  function requestFieldSave(payload: LogField[] | null) {
+    if (ex.loggedCount > 0) setPendingFields(payload);
+    else void patch({ logFields: payload });
+  }
+  function confirmFieldSave() {
+    const payload = pendingFields === "closed" ? null : pendingFields;
+    setPendingFields("closed");
+    void patch({ logFields: payload });
+  }
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -201,9 +260,11 @@ export function ExerciseDetailSheet({
         </button>
       </div>
 
-      {/* ── Type (unchanged behavior: still the session router this round) ── */}
+      {/* ── Type — demoted to a preset-picker in the UI framing (Phase 1).
+             Routing behavior is UNCHANGED: conditioning_only still routes the
+             session cards until Phase 2; only the words changed. ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
-        <span className={styles.fieldLabel}>Type</span>
+        <span className={styles.fieldLabel}>Type (preset)</span>
         <div className={styles.movePair}>
           <button
             type="button"
@@ -223,9 +284,7 @@ export function ExerciseDetailSheet({
           </button>
         </div>
         <span className={styles.fieldNote}>
-          {ex.conditioningOnly
-            ? "Logs cardio inputs (duration and its fields) everywhere it’s used."
-            : "Logs strength inputs (weight, reps, effort) everywhere it’s used."}
+          Sets the default fields below — edits there override per-exercise.
         </span>
       </div>
 
@@ -269,6 +328,73 @@ export function ExerciseDetailSheet({
           </div>
         )}
         <span className={styles.fieldNote}>The pattern makes it substitutable; tagging Conditioning also marks it cardio.</span>
+      </div>
+
+      {/* ── Logs & targets (Phase 1) — the per-exercise field config. Chips
+             pre-filled from the resolver; Reset writes NULL (inherit, so future
+             default improvements flow through). ── */}
+      <div className={styles.field} style={{ marginTop: 12 }}>
+        <span className={styles.fieldLabel}>Logs &amp; targets</span>
+        <div className={styles.fieldChips}>
+          {ALL_LOG_FIELDS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={draftFields.includes(f) ? styles.fieldChipOn : styles.fieldChip}
+              onClick={() => toggleField(f)}
+              aria-pressed={draftFields.includes(f)}
+            >
+              {FIELD_LABELS[f]}
+            </button>
+          ))}
+        </div>
+        {draftFields.length === 0 && (
+          <span className={styles.errText}>At least one field is required.</span>
+        )}
+        {boundaryNote && (
+          <span className={styles.fieldNote}>Takes effect when mixed logging ships (next update).</span>
+        )}
+        {hasFieldOverride(ex) && (
+          <span className={styles.fieldNote}>
+            Edited — default for {ex.conditioningOnly ? "Cardio" : "Strength"} is{" "}
+            {defaultLogFields(ex).map((f) => FIELD_LABELS[f]).join(" · ")} ·{" "}
+            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => requestFieldSave(null)}>
+              Reset to default
+            </button>
+          </span>
+        )}
+        {(fieldsDirty || pendingFields !== "closed") && (
+          <div className={styles.fieldRow} style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              className={styles.quietBtn}
+              disabled={busy || draftFields.length === 0 || !fieldsDirty}
+              onClick={() => requestFieldSave(draftFields)}
+            >
+              Save fields
+            </button>
+            <button type="button" className={styles.quietBtn} disabled={busy} onClick={() => { setDraftFields(savedFields); setPendingFields("closed"); }}>
+              Cancel
+            </button>
+          </div>
+        )}
+        {pendingFields !== "closed" && (
+          <div className={styles.warnBox} style={{ marginTop: 8 }}>
+            <p>
+              <strong>{ex.name}</strong> has <strong>{ex.loggedCount} logged {ex.loggedCount === 1 ? "entry" : "entries"}</strong>.
+              Past sessions keep their data exactly as logged — only future sessions use the new fields, and progression
+              will note the change.
+            </p>
+            <div className={styles.sheetActions} style={{ marginTop: 10 }}>
+              <button type="button" className={styles.primaryBtn} disabled={busy} onClick={confirmFieldSave}>
+                Save — applies going forward
+              </button>
+              <button type="button" className={styles.quietBtn} disabled={busy} onClick={() => setPendingFields("closed")}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Unilateral (unchanged) ── */}

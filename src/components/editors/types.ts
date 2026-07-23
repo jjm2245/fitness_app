@@ -18,6 +18,7 @@ export interface EditorExercise {
   source: string;
   untagged: boolean;
   params?: Record<string, unknown> | null;
+  logFields?: unknown;
 }
 
 export interface EditorDay {

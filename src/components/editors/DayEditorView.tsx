@@ -10,7 +10,7 @@ import { AddExerciseSheet } from "./AddExerciseSheet";
 import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
-import { cardioFields } from "@/lib/cardioFields";
+import { resolveMetricFields } from "@/lib/logFields";
 import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
@@ -34,7 +34,7 @@ function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
     const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
     if (!hasDuration) return { text: "Set a target", muted: true };
     const parts: string[] = [];
-    for (const f of cardioFields(ex.exerciseName)) {
+    for (const f of resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields })) {
       if (f === "duration") {
         if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
         else if (typeof dur === "number") parts.push(`${dur} min`);

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { api, type EditorExercise } from "./types";
-import { cardioFields, CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
+import { CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
+import { resolveMetricFields } from "@/lib/logFields";
 import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
@@ -82,7 +83,7 @@ export function TargetSheet({
   const [effort, setEffort] = useState<EffortTag | null>(ex.effortTarget);
 
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
-  const cardioFieldSet = cardioFields(ex.exerciseName);
+  const cardioFieldSet = resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields });
   const p = ex.params ?? {};
   const dur = p.duration_min;
   const durIsRange = Array.isArray(dur) && dur.length === 2;

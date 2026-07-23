@@ -118,6 +118,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       untagged: m?.untagged ?? true,
       unilateral: m?.unilateral ?? false,
       params: m?.params ?? null,
+      logFields: m?.logFields ?? null,
       orderIndex: o.orderIndex,
       source: o.source,
       completed: o.completed,

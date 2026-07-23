@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, or } from "drizzle-orm";
 import { db } from "@/db/client";
+import { sanitizeOverride } from "@/lib/logFields";
 import {
   exercises,
   movementPatternEnum,
@@ -45,9 +46,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const body = await request.json().catch(() => null);
 
-  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; unilateral?: boolean; params?: Record<string, unknown> | null; conditioningOnly?: boolean; updatedAt: Date } = {
+  const updates: { movementPattern?: MovementPattern; untagged?: boolean; name?: string; description?: string | null; unilateral?: boolean; params?: Record<string, unknown> | null; conditioningOnly?: boolean; logFields?: unknown; updatedAt: Date } = {
     updatedAt: new Date(),
   };
+
+  // Per-exercise field config (Phase 1): null clears the override (inherit
+  // defaults); an array must sanitize to a non-empty set of known field names —
+  // an empty/invalid set is rejected, never saved.
+  if (body?.logFields !== undefined) {
+    if (body.logFields === null) {
+      updates.logFields = null;
+    } else {
+      const clean = sanitizeOverride(body.logFields);
+      if (!clean) return NextResponse.json({ error: "logFields must be a non-empty array of known field names" }, { status: 400 });
+      updates.logFields = clean;
+    }
+  }
 
   // Cardio target params (phase 3.1): the program editor edits an exercise's
   // prescription (duration/incline/speed) here — it's exercise-level, jsonb,
@@ -93,7 +107,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     updates.description = d === "" ? null : d;
   }
 
-  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined && updates.unilateral === undefined && updates.params === undefined && updates.conditioningOnly === undefined) {
+  if (updates.movementPattern === undefined && updates.name === undefined && updates.description === undefined && updates.unilateral === undefined && updates.params === undefined && updates.conditioningOnly === undefined && updates.logFields === undefined) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 

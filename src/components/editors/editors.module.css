@@ -172,6 +172,29 @@
   border-radius: 50%;
   background: var(--accent);
 }
+/* Logs & targets field chips (exercise edit sheet, Phase 1). */
+.fieldChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.fieldChip,
+.fieldChipOn {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+}
+.fieldChipOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
 /* A read-only value shown where an input would be (library name, current tag). */
 .readonlyName {
   flex: 1;

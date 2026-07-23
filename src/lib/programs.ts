@@ -154,6 +154,7 @@ export async function getProgramWithDays(id: number): Promise<ProgramWithDays | 
           portable: exercises.portable,
           conditioningOnly: exercises.conditioningOnly,
           params: exercises.params,
+          logFields: exercises.logFields,
           source: exercises.source,
           untagged: exercises.untagged,
           unilateral: exercises.unilateral,

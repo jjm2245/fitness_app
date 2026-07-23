@@ -5,7 +5,7 @@ import styles from "./session.module.css";
 import { Sheet } from "./Sheet";
 import { ExerciseSearch, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { prettyDayName } from "@/lib/labels";
-import { cardioFields } from "@/lib/cardioFields";
+import { resolveMetricFields } from "@/lib/logFields";
 import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import type { BlockDetail, ProgramDetail, ProgramExerciseDetail } from "./shared";
 
@@ -37,7 +37,7 @@ function targetRef(ex: ProgramExerciseDetail): string | null {
     const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
     if (!hasDuration) return null;
     const parts: string[] = [];
-    for (const f of cardioFields(ex.exerciseName)) {
+    for (const f of resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields })) {
       if (f === "duration") parts.push(Array.isArray(dur) ? `${dur[0]}–${dur[1]} min` : `${dur} min`);
       else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
       else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);

@@ -6,7 +6,8 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { logCardio, deleteCardio, type SessionCardio } from "@/lib/sessionStore";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import type { CardControls, LoggableOccurrence } from "./shared";
-import { cardioFields, CARDIO_FIELD_LABEL as FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
+import { CARDIO_FIELD_LABEL as FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
+import { resolveMetricFields } from "@/lib/logFields";
 
 // Shape returned by the last-session route for a conditioning exercise.
 type CardioLast = {
@@ -71,7 +72,7 @@ export function CardioCard({
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
   const [revealedId, setRevealedId] = useState<number | null>(null);
 
-  const fields = cardioFields(ex.exerciseName);
+  const fields = resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields });
   const entries = sessionCardio.filter((c) => c.instanceId === ex.instanceId);
 
   useEffect(() => {

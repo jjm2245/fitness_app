@@ -2869,3 +2869,52 @@ entry. Cancelable edits in the edit sheet: Rename… (library) gains Cancel back
 to read-only; name drafts show Cancel once dirty; Tag Change… gains Cancel that
 resets the picker — verified all three cancel with zero writes (Air Bike
 byte-identical after cancels). No schema; `src/core/*` untouched.
+
+## Phase 1 — per-exercise log fields (2026-07-22, migration 0024)
+
+**Storage.** Additive `ALTER TABLE exercises ADD COLUMN log_fields jsonb`
+(migration 0024) — NULL = inherit defaults, no backfill. Applied LOCAL;
+`EXPECTED_MIGRATIONS` 24→25; **prod paused for owner sign-off** (before/after:
+row count identical, all NULL, migrations +1).
+
+**Resolver — `src/lib/logFields.ts`, the ONE precedence chain:** override
+(`log_fields`, sanitized to the 8-field vocabulary weight/reps/effort/duration/
+distance/level/speed/incline; empty/invalid ⇒ inherit) → name-default
+(`cardioFields(name)` for cardio-typed — its duration+distance fallback IS the
+cardio type-default) → type-default (strength → weight/reps/effort).
+`cardioFields()` is now a default-provider called ONLY by the resolver; the four
+surfaces (CardioCard, TargetSheet, DayEditorView chips, AddSheet reference) all
+import `resolveMetricFields` — grep-verified no direct callers remain.
+`log_fields` is threaded through programs.ts → editor types, /api/sessions/[id]
+→ sessionStore Occurrence/AttachExercise → LoggableOccurrence, and the manage
+route → ManagedExercise. PATCH /api/exercises/[id] accepts `logFields` (null
+clears; a non-empty sanitized array saves; empty/invalid → 400). Core never
+reads it (grep clean) — the set_logs-only invariant stays the progression guard.
+
+**Fields editor ("Logs & targets", all three sheet variants, under Tag).**
+Eight chips pre-filled from the resolver; Type demoted to "Type (preset)" ("sets
+the default fields below — edits there override per-exercise"; routing behavior
+UNCHANGED this phase). Override present → "Edited — default for <type> is X ·
+Reset to default"; Reset writes NULL (inherit — future default improvements flow
+through), not a copy. Empty set blocked in UI + API. **Effect boundary (no
+silent no-ops):** a config whose effect can't materialize this phase (strength
+missing reps or holding metric fields; cardio holding strength fields) shows
+"Takes effect when mixed logging ships (next update)" before AND after save.
+StrengthCard untouched.
+
+**Forward-only history warning (ships now).** Saving a field change on an
+exercise with ≥1 logged entry first shows the warning (past sessions keep their
+data exactly as logged; only future sessions use the new fields; progression
+will note the change) with Cancel / "Save — applies going forward". Proven on
+Captain's Chair (4 logged): Cancel wrote nothing; confirm changed ONLY
+`log_fields`; **set_logs md5 checksum identical before/after**. No-history
+exercises save without the warning.
+
+**Verified end-to-end (throwaway rows, all reverted):** Power Stairs override
+duration+distance → editor chip ("20 min · 1.5 dist"), target sheet
+("Duration (min) *" + Distance, no Level — duration stays the anchor), AddSheet
+reference, and session CardioCard cells (min + distance) all reflected it
+immediately; Reset → NULL → name-guess (Duration+Level) returned everywhere.
+Stairmaster `params` `[5,15]` byte-identical throughout — field-config saves
+never touch `params`. Resolver precedence locked by 7 unit tests. Blocks parity
+structural (same TargetSheet/DayEditorView engine).

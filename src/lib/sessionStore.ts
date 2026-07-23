@@ -118,6 +118,7 @@ export interface Occurrence {
   repRange: string | null;
   rirTarget: string | null;
   params: Record<string, unknown> | null;
+  logFields: unknown; // per-exercise field config (resolved via lib/logFields)
   completed?: boolean; // the user's 'done' checkmark (syncs with the list)
   synced: boolean; // occurrence row pushed to the server
 }
@@ -523,6 +524,7 @@ export interface ServerSession {
     untagged: boolean;
     unilateral?: boolean;
     params: Record<string, unknown> | null;
+    logFields?: unknown;
     orderIndex: number;
     source: string | null;
     completed?: boolean;
@@ -616,6 +618,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       repRange: null,
       rirTarget: null,
       params: e.params,
+      logFields: e.logFields ?? null,
       completed: e.completed ?? false,
       synced: true,
     };
@@ -861,6 +864,7 @@ export interface AttachExercise {
   repRange?: string | null;
   rirTarget?: string | null;
   params?: Record<string, unknown> | null;
+  logFields?: unknown;
 }
 
 /** Append one performed occurrence to the session (repeats allowed). Returns it.
@@ -886,6 +890,7 @@ export async function addOccurrence(sessionId: string, item: AttachExercise, sou
     repRange: item.repRange ?? null,
     rirTarget: item.rirTarget ?? null,
     params: item.params ?? null,
+    logFields: item.logFields ?? null,
     completed: false,
     synced: false,
   };

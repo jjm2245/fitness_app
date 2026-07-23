@@ -169,6 +169,13 @@
       "when": 1784669969852,
       "tag": "0023_reflective_rachel_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784777748653,
+      "tag": "0024_light_wong",
+      "breakpoints": true
     }
   ]
 }

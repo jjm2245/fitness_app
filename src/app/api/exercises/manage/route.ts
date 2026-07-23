@@ -28,6 +28,7 @@ export async function GET() {
       day: exercises.day,
       loadType: exercises.loadType,
       description: exercises.description,
+      logFields: exercises.logFields,
     })
     .from(exercises)
     .orderBy(exercises.name);
