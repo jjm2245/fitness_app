@@ -511,7 +511,8 @@
 }
 .fieldLabel {
   font-size: 0.68rem;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
 }
@@ -546,7 +547,8 @@
   gap: 3px;
 }
 .fieldNote {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
   color: var(--text-3);
 }
 
@@ -798,7 +800,8 @@
 }
 .sectionLabel {
   font-size: 0.68rem;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
   margin-top: 10px;

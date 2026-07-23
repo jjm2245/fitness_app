@@ -395,6 +395,20 @@ export function ExerciseDetailSheet({
             </div>
           </div>
         )}
+        {/* Cross-link: the fields govern what's logged/targeted, but the target
+            VALUES live per-day in Program/Blocks — mirrors the target sheet's
+            "Edit exercise →" link in the other direction. */}
+        <span className={styles.fieldNote} style={{ marginTop: 6 }}>
+          Target values (sets, reps, duration…) are set per day in{" "}
+          <button
+            type="button"
+            className={styles.linkRemove}
+            style={{ minHeight: 0, display: "inline" }}
+            onClick={() => { onClose(); router.push("/program"); }}
+          >
+            Program or Blocks
+          </button>.
+        </span>
       </div>
 
       {/* ── Unilateral (unchanged) ── */}
