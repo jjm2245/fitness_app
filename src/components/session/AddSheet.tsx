@@ -7,6 +7,8 @@ import { ExerciseSearch, type ExerciseSearchResult } from "@/components/Exercise
 import { prettyDayName } from "@/lib/labels";
 import { resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { formatRangeValue, hasRangeValue } from "@/lib/targetValues";
+import { formatStoredDistance } from "@/lib/units";
+import { useDistanceUnit } from "@/lib/useUnit";
 import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import type { BlockDetail, ProgramDetail, ProgramExerciseDetail } from "./shared";
 
@@ -31,7 +33,7 @@ export type AddLoc =
 
 // The target reference line under an exercise (same source the editor chip +
 // session card read): strength "3 × 8–12 · near failure", cardio fields, or null.
-function targetRef(ex: ProgramExerciseDetail): string | null {
+function targetRef(ex: ProgramExerciseDetail, distUnit: string): string | null {
   const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   if (!routesToStrength(src)) {
     const p = ex.params ?? {};
@@ -97,6 +99,8 @@ export function AddSheet({
   // The freshly-added "Add all" batch (occurrence instanceIds), offered for a
   // transient Undo until the next add or navigation. Sheet-local by design.
   const [lastBatch, setLastBatch] = useState<string[] | null>(null);
+  // Distance references display in the global unit (read-side only).
+  const [distUnit] = useDistanceUnit();
 
   const current = nav[nav.length - 1] ?? { screen: "sources" };
   const push = (loc: AddLoc) => { setLastBatch(null); onNav([...nav, loc]); };
@@ -158,7 +162,7 @@ export function AddSheet({
         )}
       </div>
       {items.map((ex) => {
-        const ref = targetRef(ex);
+        const ref = targetRef(ex, distUnit);
         const n = addedCounts.get(ex.exerciseId) ?? 0;
         return (
           <div key={ex.id} className={styles.addExRow}>

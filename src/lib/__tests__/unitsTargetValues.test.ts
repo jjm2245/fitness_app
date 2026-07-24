@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { kgToLb, kmToMi, lbToKg, miToKm, displayWeights, getEntryUnit, setEntryUnit, subscribeUnits } from "../units";
+import { kgToLb, kmToMi, lbToKg, miToKm, displayWeights, formatForUnit, formatStoredDistance, parseInUnit, setEntryUnit, subscribeUnits } from "../units";
+import { resolveCardFields } from "../logFields";
 import { parseRangeValue, storeRangeValue, formatRangeValue, rangeValueComplete, hasRangeValue } from "../targetValues";
 
 // §7 conversion locks — the shown converted value IS the stored value.
@@ -88,5 +89,53 @@ describe("target range values (duration + distance share this path)", () => {
     expect(hasRangeValue([3, 4])).toBe(true);
     expect(hasRangeValue(2)).toBe(true);
     expect(hasRangeValue(undefined)).toBe(false);
+  });
+});
+
+// §3 drift lock: display = formatForUnit(canonical); toggling units re-FORMATS
+// and never re-parses, so canonical is byte-identical after any number of
+// toggles — including the lossy case that proves why re-parsing is forbidden.
+describe("universal unit input contract (drift-proof)", () => {
+  it("10 unit toggles without typing leave canonical untouched", () => {
+    const canonical = "22.3"; // lb — displays as 10.1 kg (lossy at 1dp)
+    let display = "";
+    for (let i = 0; i < 10; i++) {
+      const unit = i % 2 === 0 ? "kg" : "lb";
+      display = formatForUnit(canonical, unit, "weight"); // format ONLY
+    }
+    expect(canonical).toBe("22.3"); // never re-parsed
+    expect(display).toBe("22.3"); // ended on lb: identity
+    // The trap the contract avoids: re-parsing the rounded display would drift.
+    expect(parseInUnit(formatForUnit("22.3", "kg", "weight"), "kg", "weight")).toBe("22.5");
+  });
+
+  it("stored distances display in the active unit (read-side only)", () => {
+    expect(formatStoredDistance(2, "km")).toBe("3.22 km");
+    expect(formatStoredDistance([3, 4], "km")).toBe("4.83–6.44 km");
+    expect(formatStoredDistance([3, 4], "mi")).toBe("3–4 mi");
+    expect(formatStoredDistance(0.5, "mi")).toBe("0.5 mi");
+    expect(formatStoredDistance(null, "km")).toBeNull();
+  });
+
+  it("typing still converts at entry rounding (10 kg → 22 lb; 4 km → 2.49 mi)", () => {
+    expect(parseInUnit("10", "kg", "weight")).toBe("22");
+    expect(parseInUnit("4", "km", "distance")).toBe("2.49");
+    expect(parseInUnit("100", "lb", "weight")).toBe("100"); // identity in canonical unit
+    expect(formatForUnit("2.49", "km", "distance")).toBe("4.01"); // display 2dp
+    expect(formatForUnit("", "kg", "weight")).toBe("");
+  });
+});
+
+// §2 drop-visibility lock: "+ Drop" is a load reduction — only where weight is
+// in the resolved field set.
+describe("metric drop visibility", () => {
+  const canDrop = (name: string, conditioningOnly: boolean, logFields: unknown) =>
+    resolveCardFields({ name, conditioningOnly, logFields }).includes("weight");
+  it("offered on Loaded carry / Timed hold; absent on treadmill/distance", () => {
+    expect(canDrop("Farmer's Walk", false, ["weight", "duration", "distance", "effort"])).toBe(true);
+    expect(canDrop("Plank Hold", false, ["weight", "duration"])).toBe(true);
+    expect(canDrop("Walking, Treadmill", true, null)).toBe(false);
+    expect(canDrop("Skating", true, null)).toBe(false);
+    expect(canDrop("Stairmaster", true, null)).toBe(false);
   });
 });

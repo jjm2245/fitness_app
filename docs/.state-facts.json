@@ -1,12 +1,12 @@
 {
   "migrations": {
-    "count": 26,
-    "latest": "0025_ordinary_johnny_storm",
-    "expected": 26
+    "count": 27,
+    "latest": "0026_certain_leopardon",
+    "expected": 27
   },
   "tests": {
     "files": 17,
-    "cases": 183
+    "cases": 188
   },
   "tables": 19,
   "routes": 36

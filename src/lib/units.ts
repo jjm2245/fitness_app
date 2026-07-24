@@ -38,6 +38,43 @@ export function displayWeights(text: string, unit: WeightUnit): string {
   return text.replace(/(\d+(?:\.\d+)?) lb/g, (_, n) => `${lbToKg(Number(n))} kg`);
 }
 
+// ── The universal unit-input contract (§3): canonical (lb/mi) is the ONLY
+// source of truth; display = formatForUnit(canonical); ONLY typing writes a
+// new canonical via parseInUnit. Switching units re-FORMATS the display from
+// canonical — it never re-parses the rounded display back into storage, so
+// drift is impossible by construction.
+export type UnitDimension = "weight" | "distance";
+
+/** Canonical value (string form, "" = empty) → the text an input displays in
+ * the active unit. Display rounding: kg 1dp, km 2dp; lb/mi pass through. */
+export function formatForUnit(canonical: string, unit: string, dim: UnitDimension): string {
+  if (canonical.trim() === "") return "";
+  const n = Number(canonical);
+  if (!Number.isFinite(n)) return "";
+  if (dim === "weight") return unit === "kg" ? String(lbToKg(n)) : canonical;
+  return unit === "km" ? String(miToKm(n)) : canonical;
+}
+
+/** Typed text in the active unit → the canonical value to store (string form,
+ * "" = empty). Entry rounding: weight → nearest 0.5 lb; distance → 2dp mi. */
+export function parseInUnit(text: string, unit: string, dim: UnitDimension): string {
+  if (text.trim() === "") return "";
+  const n = Number(text);
+  if (!Number.isFinite(n)) return "";
+  if (dim === "weight") return unit === "kg" ? String(kgToLb(n)) : text;
+  return unit === "km" ? String(kmToMi(n)) : text;
+}
+
+/** Display a stored single-or-range value in the active unit ("3–4 mi" →
+ * "4.83–6.44 km"). Read-side only. */
+export function formatStoredDistance(stored: unknown, unit: string): string | null {
+  const conv = (n: number) => (unit === "km" ? miToKm(n) : n);
+  const u = unit === "km" ? "km" : "mi";
+  if (Array.isArray(stored) && stored.length === 2) return `${conv(Number(stored[0]))}–${conv(Number(stored[1]))} ${u}`;
+  if (typeof stored === "number") return `${conv(stored)} ${u}`;
+  return null;
+}
+
 /** One GLOBAL preference per dimension (weight, distance) — every surface
  * reads the same key, so added/built-in/reference can never disagree. The
  * choice affects display + entry interpretation only; storage stays lb/mi. */

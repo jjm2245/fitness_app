@@ -8,6 +8,7 @@ import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionSto
 import { publishRestTimer } from "@/lib/restTimerBus";
 import { displayWeights, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
+import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { SetRow } from "./SetRow";
 import { RestConnector } from "./RestConnector";
 import { RestBanner } from "./RestBanner";
@@ -739,13 +740,13 @@ export function StrengthCard({
               {offsetRelevant && (
                 <div className={styles.equipRow}>
                   <label title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged.">
-                    + built-in{wUnit === "kg" ? " (lb)" : ""}{" "}
-                    <input
-                      type="number"
+                    + built-in{" "}
+                    <UnitNumberInput
+                      canonical={offsetInput}
+                      onCanonical={(v) => { setOffsetTouched(true); setOffsetInput(v); if (!offsetConfirmed) confirmOffset(Number(v) || 0); }}
+                      dimension="weight"
                       className={styles.offsetInput}
-                      value={offsetInput}
-                      onChange={(e) => { setOffsetTouched(true); setOffsetInput(e.target.value); if (!offsetConfirmed) confirmOffset(Number(e.target.value) || 0); }}
-                      placeholder={typeDef.defaultOffset == null ? "?" : "lb"}
+                      placeholder={typeDef.defaultOffset == null ? "?" : wUnit}
                     />
                   </label>
                   {offsetRelevant && !offsetNeedsConfirm && loggedSets.length > 0 && offsetNum !== (occStoredOffset ?? 0) && (

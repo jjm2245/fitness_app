@@ -632,6 +632,29 @@ describe("finish session", () => {
 });
 
 describe("cardio (separate store, synced/pending like sets)", () => {
+  it("rest mirrors the strength timed branch: edge before the entry, timed-only", async () => {
+    const { id, date, inst } = await newSession();
+    mockOffline();
+    const base = {
+      sessionId: id, instanceId: inst, date, exerciseId: "stair_machine", exerciseName: "Stairs",
+      incline: null, speed: null, distance: null, level: 5, load: null, effort: null, notes: null,
+    };
+    // First entry: no prior in the occurrence → rest stays the honest null
+    // even with a timer value (N entries = N−1 rests, same as sets).
+    const first = await logCardio({ ...base, durationMin: 10, timedRestSeconds: 90 });
+    expect(first.restSeconds).toBeNull();
+    expect(first.restSource).toBeNull();
+    // Second entry with a timed rest → written exactly like a strength set.
+    const second = await logCardio({ ...base, durationMin: 8, timedRestSeconds: 90 });
+    expect(second.restSeconds).toBe(90);
+    expect(second.restSource).toBe("timed");
+    // No timer → honest null (the derived gap heuristic is reps-based and
+    // stays strength-only).
+    const third = await logCardio({ ...base, durationMin: 6 });
+    expect(third.restSeconds).toBeNull();
+    expect(third.restSource).toBeNull();
+  });
+
   it("logs cardio offline, keeps it visible, and syncs when back online", async () => {
     const { id, date, inst } = await newSession();
     mockOffline();

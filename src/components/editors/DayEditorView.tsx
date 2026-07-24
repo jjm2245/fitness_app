@@ -12,6 +12,8 @@ import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
 import { resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { formatRangeValue, hasRangeValue } from "@/lib/targetValues";
+import { formatStoredDistance } from "@/lib/units";
+import { useDistanceUnit } from "@/lib/useUnit";
 import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
@@ -24,7 +26,7 @@ import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 // nothing is rewritten. `null` = no target → muted, tappable "Set a target".
 // Cardio never shows "1 set" — it shows the prescription (duration/incline/speed)
 // from exercises.params, or "Set a target".
-function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
+function targetChip(ex: EditorExercise, distUnit: string): { text: string; muted: boolean } {
   const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   if (!routesToStrength(src)) {
     // Metric-routed (the same config router as the session card + target
@@ -82,6 +84,8 @@ export function DayEditorView({
   // non-destructive — they never write order_index, and the view is editor-local:
   // sessions always follow the stored order regardless of which lens is shown.
   const [viewMode, setViewMode] = useState<"custom" | "az" | "za" | "recent">("az");
+  // Distance targets display in the global unit (read-side only).
+  const [distUnit] = useDistanceUnit();
 
   // Keep the selection stable across refreshes; fall back to the first.
   const selected = days.find((d) => d.id === selectedId) ?? days[0] ?? null;
@@ -142,7 +146,7 @@ export function DayEditorView({
           {ex.untagged && <span className={styles.badgeWarn}>untagged</span>}
         </span>
       </span>
-      {(() => { const c = targetChip(ex); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
+      {(() => { const c = targetChip(ex, distUnit); return <span className={c.muted ? styles.rowChipMuted : styles.rowChip}>{c.text}</span>; })()}
       <svg className={styles.rowChevron} width="7" height="12" viewBox="0 0 7 12" fill="none" aria-hidden="true">
         <path d="M1 1l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       </svg>

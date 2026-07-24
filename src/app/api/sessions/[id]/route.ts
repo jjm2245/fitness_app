@@ -52,6 +52,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       level: cardioLogs.level,
       load: cardioLogs.load,
       effort: cardioLogs.effort,
+      restSeconds: cardioLogs.restSeconds,
+      restSource: cardioLogs.restSource,
+      dropSetGroup: cardioLogs.dropSetGroup,
       notes: cardioLogs.notes,
     })
     .from(cardioLogs)

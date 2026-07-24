@@ -5,6 +5,8 @@ import styles from "./session.module.css";
 import { Sheet } from "./Sheet";
 import { EQUIPMENT_TYPE_BY_ID, type EquipmentTypeId } from "@/lib/equipment";
 import type { EquipmentOption } from "./shared";
+import { UnitNumberInput } from "@/components/UnitNumberInput";
+import { useWeightUnit } from "@/lib/useUnit";
 
 // New-unit entry (2.5-11: now a bottom sheet on the Sheet primitive, fields
 // on the design tokens — it was the last centered modal, visibly unstyled).
@@ -27,6 +29,7 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
   onClose: () => void;
   onCreated: (unit: EquipmentOption) => void;
 }) {
+  const [wUnit] = useWeightUnit();
   const [label, setLabel] = useState("");
   const [gym, setGym] = useState("");
   const [brand, setBrand] = useState("");
@@ -102,12 +105,12 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
       </div>
       <div className={styles.unitFieldRow}>
         <label className={styles.unitInlineLabel}>
-          built-in lb
-          <input
-            type="number"
+          built-in {wUnit}
+          <UnitNumberInput
+            canonical={offset}
+            onCanonical={setOffset}
+            dimension="weight"
             className={styles.offsetInput}
-            value={offset}
-            onChange={(e) => setOffset(e.target.value)}
             placeholder={typeDef?.defaultOffset == null ? "?" : String(typeDef?.defaultOffset)}
           />
         </label>

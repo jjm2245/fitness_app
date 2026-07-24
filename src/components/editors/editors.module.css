@@ -191,6 +191,21 @@
   font-size: 0.75rem;
   color: var(--text-2);
 }
+/* Target-sheet compact footer (§4): two quiet links share one row; the
+   descriptor is a right-aligned micro-hint under the linkout. */
+.footRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.footHint {
+  font-size: 0.68rem;
+  color: var(--text-3);
+  text-align: right;
+  margin: 0;
+}
 /* An inline link inside a hint line — hint tier, zero button chrome. */
 .inlineLink {
   display: inline;

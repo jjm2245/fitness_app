@@ -16,10 +16,15 @@ interface CardioPayload {
   // Mixed logging (Phase 2): optional load + effort tag (set_logs' enum values).
   load?: number | null;
   effort?: string | null;
+  // Parity with set_logs: rest edge + drop grouping (same values/semantics).
+  restSeconds?: number | null;
+  restSource?: string | null;
+  dropSetGroup?: string | null;
   notes?: string | null;
 }
 
 const EFFORT_VALUES = new Set(["more_in_me", "near_failure", "to_failure"]);
+const REST_SOURCES = new Set(["timed", "derived", "user"]);
 
 const num = (v: number | null | undefined) => (v == null ? null : v.toString());
 
@@ -62,6 +67,9 @@ export async function POST(request: NextRequest) {
         level: num(body.level),
         load: num(body.load),
         effort: body.effort && EFFORT_VALUES.has(body.effort) ? (body.effort as "more_in_me" | "near_failure" | "to_failure") : null,
+        restSeconds: typeof body.restSeconds === "number" ? Math.round(body.restSeconds) : null,
+        restSource: body.restSource && REST_SOURCES.has(body.restSource) ? body.restSource : null,
+        dropSetGroup: body.dropSetGroup ?? null,
         notes: body.notes ?? null,
       })
       .returning();

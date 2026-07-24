@@ -432,6 +432,13 @@ export const cardioLogs = pgTable("cardio_logs", {
   // Core never reads cardio_logs — the set_logs-only invariant is untouched.
   load: numeric("load"),
   effort: effortEnum("effort"),
+  // Metric entry parity: rest + drop grouping MIRROR set_logs' shape and names
+  // exactly (rest_seconds/rest_source with the same timed|derived|user values;
+  // drop_set_group as the shared client-generated group id) so the two tables
+  // stay comparable. Rest is the edge before this entry; null = honest unknown.
+  restSeconds: integer("rest_seconds"),
+  restSource: text("rest_source"), // 'timed' | 'derived' | 'user'
+  dropSetGroup: text("drop_set_group"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

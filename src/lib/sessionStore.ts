@@ -141,6 +141,11 @@ export interface SessionCardio {
   // (same enum values as set_logs, so target-vs-actual stays comparable).
   load: number | null;
   effort: string | null;
+  // Parity with set_logs: rest is the edge BEFORE this entry (timed|derived|
+  // user, null = honest unknown); drop_set_group links a parent + its drops.
+  restSeconds: number | null;
+  restSource: string | null;
+  dropSetGroup: string | null;
   notes: string | null;
   serverId: number | null;
   syncState: CardioSyncState;
@@ -564,6 +569,9 @@ export interface ServerSession {
     level: string | null;
     load?: string | null;
     effort?: string | null;
+    restSeconds?: number | null;
+    restSource?: string | null;
+    dropSetGroup?: string | null;
     notes: string | null;
   }>;
 }
@@ -677,6 +685,9 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       level: c.level != null ? Number(c.level) : null,
       load: c.load != null ? Number(c.load) : null,
       effort: c.effort ?? null,
+      restSeconds: c.restSeconds ?? null,
+      restSource: c.restSource ?? null,
+      dropSetGroup: c.dropSetGroup ?? null,
       notes: c.notes,
       serverId: c.id,
       syncState: "synced",
@@ -985,13 +996,57 @@ export interface LogCardioInput {
   load: number | null;
   effort: string | null;
   notes: string | null;
+  timedRestSeconds?: number | null; // from the rest timer → source "timed"
+  dropSetGroup?: string | null;
 }
 
 export async function logCardio(input: LogCardioInput): Promise<SessionCardio> {
   const db = await getDb();
-  const row: SessionCardio = { ...input, serverId: null, syncState: "pending_create" };
+  // Rest mirrors logSet's TIMED branch exactly: an edge stored on the later
+  // entry, only when a prior live entry exists in the same occurrence (N
+  // entries = N−1 rests). The derived-gap heuristic is reps-based and stays
+  // strength-only; without the timer the value is an honest null.
+  const prior = (await db.getAllFromIndex("cardio", "by-instance", input.instanceId)).filter(
+    (c) => c.syncState !== "pending_delete"
+  );
+  let restSeconds: number | null = null;
+  let restSource: string | null = null;
+  if (prior.length > 0 && input.timedRestSeconds != null && input.timedRestSeconds >= 0) {
+    restSeconds = Math.round(input.timedRestSeconds);
+    restSource = "timed";
+  }
+  const { timedRestSeconds: _t, ...core } = input;
+  const row: SessionCardio = {
+    ...core,
+    dropSetGroup: input.dropSetGroup ?? null,
+    restSeconds,
+    restSource,
+    serverId: null,
+    syncState: "pending_create",
+  };
   const localId = await db.add("cardio", row);
   return { ...row, localId };
+}
+
+/** Edit a logged metric entry (mirror of editSet): patch fields, mark for
+ * sync. Forward-only: callers only patch fields the entry already carries. */
+export async function editCardio(
+  localId: number,
+  patch: {
+    durationMin?: number | null; incline?: number | null; speed?: number | null;
+    distance?: number | null; level?: number | null; load?: number | null;
+    effort?: string | null; restSeconds?: number | null; restSource?: string | null;
+    dropSetGroup?: string | null;
+  }
+): Promise<void> {
+  const db = await getDb();
+  const row = await db.get("cardio", localId);
+  if (!row) return;
+  await db.put("cardio", {
+    ...row,
+    ...patch,
+    syncState: row.syncState === "pending_create" ? "pending_create" : "pending_update",
+  });
 }
 
 export async function getSessionCardio(sessionId: string): Promise<SessionCardio[]> {
@@ -1241,12 +1296,28 @@ async function runSync(): Promise<SyncResult> {
             level: row.level,
             load: row.load,
             effort: row.effort,
+            restSeconds: row.restSeconds ?? null,
+            restSource: row.restSource ?? null,
+            dropSetGroup: row.dropSetGroup ?? null,
             notes: row.notes,
           }),
         });
         const created = await res.json();
         await db.put("cardio", { ...row, serverId: created.id, syncState: "synced" });
         result.created += 1;
+      } else if (row.syncState === "pending_update" && row.serverId != null) {
+        await send(`/api/cardio-logs/${row.serverId}`, {
+          method: "PATCH",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            durationMin: row.durationMin, incline: row.incline, speed: row.speed,
+            distance: row.distance, level: row.level, load: row.load, effort: row.effort,
+            restSeconds: row.restSeconds ?? null, restSource: row.restSource ?? null,
+            dropSetGroup: row.dropSetGroup ?? null,
+          }),
+        });
+        await db.put("cardio", { ...row, syncState: "synced" });
+        result.updated += 1;
       } else if (row.syncState === "pending_delete") {
         if (row.serverId != null) {
           await send(`/api/cardio-logs/${row.serverId}`, { method: "DELETE" }, true);

@@ -5,6 +5,7 @@ import styles from "./session.module.css";
 import { editSet, deleteSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { EFFORT_LABEL, EFFORT_OPTIONS, type EffortTag } from "./shared";
 import { lbToKg, type WeightUnit } from "@/lib/units";
+import { UnitNumberInput } from "@/components/UnitNumberInput";
 
 // One logged set: a read-only row (rows show information). Tapping it reveals
 // its controls (Edit / Delete / + Drop) — controls appear on demand; the card
@@ -53,8 +54,7 @@ export function SetRow({
     return (
       <li>
         <div className={styles.setEditRow} style={isDrop ? { paddingLeft: 22 } : undefined}>
-          <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 64 }} />
-          {weightUnit === "kg" && <span className={styles.setSuffix}>lb</span>}
+          <UnitNumberInput canonical={String(load)} onCanonical={(v) => setLoad(Number(v || 0))} dimension="weight" style={{ width: 64 }} />
           <span>×</span>
           <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 52 }} />
           {/* Same effort pattern as the input trio — one dropdown everywhere. */}

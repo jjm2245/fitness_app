@@ -3079,3 +3079,57 @@ grammar (readonly value + quiet "Change…", menu below; staging/hints in the
 hint tier). The Program/Blocks cross-link is ONE hint line with two inline
 links (`.inlineLink`, zero button chrome). Equipment note (§2 prior round)
 verified in place. 178 tests (+3 unit/display/coherence locks).
+
+## Metric entry parity + universal units + footer (2026-07-24, migration 0026)
+
+**Migration 0026 (additive, prod PAUSED):** cardio_logs gains `rest_seconds
+integer` + `rest_source text` (timed|derived|user) + `drop_set_group text` —
+each MIRRORS set_logs' column name/type/semantics exactly. FLAGGED at the gate:
+§1 scoped the rest columns; `drop_set_group` was added to the same migration
+because §2's drop storage mirror requires it. `EXPECTED_MIGRATIONS` 26→27.
+
+**§1 Rest wired.** logCardio mirrors logSet's TIMED branch verbatim: rest = the
+edge before this entry, only when a prior live entry exists in the occurrence
+(N entries = N−1 rests); the derived-gap heuristic is reps-based and stays
+strength-only (no fabricated rests). The RestBanner "→ written to your next
+set/entry" copy is restored via a `nextNoun` prop (strength copy byte-
+identical). Proven: entry 1 rest null, entry 2 {rest_seconds:3, rest_source:
+'timed'} in the DB; entry rows read "rest 0:03 · timed".
+
+**§2 Edit + Drop on metric entries.** Edit is inline (mirror of SetRow's):
+the form offers EXACTLY the entry's stored field set (its non-null columns),
+not the exercise's current config — forward-only proven: a load+duration entry
+offered [lb, min] only, though the config also has distance+effort. Its anchor
+rule travels with it (can't blank both duration and distance). Sync mirrors
+editSet (pending_update → new PATCH /api/cardio-logs/[id]). Drop appears ONLY
+when weight is in the resolved set (lock-tested; Loaded carry [Edit, Delete,
++ Drop] vs Treadmill [Edit, Delete]); REPRESENTATION: a drop is its own
+cardio_logs row (reduced load + its own duration/distance) sharing the
+parent's client-generated drop_set_group, parent tagged on first segment —
+exactly the strength scheme; renders "↳ drop · 50 lb, 2 min".
+
+**§3 Universal unit inputs — no lb/mi-only islands.** New contract
+(`formatForUnit`/`parseInUnit` + the `UnitNumberInput` component): CANONICAL
+(lb/mi) is the only source of truth in state; display = format(canonical)
+(kg 1dp / km 2dp); ONLY typing writes (parse in the active unit → canonical);
+unit toggles re-FORMAT, never re-parse (the lock test shows why: canonical
+22.3 lb displays 10.1 kg; re-parsing would drift it to 22.5). Enumeration:
+StrengthCard load cell + drop input (empty-start, entry-convert + hint),
+StrengthCard built-in offset (UnitNumberInput — the prior round's scope-out is
+CLOSED), SetRow inline edit (UnitNumberInput — ditto), CardioCard entry cells
+(entry-convert + hint), CardioCard edit + drop forms (UnitNumberInput),
+EquipmentSheet built-in (UnitNumberInput, label "Built-in kg", 20 lb shows
+9.1), AddUnitModal built-in (UnitNumberInput), TargetSheet distance
+single/range (UnitNumberInput — the clear-on-toggle corruption guard is
+SUPERSEDED by convert-on-display). Duration stays min-only. Drift proven E2E:
+10+ toggles over a pre-filled SetRow edit (120 ↔ 54.4) and equipment built-in
+with md5 checksums (sets incl. load_entered/builtin_offset, cardio incl.
+rest, equipment built-ins) byte-identical. Distance DISPLAY completed: entries
+("3.22 km" for stored 2 mi), last lines, chips (formatStoredDistance,
+lock-tested), and target inputs all follow the global unit; typed 3.22 km
+stored 2 (mi).
+
+**§4 Footer.** Remove target + "Edit exercise →" share one quiet row
+(.footRow); the descriptor is a right-aligned micro-hint ("name · tag · what
+it logs & targets"); Remove exercise… stays the separated destructive footer.
+183 tests (+drift, drop-visibility, rest-write, distance-display locks).

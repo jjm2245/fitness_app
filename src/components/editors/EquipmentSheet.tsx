@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
+import { UnitNumberInput } from "@/components/UnitNumberInput";
+import { useWeightUnit } from "@/lib/useUnit";
 
 export interface EquipmentUnit {
   id: string;
@@ -61,6 +63,7 @@ export function EquipmentSheet({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
+  const [wUnit] = useWeightUnit();
   const isNew = unit == null;
   const [d, setD] = useState<Draft>(toDraft(unit ?? undefined));
   const [busy, setBusy] = useState(false);
@@ -177,14 +180,13 @@ export function EquipmentSheet({
             {EQUIPMENT_UNIT_TYPES.map((t) => <option key={t} value={t}>{t === "" ? "type…" : t}</option>)}
           </select>
         </label>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Built-in lb</span>
-          <input
-            type="number"
+        <label className={styles.fieldHalf} title="Constant added weight (bar/handles/carriage) — auto-added to logged loads. Stored in lb; entered/shown in your unit.">
+          <span className={styles.fieldLabel}>Built-in {wUnit}</span>
+          <UnitNumberInput
+            canonical={d.builtInWeight}
+            onCanonical={(v) => set({ builtInWeight: v })}
+            dimension="weight"
             className={styles.fieldInput}
-            value={d.builtInWeight}
-            onChange={(e) => set({ builtInWeight: e.target.value })}
-            title="Constant added weight (bar/handles/carriage) — auto-added to logged loads"
           />
         </label>
         <label className={styles.fieldHalf}>

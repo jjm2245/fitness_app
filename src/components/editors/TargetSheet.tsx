@@ -9,8 +9,8 @@ import { CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
 import { resolveLogFields, resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
 import { parseRangeValue, storeRangeValue, rangeValueComplete, type ParsedRangeValue } from "@/lib/targetValues";
-import { kmToMi, getEntryUnit, type DistanceUnit } from "@/lib/units";
 import { useDistanceUnit } from "@/lib/useUnit";
+import { UnitNumberInput } from "@/components/UnitNumberInput";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -104,23 +104,12 @@ export function TargetSheet({
   // [min,max] in params) through the ONE parse/store path in lib/targetValues.
   const [dur, setDur] = useState<ParsedRangeValue>(() => parseRangeValue(p.duration_min));
   const [dist, setDist] = useState<ParsedRangeValue>(() => parseRangeValue(p.distance));
-  // Entry-side distance unit — the GLOBAL preference (same key the session
-  // cells read), km converts on save; storage stays mi everywhere.
-  // GUARD (latent-bug fix): a stored distance pre-fills CANONICAL mi digits, so
-  // the sheet must open in mi even when the global preference is km —
-  // otherwise a no-edit save would reinterpret mi digits as km and corrupt the
-  // value. `kmOverride` tracks an explicit in-sheet switch (which clears).
-  const globalDistUnit = useDistanceUnit()[0];
-  const [kmOverride, setKmOverride] = useState<DistanceUnit | null>(() =>
-    (p.distance !== undefined && p.distance !== null) && getEntryUnit("distance") === "km" ? "mi" : null
-  );
-  const distUnit: DistanceUnit = kmOverride ?? globalDistUnit;
-  const toggleDistUnit = () => {
-    setKmOverride(distUnit === "mi" ? "km" : "mi");
-    // Reinterpreting typed digits in a different unit would silently change the
-    // value — clearing on toggle is the honest move.
-    setDist((d) => ({ ...d, single: "", a: "", b: "" }));
-  };
+  // Distance unit — the GLOBAL preference. The inputs hold CANONICAL mi in
+  // state and DISPLAY the converted value (UnitNumberInput), so a stored value
+  // can never be reinterpreted: toggling re-formats the display from canonical
+  // and only typing writes a new canonical. (This supersedes the old
+  // clear-on-toggle guard — pre-filled values now convert instead of clearing.)
+  const [distUnit, toggleDistUnit] = useDistanceUnit();
   const [incline, setIncline] = useState(typeof p.incline === "number" ? String(p.incline) : "");
   const [speed, setSpeed] = useState(typeof p.speed === "number" ? String(p.speed) : "");
   const [level, setLevel] = useState(typeof p.level === "number" ? String(p.level) : "");
@@ -187,11 +176,9 @@ export function TargetSheet({
     if (durStore !== undefined) params.duration_min = durStore;
     else delete params.duration_min;
     if (hasDistanceField) {
-      // km entry converts to canonical mi at save (the shown conversion IS the
-      // stored value — kmToMi rounds to 2 decimals).
-      const raw = storeRangeValue(dist);
-      const conv = (n: number) => (distUnit === "km" ? kmToMi(n) : n);
-      const distStore = raw === undefined ? undefined : Array.isArray(raw) ? ([conv(raw[0]), conv(raw[1])] as [number, number]) : conv(raw);
+      // The dist strings ARE canonical mi (UnitNumberInput converts typing in
+      // km to canonical at entry time) — store them directly.
+      const distStore = storeRangeValue(dist);
       if (distStore !== undefined) params.distance = distStore;
       else delete params.distance;
     }
@@ -347,20 +334,23 @@ export function TargetSheet({
               </div>
               {dist.mode === "single" ? (
                 <div className={styles.fieldRow}>
-                  <NumField value={dist.single} onChange={(v) => setDist((d) => ({ ...d, single: v }))} placeholder="0.5" allowDecimal error={anchorError} />
+                  <label className={styles.fieldHalf}>
+                    <UnitNumberInput canonical={dist.single} onCanonical={(v) => setDist((d) => ({ ...d, single: v }))} dimension="distance" className={`${styles.fieldInput} ${anchorError ? styles.inputErr : ""}`} placeholder="0.5" />
+                  </label>
                 </div>
               ) : (
                 <div className={styles.fieldRow}>
-                  <NumField value={dist.a} onChange={(v) => setDist((d) => ({ ...d, a: v }))} placeholder="3" allowDecimal error={anchorError} />
-                  <NumField value={dist.b} onChange={(v) => setDist((d) => ({ ...d, b: v }))} placeholder="4" allowDecimal error={anchorError} />
+                  <label className={styles.fieldHalf}>
+                    <UnitNumberInput canonical={dist.a} onCanonical={(v) => setDist((d) => ({ ...d, a: v }))} dimension="distance" className={`${styles.fieldInput} ${anchorError ? styles.inputErr : ""}`} placeholder="3" />
+                  </label>
+                  <label className={styles.fieldHalf}>
+                    <UnitNumberInput canonical={dist.b} onCanonical={(v) => setDist((d) => ({ ...d, b: v }))} dimension="distance" className={`${styles.fieldInput} ${anchorError ? styles.inputErr : ""}`} placeholder="4" />
+                  </label>
                 </div>
               )}
               {distUnit === "km" && rangeValueComplete(dist) && (
                 <span className={styles.fieldNote}>
-                  {dist.mode === "single"
-                    ? `${dist.single} km → ${kmToMi(Number(dist.single))} mi`
-                    : `${dist.a}–${dist.b} km → ${kmToMi(Number(dist.a))}–${kmToMi(Number(dist.b))} mi`}{" "}
-                  — stores in mi
+                  stores as {dist.mode === "single" ? dist.single : `${dist.a}–${dist.b}`} mi
                 </span>
               )}
             </div>
@@ -385,7 +375,6 @@ export function TargetSheet({
           <div className={styles.sheetActions} style={{ marginTop: 12 }}>
             <button type="submit" className={styles.primaryBtn} disabled={busy || !anchorValid}>Save target</button>
           </div>
-          <button type="button" className={styles.linkRemove} style={{ marginTop: 10 }} onClick={removeTarget} disabled={busy}>Remove target</button>
         </form>
       ) : (
         <form onSubmit={saveStrength}>
@@ -417,21 +406,25 @@ export function TargetSheet({
           <div className={styles.sheetActions} style={{ marginTop: 12 }}>
             <button type="submit" className={styles.primaryBtn} disabled={busy || !anchorValid}>Save target</button>
           </div>
-          <button type="button" className={styles.linkRemove} style={{ marginTop: 10 }} onClick={removeTarget} disabled={busy}>Remove target</button>
         </form>
       )}
 
-      {/* Quiet nav to the full exercise editor — for everything the target
-          inputs don't cover (rename, type, tag, equipment). Works for
-          library-sourced exercises too (the manage list now includes them). */}
-      <button
-        type="button"
-        className={styles.linkRemove}
-        style={{ marginTop: 14 }}
-        onClick={() => { onClose(); router.push(`/exercises?edit=${encodeURIComponent(ex.exerciseId)}`); }}
-      >
-        Edit exercise → name, tag, what it logs &amp; targets
-      </button>
+      {/* Compact footer (§4): Remove target + the exercise-editor linkout share
+          ONE quiet row; the descriptor is a small trailing hint, not the link. */}
+      <div className={styles.footRow}>
+        {opted ? (
+          <button type="button" className={styles.linkRemove} style={{ marginTop: 0 }} onClick={removeTarget} disabled={busy}>Remove target</button>
+        ) : <span />}
+        <button
+          type="button"
+          className={styles.linkRemove}
+          style={{ marginTop: 0 }}
+          onClick={() => { onClose(); router.push(`/exercises?edit=${encodeURIComponent(ex.exerciseId)}`); }}
+        >
+          Edit exercise →
+        </button>
+      </div>
+      <p className={styles.footHint}>name · tag · what it logs &amp; targets</p>
 
       <div className={styles.sectionLabel}>Remove</div>
       {confirmRemove ? (
