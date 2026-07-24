@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { exercises, cardioLogs, workoutLogs, setLogs } from "@/db/schema";
 import { routesToStrength } from "@/lib/logFields";
@@ -43,7 +43,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       })
       .from(cardioLogs)
       .innerJoin(workoutLogs, eq(cardioLogs.workoutLogId, workoutLogs.id))
-      .where(eq(cardioLogs.exerciseId, exerciseId))
+      // Warm-ups are excluded from the reference line, mirroring the strength
+      // path (core/machineTracking skips setType !== "working").
+      .where(and(eq(cardioLogs.exerciseId, exerciseId), eq(cardioLogs.setType, "working")))
       .orderBy(desc(workoutLogs.date))
       .limit(1);
     // Mixed-history honesty: a converted exercise may carry strength history

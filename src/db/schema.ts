@@ -439,6 +439,11 @@ export const cardioLogs = pgTable("cardio_logs", {
   restSeconds: integer("rest_seconds"),
   restSource: text("rest_source"), // 'timed' | 'derived' | 'user'
   dropSetGroup: text("drop_set_group"),
+  // Working vs warm-up, mirroring set_logs' column exactly (same enum, NOT
+  // NULL). Absence isn't meaningful — every entry is one or the other — so
+  // there's no nullable sentinel to remember; existing rows backfill to
+  // 'working' via the column default.
+  setType: setTypeEnum("set_type").notNull().default("working"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

@@ -3199,3 +3199,28 @@ out of the value string to the row's right (`setEffort`, as strength does) and
 its control now uses the strength card's `cellSelect` sizing. Value hierarchy
 matches: headline metrics (weight · duration · distance) prominent, machine
 settings (speed/incline/level) a muted suffix. 185 tests.
+
+## §5 Working/Warm-up on metric entries (2026-07-24, migration 0027)
+
+Column check reported first: `set_logs` uses `set_type` (pgEnum
+["warmup","working"], NOT NULL); `cardio_logs` had no equivalent → gated.
+**Owner amended the proposal to NOT NULL rather than nullable-with-a-
+convention** — absence isn't meaningful (every entry is one or the other), so
+a NULL-reads-as-working sentinel would be a rule a future reader has to
+remember. Shipped as:
+`ALTER TABLE "cardio_logs" ADD COLUMN "set_type" "set_type" DEFAULT 'working' NOT NULL;`
+Prod before: no column, 7 cardio rows, 27 migrations → after: NOT NULL with a
+'working' default, **7 rows all backfilled to 'working'** (what NULL would have
+read as), 28 migrations.
+
+Wired end-to-end mirroring strength: the same Working/Warm-up `typeSelect` in
+the entry meta row (default "working"), the `warm-up · ` row prefix SetRow
+uses, and setType through logCardio/editCardio/sync POST+PATCH/hydrate and the
+sessions GET. **Downstream exclusion:** the metric "last …" reference now
+skips warm-ups (`WHERE set_type = 'working'`), mirroring
+core/machineTracking's `setType !== "working"` skip on the strength path —
+verified live (a 3-min warm-up + a 12-min working entry → the reference
+returns the 12-min one). Progression needs nothing: `src/core/*` reads
+set_logs ONLY, so metric warm-ups are excluded from it by construction (grep
+confirms core never touches cardio_logs). 186 tests (+ a setType default/
+round-trip lock).

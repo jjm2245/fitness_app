@@ -28,6 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.restSeconds === null || typeof body.restSeconds === "number") updates.restSeconds = body.restSeconds;
   if (body.restSource === null || REST_SOURCES.has(body.restSource)) updates.restSource = body.restSource;
   if (body.dropSetGroup === null || typeof body.dropSetGroup === "string") updates.dropSetGroup = body.dropSetGroup;
+  if (body.setType === "warmup" || body.setType === "working") updates.setType = body.setType;
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   const [row] = await db.update(cardioLogs).set(updates).where(eq(cardioLogs.id, cardioId)).returning();

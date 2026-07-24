@@ -632,6 +632,21 @@ describe("finish session", () => {
 });
 
 describe("cardio (separate store, synced/pending like sets)", () => {
+  it("setType mirrors set_logs: defaults to working, warm-up round-trips", async () => {
+    const { id, date, inst } = await newSession();
+    mockOffline();
+    const base = {
+      sessionId: id, instanceId: inst, date, exerciseId: "stair_machine", exerciseName: "Stairs",
+      incline: null, speed: null, distance: null, level: null, load: null, effort: null, notes: null,
+    };
+    const dflt = await logCardio({ ...base, durationMin: 10 });
+    expect(dflt.setType).toBe("working"); // NOT NULL with a working default
+    const warm = await logCardio({ ...base, durationMin: 3, setType: "warmup" });
+    expect(warm.setType).toBe("warmup");
+    const work = await logCardio({ ...base, durationMin: 12, setType: "working" });
+    expect(work.setType).toBe("working");
+  });
+
   it("rest mirrors the strength timed branch: edge before the entry, timed-only", async () => {
     const { id, date, inst } = await newSession();
     mockOffline();

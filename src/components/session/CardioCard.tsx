@@ -97,6 +97,9 @@ export function CardioCard({
   const [level, setLevel] = useState<string>("");
   const [load, setLoad] = useState<string>("");
   const [effort, setEffort] = useState<string>("");
+  // Working vs warm-up — same control, default, and semantics as the strength
+  // card. Warm-up entries are excluded wherever strength warm-ups are.
+  const [setType, setSetType] = useState<"warmup" | "working">("working");
   // Entry-side units (§7): type in kg/km, the shown conversion IS what stores
   // (lb nearest 0.5; mi 2 decimals). Canonical storage/display stays lb/mi.
   const [wUnit, toggleWeightUnit] = useWeightUnit();
@@ -190,6 +193,7 @@ export function CardioCard({
       level: fields.includes("level") ? toNum(level) : null,
       load: fields.includes("weight") ? canonicalLoad : null,
       effort: fields.includes("effort") && effort !== "" ? effort : null,
+      setType,
       // If the rest timer is running/held, this entry consumes it as an exact
       // rest — the same path and semantics as a strength set.
       timedRestSeconds: takeTimedRest(),
@@ -318,6 +322,7 @@ export function CardioCard({
                         </span>
                         <span className={styles.setMain}>
                           {isDrop && <span className={styles.setKind}>↳ drop · </span>}
+                          {!isDrop && c.setType === "warmup" && <span className={styles.setKind}>warm-up · </span>}
                           {entryPrimary(c)}
                           {entrySuffix(c) && <span className={styles.setSuffix}> · {entrySuffix(c)}</span>}
                         </span>
@@ -367,6 +372,12 @@ export function CardioCard({
 
           {!completed && (
           <form onSubmit={handleLog}>
+            <div className={styles.entryMetaRow}>
+              <select className={styles.typeSelect} value={setType} onChange={(e) => setSetType(e.target.value as "warmup" | "working")}>
+                <option value="working">Working</option>
+                <option value="warmup">Warm-up</option>
+              </select>
+            </div>
             {/* Balanced grid (§6): ≤3 numeric cells → one row; 4 → 2×2. Effort
                 is a consistent full-width control below — never an orphan cell. */}
             {(() => {

@@ -146,6 +146,8 @@ export interface SessionCardio {
   restSeconds: number | null;
   restSource: string | null;
   dropSetGroup: string | null;
+  // Working vs warm-up, mirroring set_logs (NOT NULL — every entry is one).
+  setType: "warmup" | "working";
   notes: string | null;
   serverId: number | null;
   syncState: CardioSyncState;
@@ -572,6 +574,7 @@ export interface ServerSession {
     restSeconds?: number | null;
     restSource?: string | null;
     dropSetGroup?: string | null;
+    setType?: "warmup" | "working";
     notes: string | null;
   }>;
 }
@@ -688,6 +691,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       restSeconds: c.restSeconds ?? null,
       restSource: c.restSource ?? null,
       dropSetGroup: c.dropSetGroup ?? null,
+      setType: c.setType ?? "working",
       notes: c.notes,
       serverId: c.id,
       syncState: "synced",
@@ -998,6 +1002,7 @@ export interface LogCardioInput {
   notes: string | null;
   timedRestSeconds?: number | null; // from the rest timer → source "timed"
   dropSetGroup?: string | null;
+  setType?: "warmup" | "working";
 }
 
 export async function logCardio(input: LogCardioInput): Promise<SessionCardio> {
@@ -1019,6 +1024,7 @@ export async function logCardio(input: LogCardioInput): Promise<SessionCardio> {
   const row: SessionCardio = {
     ...core,
     dropSetGroup: input.dropSetGroup ?? null,
+    setType: input.setType ?? "working",
     restSeconds,
     restSource,
     serverId: null,
@@ -1036,7 +1042,7 @@ export async function editCardio(
     durationMin?: number | null; incline?: number | null; speed?: number | null;
     distance?: number | null; level?: number | null; load?: number | null;
     effort?: string | null; restSeconds?: number | null; restSource?: string | null;
-    dropSetGroup?: string | null;
+    dropSetGroup?: string | null; setType?: "warmup" | "working";
   }
 ): Promise<void> {
   const db = await getDb();
@@ -1299,6 +1305,7 @@ async function runSync(): Promise<SyncResult> {
             restSeconds: row.restSeconds ?? null,
             restSource: row.restSource ?? null,
             dropSetGroup: row.dropSetGroup ?? null,
+            setType: row.setType ?? "working",
             notes: row.notes,
           }),
         });
@@ -1313,7 +1320,7 @@ async function runSync(): Promise<SyncResult> {
             durationMin: row.durationMin, incline: row.incline, speed: row.speed,
             distance: row.distance, level: row.level, load: row.load, effort: row.effort,
             restSeconds: row.restSeconds ?? null, restSource: row.restSource ?? null,
-            dropSetGroup: row.dropSetGroup ?? null,
+            dropSetGroup: row.dropSetGroup ?? null, setType: row.setType ?? "working",
           }),
         });
         await db.put("cardio", { ...row, syncState: "synced" });

@@ -1,0 +1,1 @@
+ALTER TABLE "cardio_logs" ADD COLUMN "set_type" "set_type" DEFAULT 'working' NOT NULL;

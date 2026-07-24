@@ -20,6 +20,7 @@ interface CardioPayload {
   restSeconds?: number | null;
   restSource?: string | null;
   dropSetGroup?: string | null;
+  setType?: string | null;
   notes?: string | null;
 }
 
@@ -70,6 +71,8 @@ export async function POST(request: NextRequest) {
         restSeconds: typeof body.restSeconds === "number" ? Math.round(body.restSeconds) : null,
         restSource: body.restSource && REST_SOURCES.has(body.restSource) ? body.restSource : null,
         dropSetGroup: body.dropSetGroup ?? null,
+        // NOT NULL with a 'working' default — an absent/invalid value takes it.
+        setType: body.setType === "warmup" ? "warmup" : "working",
         notes: body.notes ?? null,
       })
       .returning();
