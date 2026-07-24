@@ -2984,3 +2984,50 @@ data" — read-only reference, not data loss.
 **Boundary notes removed** — everything materializes now. Core untouched and
 still set_logs-only (metric-routed exercises produce no progression signal by
 construction). 168 tests; Stairmaster `[5,15]` byte-identical end to end.
+
+## Phase 2 polish — profile UX, either-or, distance range, unit entry (2026-07-23, no schema)
+
+**§1 Profile dropdown + STAGED Save.** The six-row radio list became a compact
+dropdown (the exercises-page view-dropdown chrome), closed state = current
+profile + "(default)" when inherited, or the legacy "Custom config — closest: X
+(±N)". Picking now STAGES (Save/Cancel appear; the closed label + §2 equipment
+answer update immediately); the forward-only history warning fires on SAVE, not
+stage; Cancel writes nothing (DB-verified). Reset-to-default stages too.
+Accidental instant router flips are gone.
+
+**§2 Equipment legibility.** When the staged/selected profile routes metric,
+the sheet's Equipment section is replaced by "Equipment tracking applies to
+strength-logged exercises." (the only surface that conditionally shows
+equipment — the metric session card never had it).
+
+**§3 Links.** The cross-link split into separate Program → /program and Blocks
+→ /blocks links; the target-sheet linkout reads "Edit exercise → name, tag,
+what it logs & targets" (fields/shape — target VALUES stay in the sheet).
+
+**§4 Either-or decoration.** Duration/Distance lost their per-field asterisks;
+ONE grouped indicator ("* at least one of duration or distance"); both inputs
+error-highlight only when neither is filled. Sets* unchanged.
+
+**§5 Distance range.** Distance gained Single/Range in the target sheet
+(program + blocks, same engine) using duration's exact stored representation —
+number or [min,max] in params — via the new shared parse/store/format path
+`lib/targetValues.ts` (duration now reads through it too; 7 lock tests incl.
+the [5,15] byte-identical round-trip). Chips/AddSheet render "3–4 mi".
+Verified: [3,4] stored, chip correct, no-edit save byte-identical. Sets-range
+NOT added (different storage, known future).
+
+**§7 Unit entry (canonical storage inviolable).** Weight (session cells) and
+distance (session cells + target inputs) unit labels are tappable: lb↔kg,
+mi↔km. In alternate mode the typed value shows its live conversion ("10 kg →
+22 lb"; "4 km → 2.49 mi — stores in mi") and the SHOWN value is exactly what
+stores (DB-verified both). **Rounding rule: weight → nearest 0.5 lb; distance
+→ 2 decimals (mi)** (`lib/units.ts`, lock-tested). Toggling clears the field
+(reinterpreting typed digits would silently change the value). The entry-unit
+preference persists locally per FIELD (one localStorage key each), so it
+carries across surfaces (target sheet + session cell share it); all storage
+and displayed history stay lb/mi/min. Duration stays min-only.
+
+**§6 Metric-card grid.** Numeric cells: ≤3 → one row, 4 → 2×2 (Treadmill
+verified 2×2; Loaded carry one row of 3); effort renders as a consistent
+full-width control below the grid — no orphan cells. 175 tests; params
+byte-identical throughout.

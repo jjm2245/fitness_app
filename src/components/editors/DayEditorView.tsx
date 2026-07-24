@@ -11,6 +11,7 @@ import { DayOrganizeSheet } from "./DayOrganizeSheet";
 import { SortableList, SortableRow } from "./SortableList";
 import { api, type EditorDay, type EditorExercise } from "./types";
 import { resolveMetricFields, routesToStrength } from "@/lib/logFields";
+import { formatRangeValue, hasRangeValue } from "@/lib/targetValues";
 import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 
 // The shared day/block editor engine (phase 3): horizontal pill tabs, one
@@ -30,19 +31,19 @@ function targetChip(ex: EditorExercise): { text: string; muted: boolean } {
     // sheet). Anchor generalized: a duration OR a distance makes the target
     // valid; neither → "Set a target". Effort target reads from params.effort.
     const p = ex.params ?? {};
-    const dur = p.duration_min;
-    const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
-    const hasDistance = typeof p.distance === "number";
-    if (!hasDuration && !hasDistance) return { text: "Set a target", muted: true };
+    if (!hasRangeValue(p.duration_min) && !hasRangeValue(p.distance)) return { text: "Set a target", muted: true };
     const parts: string[] = [];
     for (const f of resolveMetricFields(src)) {
       if (f === "duration") {
-        if (Array.isArray(dur) && dur.length === 2) parts.push(`${dur[0]}–${dur[1]} min`);
-        else if (typeof dur === "number") parts.push(`${dur} min`);
+        const t = formatRangeValue(p.duration_min, "min");
+        if (t) parts.push(t);
       } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
       else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);
       else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
-      else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} mi`);
+      else if (f === "distance") {
+        const t = formatRangeValue(p.distance, "mi");
+        if (t) parts.push(t);
+      }
     }
     if (typeof p.effort === "string" && p.effort in TARGET_EFFORT_LABEL) {
       parts.push(TARGET_EFFORT_LABEL[p.effort as keyof typeof TARGET_EFFORT_LABEL]);

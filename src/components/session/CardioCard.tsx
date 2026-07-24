@@ -8,6 +8,7 @@ import { CardMenu, type CardMenuItem } from "./CardMenu";
 import type { CardControls, LoggableOccurrence } from "./shared";
 import { CARDIO_FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
 import { resolveCardFields, type LogField } from "@/lib/logFields";
+import { kgToLb, kmToMi, getEntryUnit, setEntryUnit, type WeightEntryUnit, type DistanceEntryUnit } from "@/lib/units";
 
 // Shape returned by the last-session route for a metric-routed exercise.
 type CardioLast = {
@@ -89,6 +90,15 @@ export function CardioCard({
   const [level, setLevel] = useState<string>("");
   const [load, setLoad] = useState<string>("");
   const [effort, setEffort] = useState<string>("");
+  // Entry-side units (§7): type in kg/km, the shown conversion IS what stores
+  // (lb nearest 0.5; mi 2 decimals). Canonical storage/display stays lb/mi.
+  const [wUnit, setWUnit] = useState<WeightEntryUnit>(() => getEntryUnit("weight"));
+  const [dUnit, setDUnit] = useState<DistanceEntryUnit>(() => getEntryUnit("distance"));
+  const toggleWUnit = () => { const n: WeightEntryUnit = wUnit === "lb" ? "kg" : "lb"; setWUnit(n); setEntryUnit("weight", n); setLoad(""); };
+  const toggleDUnit = () => { const n: DistanceEntryUnit = dUnit === "mi" ? "km" : "mi"; setDUnit(n); setEntryUnit("distance", n); setDistance(""); };
+  // What actually stores for the two convertible cells.
+  const canonicalLoad = load.trim() === "" ? null : wUnit === "kg" ? kgToLb(Number(load)) : Number(load);
+  const canonicalDistance = distance.trim() === "" ? null : dUnit === "km" ? kmToMi(Number(distance)) : Number(distance);
   const [error, setError] = useState<string | null>(null);
   // The exercise's most recent cardio entry (exercise-level — no lanes here).
   const [lastCardio, setLastCardio] = useState<CardioLast | null>(null);
@@ -132,9 +142,9 @@ export function CardioCard({
       durationMin: fields.includes("duration") ? toNum(durationMin) : null,
       incline: fields.includes("incline") ? toNum(incline) : null,
       speed: fields.includes("speed") ? toNum(speed) : null,
-      distance: fields.includes("distance") ? toNum(distance) : null,
+      distance: fields.includes("distance") ? canonicalDistance : null,
       level: fields.includes("level") ? toNum(level) : null,
-      load: fields.includes("weight") ? toNum(load) : null,
+      load: fields.includes("weight") ? canonicalLoad : null,
       effort: fields.includes("effort") && effort !== "" ? effort : null,
       notes: null,
     });
@@ -230,38 +240,62 @@ export function CardioCard({
 
           {!completed && (
           <form onSubmit={handleLog}>
-            <div className={styles.entryGrid} style={{ gridTemplateColumns: `repeat(${Math.min(fields.length, 3)}, 1fr)` }}>
-              {fields.map((f) => {
-                if (f === "weight") {
-                  return (
-                    <label key={f} className={styles.cell}>
-                      <span className={styles.cellLabel}>{CELL_LABEL.weight}</span>
-                      <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
-                    </label>
-                  );
-                }
-                if (f === "effort") {
-                  return (
-                    <label key={f} className={styles.cell}>
-                      <span className={styles.cellLabel}>{CELL_LABEL.effort}</span>
-                      <select className={styles.cellInput} value={effort} onChange={(e) => setEffort(e.target.value)}>
-                        <option value="">—</option>
-                        {EFFORT_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                }
-                const metric = f as CardioField;
-                return (
-                  <label key={f} className={styles.cell}>
-                    <span className={styles.cellLabel}>{CELL_LABEL[f] ?? f}</span>
-                    <input type="number" className={styles.cellInput} value={metricState[metric][0]} onChange={(e) => metricState[metric][1](e.target.value)} />
-                  </label>
-                );
-              })}
-            </div>
+            {/* Balanced grid (§6): ≤3 numeric cells → one row; 4 → 2×2. Effort
+                is a consistent full-width control below — never an orphan cell. */}
+            {(() => {
+              const numeric = fields.filter((f) => f !== "effort");
+              const cols = numeric.length <= 3 ? Math.max(numeric.length, 1) : 2;
+              return (
+                <div className={styles.entryGrid} style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+                  {numeric.map((f) => {
+                    if (f === "weight") {
+                      return (
+                        <label key={f} className={styles.cell}>
+                          <span className={styles.cellLabel}>
+                            <button type="button" className={styles.unitToggle} onClick={toggleWUnit} title="Switch entry unit — stores lb">{wUnit}</button>
+                          </span>
+                          <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
+                          {wUnit === "kg" && load.trim() !== "" && (
+                            <span className={styles.cellHint}>→ {canonicalLoad} lb</span>
+                          )}
+                        </label>
+                      );
+                    }
+                    if (f === "distance") {
+                      return (
+                        <label key={f} className={styles.cell}>
+                          <span className={styles.cellLabel}>
+                            <button type="button" className={styles.unitToggle} onClick={toggleDUnit} title="Switch entry unit — stores mi">{dUnit}</button>
+                          </span>
+                          <input type="number" className={styles.cellInput} value={distance} onChange={(e) => setDistance(e.target.value)} />
+                          {dUnit === "km" && distance.trim() !== "" && (
+                            <span className={styles.cellHint}>→ {canonicalDistance} mi</span>
+                          )}
+                        </label>
+                      );
+                    }
+                    const metric = f as CardioField;
+                    return (
+                      <label key={f} className={styles.cell}>
+                        <span className={styles.cellLabel}>{CELL_LABEL[f] ?? f}</span>
+                        <input type="number" className={styles.cellInput} value={metricState[metric][0]} onChange={(e) => metricState[metric][1](e.target.value)} />
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            {fields.includes("effort") && (
+              <label className={styles.effortRow}>
+                <span className={styles.cellLabel}>{CELL_LABEL.effort}</span>
+                <select className={styles.cellInput} value={effort} onChange={(e) => setEffort(e.target.value)}>
+                  <option value="">—</option>
+                  {EFFORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button type="submit" className={styles.logBtn} style={{ marginTop: 8 }}>Log entry</button>
           </form>
           )}

@@ -172,31 +172,8 @@
   border-radius: 50%;
   background: var(--accent);
 }
-/* Logs & targets PROFILE picker (exercise edit sheet, Phase 2). */
-.profileList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-}
-.profileRow,
-.profileRowActive {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--raised);
-  border: 1px solid var(--hairline);
-  color: var(--text);
-  text-align: left;
-}
-.profileRowActive {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--raised));
-}
+/* Logs & targets PROFILE dropdown (exercise edit sheet, Phase 2 polish §1) —
+   reuses the view-dropdown chrome; these are the menu rows' inner text bits. */
 .profileMain {
   min-width: 0;
   display: flex;
@@ -214,17 +191,17 @@
   font-size: 0.75rem;
   color: var(--text-2);
 }
-.profileDot,
-.profileDotOn {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--hairline);
-}
-.profileDotOn {
-  border-color: var(--accent);
-  background: radial-gradient(circle at center, var(--accent) 0 5px, transparent 6px);
+/* Tappable entry-unit label (lb↔kg, mi↔km) — entry-side only; storage stays
+   canonical. Dotted underline signals "this toggles". */
+.unitToggle {
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
 /* A read-only value shown where an input would be (library name, current tag). */
 .readonlyName {

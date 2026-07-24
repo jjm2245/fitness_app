@@ -8,6 +8,8 @@ import { api, type EditorExercise } from "./types";
 import { CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
 import { resolveLogFields, resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
+import { parseRangeValue, storeRangeValue, rangeValueComplete, type ParsedRangeValue } from "@/lib/targetValues";
+import { kmToMi, getEntryUnit, setEntryUnit, type DistanceEntryUnit } from "@/lib/units";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -97,34 +99,42 @@ export function TargetSheet({
   // ── cardio state (edits the EXERCISE's params — applies everywhere) ──
   const cardioFieldSet = resolveMetricFields(fieldSource);
   const p = ex.params ?? {};
-  const dur = p.duration_min;
-  const durIsRange = Array.isArray(dur) && dur.length === 2;
-  const [durMode, setDurMode] = useState<"single" | "range">(durIsRange ? "range" : "single");
-  const [durSingle, setDurSingle] = useState(durIsRange ? "" : typeof dur === "number" ? String(dur) : "");
-  const [durA, setDurA] = useState(durIsRange ? String((dur as number[])[0]) : "");
-  const [durB, setDurB] = useState(durIsRange ? String((dur as number[])[1]) : "");
+  // Duration + distance share the single-or-range representation (a number or
+  // [min,max] in params) through the ONE parse/store path in lib/targetValues.
+  const [dur, setDur] = useState<ParsedRangeValue>(() => parseRangeValue(p.duration_min));
+  const [dist, setDist] = useState<ParsedRangeValue>(() => parseRangeValue(p.distance));
+  // Entry-side distance unit (mi canonical; km converts on save — §7). The
+  // preference persists locally per field; storage stays mi everywhere.
+  const [distUnit, setDistUnit] = useState<DistanceEntryUnit>(() => getEntryUnit("distance"));
+  const toggleDistUnit = () => {
+    const next: DistanceEntryUnit = distUnit === "mi" ? "km" : "mi";
+    setDistUnit(next);
+    setEntryUnit("distance", next);
+    // Reinterpreting typed digits in a different unit would silently change the
+    // value — clearing on toggle is the honest move.
+    setDist((d) => ({ ...d, single: "", a: "", b: "" }));
+  };
   const [incline, setIncline] = useState(typeof p.incline === "number" ? String(p.incline) : "");
   const [speed, setSpeed] = useState(typeof p.speed === "number" ? String(p.speed) : "");
   const [level, setLevel] = useState(typeof p.level === "number" ? String(p.level) : "");
-  const [distance, setDistance] = useState(typeof p.distance === "number" ? String(p.distance) : "");
 
-  type ExtraField = Exclude<CardioField, "duration">;
+  type ExtraField = Exclude<CardioField, "duration" | "distance">;
   const extraFieldState: Record<ExtraField, { value: string; set: (v: string) => void; label: React.ReactNode; decimal?: boolean }> = {
     speed: { value: speed, set: setSpeed, label: "Speed", decimal: true },
     incline: { value: incline, set: setIncline, label: "Incline" },
     level: { value: level, set: setLevel, label: "Level" },
-    distance: { value: distance, set: setDistance, label: <>Distance (mi) <span className={styles.anchorReq}>*</span></>, decimal: true },
   };
-  const extraFields = cardioFieldSet.filter((f): f is ExtraField => f !== "duration");
+  const extraFields = cardioFieldSet.filter((f): f is ExtraField => f !== "duration" && f !== "distance");
+  const hasDistanceField = cardioFieldSet.includes("distance");
 
   // ── opt-in + anchor validity ──
   // A cardio target only counts as "set" when it has a Duration — incline/speed
   // alone is an invalid target (reads "Set a target").
-  const durationComplete = durMode === "single" ? durSingle.trim() !== "" : durA.trim() !== "" && durB.trim() !== "";
+  const durationComplete = rangeValueComplete(dur);
   // Generalized anchor (Phase 2): reps configured -> Sets anchors (strength
   // branch, unchanged). Otherwise at least ONE of duration or distance
   // satisfies it — either alone, or both as a compound target.
-  const distanceComplete = cardioFieldSet.includes("distance") && distance.trim() !== "";
+  const distanceComplete = hasDistanceField && rangeValueComplete(dist);
   const metricAnchor = durationComplete || distanceComplete;
   const initialOpted = isCardio ? metricAnchor : ex.targetSets != null;
   const [opted, setOpted] = useState(initialOpted);
@@ -166,13 +176,17 @@ export function TargetSheet({
     // Merge over existing params so keys this exercise doesn't show are PRESERVED
     // (e.g. a stored incline on a stair machine whose field-set is duration+level).
     const params: Record<string, unknown> = { ...(ex.params ?? {}) };
-    if (durMode === "single") {
-      if (durSingle.trim() !== "") params.duration_min = Number(durSingle);
-      else delete params.duration_min;
-    } else if (durA.trim() !== "" && durB.trim() !== "") {
-      params.duration_min = [Number(durA), Number(durB)];
-    } else {
-      delete params.duration_min;
+    const durStore = storeRangeValue(dur);
+    if (durStore !== undefined) params.duration_min = durStore;
+    else delete params.duration_min;
+    if (hasDistanceField) {
+      // km entry converts to canonical mi at save (the shown conversion IS the
+      // stored value — kmToMi rounds to 2 decimals).
+      const raw = storeRangeValue(dist);
+      const conv = (n: number) => (distUnit === "km" ? kmToMi(n) : n);
+      const distStore = raw === undefined ? undefined : Array.isArray(raw) ? ([conv(raw[0]), conv(raw[1])] as [number, number]) : conv(raw);
+      if (distStore !== undefined) params.distance = distStore;
+      else delete params.distance;
     }
     for (const f of extraFields) {
       const key = CARDIO_FIELD_KEY[f];
@@ -218,6 +232,7 @@ export function TargetSheet({
       if (isCardio) {
         const params: Record<string, unknown> = { ...(ex.params ?? {}) };
         delete params.duration_min;
+        delete params.distance;
         delete params.effort;
         for (const f of extraFields) delete params[CARDIO_FIELD_KEY[f]];
         await api(`/api/exercises/${encodeURIComponent(ex.exerciseId)}`, {
@@ -290,29 +305,67 @@ export function TargetSheet({
         </div>
       ) : isCardio ? (
         <form onSubmit={saveCardio}>
+          {/* Either-or pair (§4): no per-field asterisks — ONE grouped
+              requirement indicator; both fields error-highlight only when
+              NEITHER is filled (anchorError). */}
           {cardioFieldSet.includes("duration") && (
             <div className={styles.field}>
               <div className={styles.repsHead}>
-                <span className={styles.fieldLabel}>Duration (min) <span className={styles.anchorReq}>*</span></span>
-                <SegToggle mode={durMode} onSet={setDurMode} />
+                <span className={styles.fieldLabel}>Duration (min)</span>
+                <SegToggle mode={dur.mode} onSet={(m) => setDur((d) => ({ ...d, mode: m }))} />
               </div>
-              {durMode === "single" ? (
+              {dur.mode === "single" ? (
                 <div className={styles.fieldRow}>
-                  <NumField value={durSingle} onChange={setDurSingle} placeholder="30" error={anchorError} />
+                  <NumField value={dur.single} onChange={(v) => setDur((d) => ({ ...d, single: v }))} placeholder="30" error={anchorError} />
                 </div>
               ) : (
                 <div className={styles.fieldRow}>
-                  <NumField value={durA} onChange={setDurA} placeholder="5" error={anchorError} />
-                  <NumField value={durB} onChange={setDurB} placeholder="15" error={anchorError} />
+                  <NumField value={dur.a} onChange={(v) => setDur((d) => ({ ...d, a: v }))} placeholder="5" error={anchorError} />
+                  <NumField value={dur.b} onChange={(v) => setDur((d) => ({ ...d, b: v }))} placeholder="15" error={anchorError} />
                 </div>
               )}
             </div>
           )}
+          {hasDistanceField && (
+            <div className={styles.field} style={{ marginTop: 10 }}>
+              <div className={styles.repsHead}>
+                <span className={styles.fieldLabel}>
+                  Distance (
+                  <button type="button" className={styles.unitToggle} onClick={toggleDistUnit} title="Switch entry unit — storage stays mi">
+                    {distUnit}
+                  </button>
+                  )
+                </span>
+                <SegToggle mode={dist.mode} onSet={(m) => setDist((d) => ({ ...d, mode: m }))} />
+              </div>
+              {dist.mode === "single" ? (
+                <div className={styles.fieldRow}>
+                  <NumField value={dist.single} onChange={(v) => setDist((d) => ({ ...d, single: v }))} placeholder="0.5" allowDecimal error={anchorError} />
+                </div>
+              ) : (
+                <div className={styles.fieldRow}>
+                  <NumField value={dist.a} onChange={(v) => setDist((d) => ({ ...d, a: v }))} placeholder="3" allowDecimal error={anchorError} />
+                  <NumField value={dist.b} onChange={(v) => setDist((d) => ({ ...d, b: v }))} placeholder="4" allowDecimal error={anchorError} />
+                </div>
+              )}
+              {distUnit === "km" && rangeValueComplete(dist) && (
+                <span className={styles.fieldNote}>
+                  {dist.mode === "single"
+                    ? `${dist.single} km → ${kmToMi(Number(dist.single))} mi`
+                    : `${dist.a}–${dist.b} km → ${kmToMi(Number(dist.a))}–${kmToMi(Number(dist.b))} mi`}{" "}
+                  — stores in mi
+                </span>
+              )}
+            </div>
+          )}
+          <p className={styles.fieldNote} style={{ marginTop: 6 }}>
+            <span className={styles.anchorReq}>*</span> at least one of duration or distance
+          </p>
           {extraFields.length > 0 && (
             <div className={styles.fieldRow} style={{ marginTop: 10 }}>
               {extraFields.map((f) => {
                 const c = extraFieldState[f];
-                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} error={f === "distance" && anchorError} />;
+                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} />;
               })}
             </div>
           )}
@@ -370,7 +423,7 @@ export function TargetSheet({
         style={{ marginTop: 14 }}
         onClick={() => { onClose(); router.push(`/exercises?edit=${encodeURIComponent(ex.exerciseId)}`); }}
       >
-        Edit exercise →
+        Edit exercise → name, tag, what it logs &amp; targets
       </button>
 
       <div className={styles.sectionLabel}>Remove</div>

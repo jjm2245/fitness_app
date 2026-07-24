@@ -6,6 +6,7 @@ import { Sheet } from "./Sheet";
 import { ExerciseSearch, type ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { prettyDayName } from "@/lib/labels";
 import { resolveMetricFields, routesToStrength } from "@/lib/logFields";
+import { formatRangeValue, hasRangeValue } from "@/lib/targetValues";
 import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import type { BlockDetail, ProgramDetail, ProgramExerciseDetail } from "./shared";
 
@@ -34,17 +35,19 @@ function targetRef(ex: ProgramExerciseDetail): string | null {
   const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   if (!routesToStrength(src)) {
     const p = ex.params ?? {};
-    const dur = p.duration_min;
-    const hasDuration = (Array.isArray(dur) && dur.length === 2) || typeof dur === "number";
-    const hasDistance = typeof p.distance === "number";
-    if (!hasDuration && !hasDistance) return null;
+    if (!hasRangeValue(p.duration_min) && !hasRangeValue(p.distance)) return null;
     const parts: string[] = [];
     for (const f of resolveMetricFields(src)) {
-      if (f === "duration" && hasDuration) parts.push(Array.isArray(dur) ? `${dur[0]}–${dur[1]} min` : `${dur} min`);
-      else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
+      if (f === "duration") {
+        const t = formatRangeValue(p.duration_min, "min");
+        if (t) parts.push(t);
+      } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
       else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);
       else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
-      else if (f === "distance" && typeof p.distance === "number") parts.push(`${p.distance} mi`);
+      else if (f === "distance") {
+        const t = formatRangeValue(p.distance, "mi");
+        if (t) parts.push(t);
+      }
     }
     if (typeof p.effort === "string" && p.effort in TARGET_EFFORT_LABEL) {
       parts.push(TARGET_EFFORT_LABEL[p.effort as keyof typeof TARGET_EFFORT_LABEL]);

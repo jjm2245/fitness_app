@@ -91,10 +91,22 @@ export function ExerciseDetailSheet({
   // exercises only). "closed" = no confirm step open. The payload is what we'd
   // PATCH: an array, or null for inherit/Reset.
   const [pendingFields, setPendingFields] = useState<LogField[] | null | "closed">("closed");
+  // STAGED selection (§1): picking a profile no longer applies instantly — it
+  // stages, Save/Cancel appear, and the history warning fires on Save. "reset"
+  // stages a return to NULL (inherit).
+  const [staged, setStaged] = useState<LogFieldProfile | "reset" | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   useEffect(() => {
     setPendingFields("closed");
+    setStaged(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ex.id, ex.conditioningOnly, JSON.stringify(ex.logFields ?? null)]);
+
+  // The selection the sheet reflects right now (staged wins over saved) — also
+  // what the Equipment section keys off (§2).
+  const effectiveProfile = staged === "reset" ? defaultProfile : staged ?? currentProfile;
+  const effectiveFields = staged === "reset" ? defaultFields : staged ? staged.fields : resolvedFields;
+  const effectiveRoutesMetric = !effectiveFields.includes("reps");
 
   // Save path: logged history → forward-only warning first; else save directly.
   function requestFieldSave(payload: LogField[] | null) {
@@ -106,12 +118,21 @@ export function ExerciseDetailSheet({
     setPendingFields("closed");
     void patch({ logFields: payload });
   }
-  function pickProfile(p: LogFieldProfile) {
-    if (currentProfile?.id === p.id) return; // already this profile — no write
+  function stageProfile(p: LogFieldProfile) {
+    setPickerOpen(false);
+    if (staged === null && currentProfile?.id === p.id) return; // already saved as this
+    setStaged(p);
+  }
+  function saveStaged() {
+    if (staged === null) return;
     // Picking the profile the default already IS = inherit (NULL), never a
-    // frozen copy of the default set.
-    const matchesDefault = p.id === defaultProfile?.id;
-    requestFieldSave(matchesDefault ? null : p.fields);
+    // frozen copy of the default set. "reset" is explicit inherit.
+    const payload = staged === "reset" || staged.id === defaultProfile?.id ? null : staged.fields;
+    requestFieldSave(payload);
+  }
+  function cancelStaged() {
+    setStaged(null);
+    setPendingFields("closed");
   }
 
   // The fields line under a profile: "weight lb · duration min · distance mi · effort".
@@ -325,53 +346,78 @@ export function ExerciseDetailSheet({
         <span className={styles.fieldNote}>The pattern makes it substitutable; tagging Conditioning also marks it cardio.</span>
       </div>
 
-      {/* ── Logs & targets (Phase 2) — the PROFILE picker. Six named field
-             sets; the resolved default is highlighted "(default)"; a stored
-             override that matches none renders as the honest read-only Custom
-             state (exits: pick a profile or Reset). ── */}
+      {/* ── Logs & targets (Phase 2 polish §1) — compact PROFILE dropdown with
+             STAGED selection: picking stages, Save applies (the forward-only
+             history warning fires on Save, not on stage), Cancel reverts.
+             The legacy non-matching state is the dropdown's shown value. ── */}
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Logs &amp; targets</span>
-        {isCustomConfig && nearest && (
+        <div className={styles.viewDropWrap}>
+          <button type="button" className={styles.viewDropBtn} onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen} disabled={busy}>
+            {staged !== null
+              ? (staged === "reset" ? `${defaultProfile?.label} (default)` : staged.label)
+              : isCustomConfig && nearest
+              ? `Custom config — closest: ${nearest.profile.label} (±${nearest.diff})`
+              : `${currentProfile?.label}${!hasFieldOverride(ex) ? " (default)" : ""}`}
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </button>
+          {pickerOpen && (
+            <>
+              <div className={styles.viewMenuScrim} onClick={() => setPickerOpen(false)} />
+              <div className={styles.viewMenu} role="menu" style={{ minWidth: 260 }}>
+                {LOG_FIELD_PROFILES.map((p) => {
+                  const selected = effectiveProfile?.id === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="menuitem"
+                      className={selected ? styles.viewMenuItemActive : styles.viewMenuItem}
+                      onClick={() => stageProfile(p)}
+                    >
+                      <span className={styles.profileMain}>
+                        <span className={styles.profileLabel}>
+                          {p.label}
+                          {defaultProfile?.id === p.id && <span className={styles.profileDefault}> (default)</span>}
+                        </span>
+                        <span className={styles.profileFields}>{fieldsLine(p.fields)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+        {/* The effective selection's fields, with units. */}
+        <span className={styles.fieldNote}>{fieldsLine(effectiveFields)}</span>
+        {isCustomConfig && staged === null && (
           <span className={styles.fieldNote}>
-            Custom config — closest: {nearest.profile.label} (±{nearest.diff} {nearest.diff === 1 ? "field" : "fields"}) ·{" "}
-            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => requestFieldSave(null)}>
+            Stored custom config — pick a profile or{" "}
+            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => setStaged("reset")}>
               Reset to default
             </button>
-            <br />
-            Fields: {fieldsLine(resolvedFields)}
           </span>
         )}
-        <div className={styles.profileList}>
-          {LOG_FIELD_PROFILES.map((p) => {
-            const selected = currentProfile?.id === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={selected ? styles.profileRowActive : styles.profileRow}
-                onClick={() => pickProfile(p)}
-                aria-pressed={selected}
-                disabled={busy}
-              >
-                <span className={styles.profileMain}>
-                  <span className={styles.profileLabel}>
-                    {p.label}
-                    {defaultProfile?.id === p.id && <span className={styles.profileDefault}> (default)</span>}
-                  </span>
-                  {selected && <span className={styles.profileFields}>{fieldsLine(p.fields)}</span>}
-                </span>
-                <span className={selected ? styles.profileDotOn : styles.profileDot} aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-        {hasFieldOverride(ex) && !isCustomConfig && (
+        {hasFieldOverride(ex) && !isCustomConfig && staged === null && (
           <span className={styles.fieldNote}>
             Edited — default is {defaultProfile?.label} ·{" "}
-            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => requestFieldSave(null)}>
+            <button type="button" className={styles.linkRemove} style={{ minHeight: 0, display: "inline" }} disabled={busy} onClick={() => setStaged("reset")}>
               Reset to default
             </button>
           </span>
+        )}
+        {staged !== null && pendingFields === "closed" && (
+          <div className={styles.fieldRow} style={{ marginTop: 6 }}>
+            <button type="button" className={styles.quietBtn} disabled={busy} onClick={saveStaged}>
+              Save
+            </button>
+            <button type="button" className={styles.quietBtn} disabled={busy} onClick={cancelStaged}>
+              Cancel
+            </button>
+          </div>
         )}
         {pendingFields !== "closed" && (
           <div className={styles.warnBox} style={{ marginTop: 8 }}>
@@ -384,7 +430,7 @@ export function ExerciseDetailSheet({
               <button type="button" className={styles.primaryBtn} disabled={busy} onClick={confirmFieldSave}>
                 Save — applies going forward
               </button>
-              <button type="button" className={styles.quietBtn} disabled={busy} onClick={() => setPendingFields("closed")}>
+              <button type="button" className={styles.quietBtn} disabled={busy} onClick={cancelStaged}>
                 Cancel
               </button>
             </div>
@@ -401,7 +447,16 @@ export function ExerciseDetailSheet({
             style={{ minHeight: 0, display: "inline" }}
             onClick={() => { onClose(); router.push("/program"); }}
           >
-            Program or Blocks
+            Program
+          </button>{" "}
+          or{" "}
+          <button
+            type="button"
+            className={styles.linkRemove}
+            style={{ minHeight: 0, display: "inline" }}
+            onClick={() => { onClose(); router.push("/blocks"); }}
+          >
+            Blocks
           </button>.
         </span>
       </div>
@@ -429,8 +484,18 @@ export function ExerciseDetailSheet({
         </div>
       </div>
 
-      {/* ── Equipment (view-only; managing units lives in the Equipment section) ── */}
-      <EquipmentView exerciseId={ex.id} onManage={() => { onClose(); router.push("/equipment"); }} />
+      {/* ── Equipment (§2) — lane tracking applies only to strength-routed
+             exercises; a metric-routed selection gets a legible note instead of
+             a silent absence. Keys off the STAGED selection so the answer
+             updates the moment a profile is staged. ── */}
+      {effectiveRoutesMetric ? (
+        <div className={styles.field} style={{ marginTop: 12 }}>
+          <span className={styles.fieldLabel}>Equipment</span>
+          <span className={styles.fieldNote}>Equipment tracking applies to strength-logged exercises.</span>
+        </div>
+      ) : (
+        <EquipmentView exerciseId={ex.id} onManage={() => { onClose(); router.push("/equipment"); }} />
+      )}
 
       {/* ── Custom-only: Collapse + Remove ── */}
       {ex.kind === "custom" && (
