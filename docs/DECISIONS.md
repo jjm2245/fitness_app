@@ -3224,3 +3224,62 @@ returns the 12-min one). Progression needs nothing: `src/core/*` reads
 set_logs ONLY, so metric warm-ups are excluded from it by construction (grep
 confirms core never touches cardio_logs). 186 tests (+ a setType default/
 round-trip lock).
+
+## Default-profile audit + 15 curated remaps (2026-07-24, no schema, no writes)
+
+Catalog audit (878, read-only prod) against the six-profile vocabulary. All 15
+confirmed remaps are implemented in the RESOLVER'S DEFAULT LAYER only
+(`DEFAULT_PROFILE_BY_NAME` in lib/logFields.ts) — they change what a NULL
+`log_fields` resolves to. **No row was written, no migration.** An explicit
+override still wins (sanitizeOverride runs first).
+
+**Applied — → Loaded carry:** Farmer's Walk · Yoke Walk · Rickshaw Carry ·
+Sled Push · Sled Drag - Harness · Bear Crawl Sled Drags · Prowler Sprint ·
+Sled Overhead Backward Walk · Backward Drag. **→ Timed hold:** Plank ·
+Side Bridge · One Handed Hang. **→ cardio corrections:** Elliptical Trainer →
+Cardio machine (has a resistance level); Bicycling → Distance cardio (outdoors,
+no machine level); Trail Running/Walking → Distance cardio (speed/incline are
+machine settings). Every one had **zero logged history** (set_logs + cardio_logs
+= 0); only the throwaway `test` day contained any of them (Farmer's Walk,
+Trail Running/Walking).
+
+**Matching is EXACT on the normalized display name — never substring.** A
+substring rule is precisely what caused the bug this audit found: `cardioFields`
+matched "row" inside "P-ROW-ler Sprint", so Prowler Sprint defaulted to a rowing
+machine. Locked by tests: "Plank Jacks"/"Weighted Plank Row"/"Sled Push Press"
+must NOT inherit their contained keys. Keyed on the DISPLAY name, so renaming an
+exercise drops it back to the guessed default — accepted: a rename is
+deliberate, and re-picking the profile is two taps.
+
+**THE GATE (confirmed in code, now also a lock test):** `cardioFields()` has
+exactly ONE call site — logFields.ts, *after* `if (!ex.conditioningOnly) return
+strength`. The name-substring heuristic is therefore unreachable for every
+strength-typed exercise; the trap surface is only the cardio-typed set (15 rows
+in prod). "Bent Over Barbell Row" and "Step-ups" never touch it.
+
+**Left alone (owner-confirmed), flagged ambiguous:** Isometric Chest Squeezes,
+Isometric Neck Exercise ×2, Superman, Monster Walk, Spider Crawl, Forward Drag
+with Press. **Rejected false positives** (pattern-matched but rep-based):
+Isometric Wipers, Push Up to Side Plank, Sled Row/Reverse Flye/Overhead Triceps
+Extension, Sledgehammer Swings, Drag Curl, Hang Clean/Snatch variants, Hanging
+Leg Raise/Pike/Good Morning, Sit-Ups, Glute/Hip Bridges.
+
+**TWO GENUINE PROFILE GAPS — recorded as evidence, nothing built:**
+1. **Rope Jumping** — duration-only (distance is meaningless; it's also
+   rep-countable). Left on Distance cardio: blank-optional already leaves the
+   distance cell empty, and Timed hold would wrongly imply a *loaded static
+   hold*. Evidence for a future 7th profile: **"Timed" (duration only)**.
+2. **Forward Drag with Press** — a carry/drag WITH a rep component; neither
+   Loaded carry (no reps) nor Strength (no distance/duration) fits. Evidence for
+   a **carry-with-reps** profile.
+
+**Also found:** the Power Stairs override is GONE — prod now has **zero**
+`log_fields` overrides catalog-wide (that row read
+`["weight","effort","duration","level"]` last round; something Reset it since,
+which writes NULL). So every one of the 878 exercises is NULL-inherit, making
+the default layer the only thing controlling any of them.
+
+Verified in-app: Farmer's Walk → "Loaded carry (default)" + equipment note;
+Plank → "Timed hold (default)" (weight lb · duration min); Sled Push renders as
+a metric card with lb · min · mi · effort; struck Isometric Wipers unchanged at
+"Strength (default)" with its equipment section intact. 194 tests.

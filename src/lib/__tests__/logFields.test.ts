@@ -124,3 +124,79 @@ describe("profiles", () => {
       .toEqual(["duration", "level", "distance"]);
   });
 });
+
+// ── Curated default remaps (audit 2026-07-24) ──
+// These change what a NULL log_fields RESOLVES to — no row is ever written.
+describe("curated default remaps", () => {
+  const prof = (name: string, conditioningOnly = false) =>
+    matchProfile(defaultLogFields({ name, conditioningOnly }))?.id ?? null;
+
+  it("carries default to Loaded carry", () => {
+    for (const n of [
+      "Farmer's Walk", "Yoke Walk", "Rickshaw Carry", "Sled Push", "Sled Drag - Harness",
+      "Bear Crawl Sled Drags", "Sled Overhead Backward Walk", "Backward Drag",
+    ]) expect(prof(n)).toBe("loaded_carry");
+    // cardio-typed, and previously mis-guessed as a rower via "p-ROW-ler"
+    expect(prof("Prowler Sprint", true)).toBe("loaded_carry");
+  });
+
+  it("holds default to Timed hold", () => {
+    for (const n of ["Plank", "Side Bridge", "One Handed Hang"]) expect(prof(n)).toBe("timed_hold");
+  });
+
+  it("cardio corrections", () => {
+    expect(prof("Elliptical Trainer", true)).toBe("cardio_machine");
+    expect(prof("Bicycling", true)).toBe("distance_cardio");
+    expect(prof("Trail Running/Walking", true)).toBe("distance_cardio");
+    // untouched cardio keeps its guess
+    expect(prof("Bicycling, Stationary", true)).toBe("cardio_machine");
+    expect(prof("Walking, Treadmill", true)).toBe("treadmill");
+    expect(prof("Skating", true)).toBe("distance_cardio");
+  });
+
+  it("remapped carries/holds ROUTE to the metric card (no reps)", () => {
+    for (const n of ["Farmer's Walk", "Plank", "Prowler Sprint"]) {
+      expect(routesToStrength({ name: n, conditioningOnly: false, logFields: null })).toBe(false);
+    }
+  });
+
+  it("struck + ambiguous names are UNCHANGED (still Strength)", () => {
+    for (const n of [
+      // ambiguous, deliberately left alone
+      "Isometric Chest Squeezes", "Isometric Neck Exercise - Front And Back",
+      "Isometric Neck Exercise - Sides", "Superman", "Monster Walk", "Spider Crawl",
+      "Forward Drag with Press",
+      // explicit false positives the audit rejected
+      "Isometric Wipers", "Push Up to Side Plank", "Sled Row", "Sled Reverse Flye",
+      "Sled Overhead Triceps Extension", "Sledgehammer Swings", "Drag Curl",
+      "Hang Clean", "Hanging Leg Raise", "Hanging Pike", "Barbell Walking Lunge",
+    ]) expect(prof(n)).toBe("strength");
+    // Rope Jumping stays on its guessed default (no profile fits it)
+    expect(prof("Rope Jumping", true)).toBe("distance_cardio");
+  });
+
+  it("matching is EXACT-normalized, never substring", () => {
+    expect(prof("Plank")).toBe("timed_hold");
+    expect(prof("  PLANK  ")).toBe("timed_hold");   // trim + case
+    expect(prof("Farmer’s Walk")).toBe("loaded_carry"); // curly apostrophe
+    // a longer name CONTAINING a mapped key must NOT inherit it
+    expect(prof("Plank Jacks")).toBe("strength");
+    expect(prof("Weighted Plank Row")).toBe("strength");
+    expect(prof("Sled Push Press")).toBe("strength");
+  });
+
+  it("THE GATE: the cardio name-heuristic is unreachable for strength-typed rows", () => {
+    // "row"/"step"/"bike" substrings must not affect a strength-typed exercise —
+    // defaultLogFields returns Strength before cardioFields is ever consulted.
+    for (const n of ["Bent Over Barbell Row", "Step-ups", "Seated Cable Row", "Bike Kicks"]) {
+      expect(prof(n, false)).toBe("strength");
+    }
+    // the same names, cardio-typed, DO go through the heuristic
+    expect(prof("Bent Over Barbell Row", true)).toBe("cardio_machine");
+  });
+
+  it("an explicit override still beats a curated remap", () => {
+    expect(resolveLogFields({ name: "Plank", conditioningOnly: false, logFields: ["weight", "reps", "effort"] }))
+      .toEqual(["weight", "reps", "effort"]);
+  });
+});

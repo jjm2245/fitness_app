@@ -92,11 +92,53 @@ export const FIELD_UNITS: Partial<Record<LogField, string>> = {
  * Net visible diff vs the raw guess: duration+level machines gain a
  * blank-optional distance cell; treadmills gain distance. */
 export function defaultLogFields(ex: Pick<LogFieldSource, "name" | "conditioningOnly">): LogField[] {
+  // Curated remaps first (2026-07-24 catalog audit): exercises whose guessed
+  // default is wrong for what the exercise IS. This is the default layer — it
+  // changes what a NULL log_fields resolves to; no row is ever written, and an
+  // explicit override still wins (sanitizeOverride runs before this).
+  const curated = DEFAULT_PROFILE_BY_NAME[normalizeExerciseName(ex.name)];
+  if (curated) return profileById(curated).fields;
   if (!ex.conditioningOnly) return profileById("strength").fields;
+  // NOTE (the gate): everything below is reachable ONLY for cardio-typed
+  // exercises — the line above returns first for every strength-typed row. So
+  // cardioFields' name-SUBSTRING matching (the "P-ROW-ler Sprint" trap) can
+  // only ever misfire within the cardio-typed set, never across the catalog.
   const guess = cardioFields(ex.name);
   if (guess.includes("speed") || guess.includes("incline")) return profileById("treadmill").fields;
   if (guess.includes("level")) return profileById("cardio_machine").fields;
   return profileById("distance_cardio").fields;
+}
+
+// ── Curated default remaps (audit 2026-07-24, owner-confirmed) ──
+// EXACT normalized-name match, never substring: substring matching is exactly
+// what made "P-ROW-ler Sprint" default to a rowing machine. Keyed on the
+// DISPLAY name, so renaming an exercise drops it back to the guessed default —
+// deliberate: a rename is a deliberate act, and the profile picker is two taps.
+const DEFAULT_PROFILE_BY_NAME: Record<string, string> = {
+  // → Loaded carry (weight · duration · distance · effort)
+  "farmer's walk": "loaded_carry",
+  "yoke walk": "loaded_carry",
+  "rickshaw carry": "loaded_carry",
+  "sled push": "loaded_carry",
+  "sled drag - harness": "loaded_carry",
+  "bear crawl sled drags": "loaded_carry",
+  "prowler sprint": "loaded_carry", // was Cardio machine via the "row" substring
+  "sled overhead backward walk": "loaded_carry",
+  "backward drag": "loaded_carry",
+  // → Timed hold (weight · duration)
+  "plank": "timed_hold",
+  "side bridge": "timed_hold",
+  "one handed hang": "timed_hold",
+  // → cardio profile corrections
+  "elliptical trainer": "cardio_machine", // has a resistance level
+  "bicycling": "distance_cardio", // outdoors — no machine level
+  "trail running/walking": "distance_cardio", // outdoors — no machine speed/incline
+};
+
+/** Exact-match key: trimmed, lowercased, curly apostrophes normalized, inner
+ * whitespace collapsed. */
+function normalizeExerciseName(name: string): string {
+  return name.trim().toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ");
 }
 
 function profileById(id: string): LogFieldProfile {
