@@ -3133,3 +3133,69 @@ stored 2 (mi).
 (.footRow); the descriptor is a right-aligned micro-hint ("name · tag · what
 it logs & targets"); Remove exercise… stays the separated destructive footer.
 183 tests (+drift, drop-visibility, rest-write, distance-display locks).
+
+## kg rounding BUG fix + target-line diagnosis + metric parity (2026-07-24)
+
+**§1 BUG (data-affecting) — entry rounding now happens in the UNIT OF ENTRY.**
+Root cause: `kgToLb` converted first and snapped to the 0.5-lb plate grid, so
+kg was quantized to the wrong grid (50 kg → 110.231 → 110.0 → read back
+49.9 kg). Fixed at the entry boundary only — StrengthCard's state machine
+untouched. New rule (stated in `lib/units.ts`): **kg entry → nearest 0.1 kg,
+then × LB_PER_KG stored to 2 dp lb; km entry → nearest 0.01 km, then ×
+MI_PER_KM stored to 4 dp mi; lb/mi entry unchanged.** The canonical precision
+is chosen so the entry unit's display rounding (kg 1 dp, km 2 dp) reproduces
+what was typed. Display of canonical values is capped at 2 dp (`displayLb`/
+`displayMi`) so a 4-dp mi never reads as "3.1069 mi". Verified E2E: typed
+50 kg → stored **110.23** → reads 50 kg, survives reload, reads 110.23 lb in
+lb mode and 50 kg again on toggle back. Round-trip lock added over 8 kg and 6
+km values; existing drift locks still pass.
+
+**HONEST DISCREPANCY (flagged, not silently "kept"):** the brief said "entry in
+lb → keep today's nearest-0.5-lb rule". Typed **lb was never snapped** — the
+0.5 grid only ever applied to the kg→lb conversion (exactly the bug). lb entry
+therefore remains pass-through (unchanged in fact); snapping typed lb would
+have been a new behavior change (47.3 → 47.5), so it was not introduced.
+
+**§1 prod drift check (read-only, NOT rewritten).** Entry unit isn't recorded,
+and every 0.5-grid lb value has *some* kg preimage under the old rule, so no
+row is positively identifiable. Bounded and judged instead: the 36 set_logs
+rows in the kg-entry window (2026-07-23/24) are all round lb machine loads
+(20/50/60/70/100/110/120/140/150/160/180/190/195/220/320/340) whose kg
+displays are ugly (9.1, 49.9, 88.5, 145.1 kg) — the signature of lb entry;
+whole-DB census 202/202 on the 0.5 grid, 0 off-grid. **Credible drift
+candidates are 5 cardio_logs rows** whose kg/km displays ARE round: ids 6,7,8
+load 4.5 lb (= 2.0 kg; would now store 4.41, drift 0.09 lb) and distance
+4.35 mi (= 7.00 km; would now store 4.3496, drift 0.0004 mi); ids 9,10 load
+11 lb (= 5.0 kg; would now store 11.02, drift 0.02 lb). Max drift ≤0.09 lb.
+Left as-is — owner's call. (Caveat also named: 110 lb displays as 49.9 kg, the
+exact symptom shape, so shoulder_shrug ids 215–217 are ambiguous.)
+
+**§2** The "→ N lb" conversion hint is gone from every weight/distance input
+(strength cell, metric cells, target sheet); unit labels stay tappable.
+
+**§3 DIAGNOSIS — no regression; two separate findings.** (a) The strength
+target line renders correctly: verified live that an exercise added from a
+program day shows `target 3 × 8-12 · near failure`. The owner's occurrence was
+added **Ad-hoc** (prod `session_exercises` id 123, source "Ad-hoc",
+2026-07-24) — `addAdhoc` carries no day target, so no line. Correct behavior;
+the target itself exists (prod `program_exercises` id 13 chest_triceps
+3/8-12/near_failure, and id 56 in a "test" day with more_in_me = the "relaxed"
+chip the owner quoted). A naive fallback would be wrong: the same exercise has
+TWO different targets across days. (b) **The metric card never had a target
+line at all** — a real gap, now built: it renders from the occurrence's params
+through a new shared `metricTargetParts()` in targetValues.ts (the ONE builder
+the program chip and Add-picker reference now also use), unit-aware. Since a
+metric target is EXERCISE-level (one unambiguous value, unlike a per-day
+strength target), the ad-hoc path now carries `params` too — verified
+`target 5 min · 0.5 mi · near failure`.
+
+**§4 Metric-card parity with the strength card.** Rest moved out of the entry
+string onto its own connector sub-row between entries — `RestConnector` was
+generalized to value+callback props so BOTH cards share ONE component (no
+second rest system); a metric rest correction writes `restSource: "user"` via
+editCardio. Entry rows gained the trailing chevron and the hint ("tap an entry
+to edit or add a drop"; the drop clause only where a load exists). Effort moved
+out of the value string to the row's right (`setEffort`, as strength does) and
+its control now uses the strength card's `cellSelect` sizing. Value hierarchy
+matches: headline metrics (weight · duration · distance) prominent, machine
+settings (speed/incline/level) a muted suffix. 185 tests.

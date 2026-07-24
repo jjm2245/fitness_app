@@ -15,6 +15,7 @@ export interface ExerciseSearchResult {
   unilateral?: boolean;
   canonicalName?: string | null;
   logFields?: unknown;
+  params?: Record<string, unknown> | null;
 }
 
 // The only distinction that matters to the engine is tagged vs untagged: an

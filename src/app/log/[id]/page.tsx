@@ -256,6 +256,9 @@ export default function LogSessionPage() {
         untagged: r.untagged,
         unilateral: r.unilateral ?? false,
         logFields: r.logFields ?? null,
+        // A metric target lives on the EXERCISE (one unambiguous value), so an
+        // ad-hoc add carries it; a strength target is per-day and stays absent.
+        params: r.params ?? null,
       },
       "Ad-hoc"
     );

@@ -2,14 +2,23 @@
 
 import { useState } from "react";
 import styles from "./session.module.css";
-import { editSet, type SessionSet } from "@/lib/sessionStore";
+
 import { digitsToSeconds, fmtRest } from "./shared";
 
-// The rest EDGE between two set rows — honest to the model: N sets ⇒ N−1
-// rests, each stored as the following set's restBefore. Renders as a thin
+// The rest EDGE between two logged rows — honest to the model: N rows ⇒ N−1
+// rests, each stored as the following row's restBefore. Renders as a thin
 // connector (│ 1:34 rest · est); tap to correct with the same digits-only
-// mm:ss mask as before — a corrected value becomes source "user".
-export function RestConnector({ set, onChanged }: { set: SessionSet; onChanged: () => void }) {
+// mm:ss mask — a corrected value becomes source "user". Value+callback props,
+// so the strength card and the metric card share ONE rest connector.
+export function RestConnector({
+  restSeconds,
+  restSource,
+  onSave,
+}: {
+  restSeconds: number | null;
+  restSource: string | null;
+  onSave: (seconds: number) => void | Promise<void>;
+}) {
   const [editing, setEditing] = useState(false);
   const [digits, setDigits] = useState(""); // raw digit buffer; the mask formats it
 
@@ -18,31 +27,29 @@ export function RestConnector({ set, onChanged }: { set: SessionSet; onChanged: 
   // 0 is a KNOWN none (deliberately no rest — e.g. unilateral L→R) and shows
   // as "no rest"; null stays the honest unknown ("rest —").
   const label =
-    set.restSeconds == null
+    restSeconds == null
       ? "rest —"
-      : set.restSeconds === 0
+      : restSeconds === 0
       ? "no rest"
-      : set.restSource === "derived"
-      ? `~${fmtRest(set.restSeconds)} rest · derived`
-      : set.restSource === "timed"
-      ? `${fmtRest(set.restSeconds)} rest · timed`
-      : `${fmtRest(set.restSeconds)} rest`;
+      : restSource === "derived"
+      ? `~${fmtRest(restSeconds)} rest · derived`
+      : restSource === "timed"
+      ? `${fmtRest(restSeconds)} rest · timed`
+      : `${fmtRest(restSeconds)} rest`;
 
   async function save() {
     if (!digits) return setEditing(false);
-    await editSet(set.localId!, { restSeconds: digitsToSeconds(digits), restSource: "user" });
+    await onSave(digitsToSeconds(digits));
     setEditing(false);
-    onChanged();
   }
   // One-tap known-zero: logging "there was no rest" shouldn't mean typing 0:00.
   async function saveNone() {
-    await editSet(set.localId!, { restSeconds: 0, restSource: "user" });
+    await onSave(0);
     setEditing(false);
-    onChanged();
   }
 
   return (
-    <li aria-label="Rest between sets">
+    <li aria-label="Rest between entries">
       <div className={styles.restEdge}>
         <span className={styles.restRule} />
         {editing ? (
@@ -63,9 +70,9 @@ export function RestConnector({ set, onChanged }: { set: SessionSet; onChanged: 
           <button
             type="button"
             className={styles.restBtn}
-            title={set.restSeconds == null ? "Rest unknown — tap to set" : "Tap to correct the rest"}
+            title={restSeconds == null ? "Rest unknown — tap to set" : "Tap to correct the rest"}
             onClick={() => {
-              setDigits(set.restSeconds != null ? String(Math.floor(set.restSeconds / 60)) + String(set.restSeconds % 60).padStart(2, "0") : "");
+              setDigits(restSeconds != null ? String(Math.floor(restSeconds / 60)) + String(restSeconds % 60).padStart(2, "0") : "");
               setEditing(true);
             }}
           >

@@ -348,11 +348,6 @@ export function TargetSheet({
                   </label>
                 </div>
               )}
-              {distUnit === "km" && rangeValueComplete(dist) && (
-                <span className={styles.fieldNote}>
-                  stores as {dist.mode === "single" ? dist.single : `${dist.a}–${dist.b}`} mi
-                </span>
-              )}
             </div>
           )}
           <p className={styles.fieldNote} style={{ marginTop: 6 }}>

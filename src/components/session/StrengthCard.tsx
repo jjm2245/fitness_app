@@ -6,7 +6,7 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { publishRestTimer } from "@/lib/restTimerBus";
-import { displayWeights, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
+import { displayWeights, displayLb, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { SetRow } from "./SetRow";
@@ -129,7 +129,7 @@ export function StrengthCard({
   // selected everything here is the identity, so the card is byte-identical to
   // its pre-unit-layer behavior.
   const [wUnit, toggleWeightUnit] = useWeightUnit();
-  const w = (n: number | string) => (wUnit === "kg" ? lbToKg(Number(n)) : Number(n));
+  const w = (n: number | string) => (wUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
   const [load, setLoad] = useState(() =>
     ex.loadType === "bodyweight" ? 0 : getEntryUnit("weight") === "kg" ? lbToKg(45) : 45
   );
@@ -808,7 +808,13 @@ export function StrengthCard({
                 // Set 1 has no edge (its "rest" would be the inter-exercise
                 // transition — excluded); drops continue their parent's set.
                 <Fragment key={s.localId}>
-                  {i > 0 && !isDrop && <RestConnector set={s} onChanged={onSessionChanged} />}
+                  {i > 0 && !isDrop && (
+                    <RestConnector
+                      restSeconds={s.restSeconds ?? null}
+                      restSource={s.restSource ?? null}
+                      onSave={async (sec) => { await editSet(s.localId!, { restSeconds: sec, restSource: "user" }); onSessionChanged(); }}
+                    />
+                  )}
                   <SetRow
                     weightUnit={wUnit}
                     set={s}
@@ -904,7 +910,6 @@ export function StrengthCard({
                   </button>
                 </span>
                 <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
-                {wUnit === "kg" && load > 0 && <span className={styles.cellHint}>→ {canonicalLoad} lb</span>}
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>reps</span>

@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
       unilateral: exercises.unilateral,
       canonicalName: exercises.canonicalName,
       logFields: exercises.logFields,
+      params: exercises.params,
     })
     .from(exercises)
     .where(or(ilike(exercises.name, like), ilike(exercises.canonicalName, like)))

@@ -1,5 +1,7 @@
 // Single-or-range target values (Phase 2 polish §5). Duration pioneered the
 // stored representation — a plain number or a `[min, max]` pair in
+import { formatStoredDistance } from "./units";
+
 // exercises.params — and distance now shares it. These helpers are the ONE
 // parse/store/format path so both fields round-trip byte-identically
 // (Stairmaster's `[5,15]` and every existing single value included).
@@ -50,4 +52,38 @@ export function formatRangeValue(stored: unknown, unit: string): string | null {
 /** True when a stored value is present in either shape (anchor checks). */
 export function hasRangeValue(stored: unknown): boolean {
   return typeof stored === "number" || (Array.isArray(stored) && stored.length === 2);
+}
+
+// The ONE metric-target line builder — the parts a metric target renders as
+// ("5 min · 0.5 mi · near failure"). Shared by the session card's `target`
+// reference, the program/blocks chip, and the Add-picker reference so the
+// three can never drift. Distance follows the caller's display unit.
+export function metricTargetParts(
+  params: Record<string, unknown> | null | undefined,
+  fields: readonly string[],
+  distUnit: string,
+  effortLabels: Record<string, string>
+): string[] {
+  const p = params ?? {};
+  const parts: string[] = [];
+  for (const f of fields) {
+    if (f === "duration") {
+      const t = formatRangeValue(p.duration_min, "min");
+      if (t) parts.push(t);
+    } else if (f === "level" && typeof p.level === "number") parts.push(`level ${p.level}`);
+    else if (f === "speed" && typeof p.speed === "number") parts.push(`${p.speed} speed`);
+    else if (f === "incline" && typeof p.incline === "number") parts.push(`${p.incline} incline`);
+    else if (f === "distance") {
+      const t = formatStoredDistance(p.distance, distUnit);
+      if (t) parts.push(t);
+    }
+  }
+  if (typeof p.effort === "string" && p.effort in effortLabels) parts.push(effortLabels[p.effort]);
+  return parts;
+}
+
+/** True when a metric target is "set" — it needs a duration or a distance. */
+export function hasMetricTarget(params: Record<string, unknown> | null | undefined): boolean {
+  const p = params ?? {};
+  return hasRangeValue(p.duration_min) || hasRangeValue(p.distance);
 }

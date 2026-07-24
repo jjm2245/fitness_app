@@ -3,22 +3,38 @@ import { kgToLb, kmToMi, lbToKg, miToKm, displayWeights, formatForUnit, formatSt
 import { resolveCardFields } from "../logFields";
 import { parseRangeValue, storeRangeValue, formatRangeValue, rangeValueComplete, hasRangeValue } from "../targetValues";
 
-// §7 conversion locks — the shown converted value IS the stored value.
-// Rounding rule: weight → nearest 0.5 lb; distance → 2 decimals (mi).
+// Entry locks — rounding happens in the UNIT OF ENTRY, then converts exactly.
+// (Regression guard: converting first and snapping to the 0.5-lb plate grid
+// quantized kg to the wrong grid — 50 kg used to store 110 lb and read back
+// 49.9 kg.)
 describe("unit entry conversion", () => {
-  it("kg → lb rounds to the nearest 0.5 lb", () => {
-    expect(kgToLb(10)).toBe(22); // 22.046 → 22.0
-    expect(kgToLb(11)).toBe(24.5); // 24.251 → 24.5
-    expect(kgToLb(20)).toBe(44); // 44.092 → 44.0
-    expect(kgToLb(2.5)).toBe(5.5); // 5.512 → 5.5
+  it("kg → lb rounds in kg (0.1) and keeps 2 dp of lb", () => {
+    expect(kgToLb(50)).toBe(110.23); // 110.2311… → 110.23, NOT the 110.0 snap
+    expect(kgToLb(10)).toBe(22.05);
+    expect(kgToLb(11)).toBe(24.25);
+    expect(kgToLb(20)).toBe(44.09);
+    expect(kgToLb(2.5)).toBe(5.51);
+    expect(kgToLb(50.55)).toBe(111.55); // typed value rounds to 50.6 kg first
     expect(kgToLb(0)).toBe(0);
   });
 
-  it("km → mi rounds to 2 decimals", () => {
-    expect(kmToMi(5)).toBe(3.11); // 3.10686 → 3.11
-    expect(kmToMi(1)).toBe(0.62);
-    expect(kmToMi(10)).toBe(6.21);
-    expect(kmToMi(42.195)).toBe(26.22); // marathon
+  it("kg round-trips losslessly at display precision (the 50 kg bug)", () => {
+    for (const typed of [50, 10, 2.5, 47.5, 74.4, 100, 0.1, 123.7]) {
+      expect(lbToKg(kgToLb(typed))).toBe(typed); // type → store → read back
+    }
+  });
+
+  it("km → mi rounds in km (0.01) and keeps 4 dp of mi", () => {
+    expect(kmToMi(5)).toBe(3.1069); // 3.10686 → 3.1069, NOT the 3.11 snap
+    expect(kmToMi(1)).toBe(0.6214);
+    expect(kmToMi(10)).toBe(6.2137);
+    expect(kmToMi(42.195)).toBe(26.2219); // marathon (42.2 km after entry round)
+  });
+
+  it("km round-trips losslessly at display precision", () => {
+    for (const typed of [5, 1, 10, 3.22, 0.5, 42.2]) {
+      expect(miToKm(kmToMi(typed))).toBe(typed);
+    }
   });
 
   // Display rounding is COSMETIC and separate from entry rounding: kg → 1
@@ -26,7 +42,7 @@ describe("unit entry conversion", () => {
   it("display: lb → kg (1 decimal), mi → km (2 decimals)", () => {
     expect(lbToKg(120)).toBe(54.4);
     expect(lbToKg(45)).toBe(20.4);
-    expect(lbToKg(22)).toBe(10); // the 10 kg entry reads back as 10 kg
+    expect(lbToKg(22.05)).toBe(10); // the 10 kg entry reads back as 10 kg
     expect(miToKm(2.49)).toBe(4.01);
     expect(miToKm(1)).toBe(1.61);
   });
@@ -106,22 +122,25 @@ describe("universal unit input contract (drift-proof)", () => {
     expect(canonical).toBe("22.3"); // never re-parsed
     expect(display).toBe("22.3"); // ended on lb: identity
     // The trap the contract avoids: re-parsing the rounded display would drift.
-    expect(parseInUnit(formatForUnit("22.3", "kg", "weight"), "kg", "weight")).toBe("22.5");
+    expect(parseInUnit(formatForUnit("22.3", "kg", "weight"), "kg", "weight")).toBe("22.27");
   });
 
   it("stored distances display in the active unit (read-side only)", () => {
     expect(formatStoredDistance(2, "km")).toBe("3.22 km");
+    expect(formatStoredDistance(2.4855, "mi")).toBe("2.49 mi"); // 4dp canonical displays 2dp
     expect(formatStoredDistance([3, 4], "km")).toBe("4.83–6.44 km");
     expect(formatStoredDistance([3, 4], "mi")).toBe("3–4 mi");
     expect(formatStoredDistance(0.5, "mi")).toBe("0.5 mi");
     expect(formatStoredDistance(null, "km")).toBeNull();
   });
 
-  it("typing still converts at entry rounding (10 kg → 22 lb; 4 km → 2.49 mi)", () => {
-    expect(parseInUnit("10", "kg", "weight")).toBe("22");
-    expect(parseInUnit("4", "km", "distance")).toBe("2.49");
+  it("typing converts at entry rounding, and the field reads back what was typed", () => {
+    expect(parseInUnit("50", "kg", "weight")).toBe("110.23");
+    expect(formatForUnit("110.23", "kg", "weight")).toBe("50"); // reads 50 kg
+    expect(parseInUnit("4", "km", "distance")).toBe("2.4855");
+    expect(formatForUnit("2.4855", "km", "distance")).toBe("4"); // reads 4 km
     expect(parseInUnit("100", "lb", "weight")).toBe("100"); // identity in canonical unit
-    expect(formatForUnit("2.49", "km", "distance")).toBe("4.01"); // display 2dp
+    expect(formatForUnit("2.4855", "mi", "distance")).toBe("2.49"); // mi display 2dp
     expect(formatForUnit("", "kg", "weight")).toBe("");
   });
 });

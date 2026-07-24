@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "./session.module.css";
 import { editSet, deleteSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { EFFORT_LABEL, EFFORT_OPTIONS, type EffortTag } from "./shared";
-import { lbToKg, type WeightUnit } from "@/lib/units";
+import { lbToKg, displayLb, type WeightUnit } from "@/lib/units";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 
 // One logged set: a read-only row (rows show information). Tapping it reveals
@@ -31,7 +31,7 @@ export function SetRow({
   onChanged: () => void;
   onDrop: (parent: SessionSet) => void;
 }) {
-  const w = (n: number | string) => (weightUnit === "kg" ? lbToKg(Number(n)) : Number(n));
+  const w = (n: number | string) => (weightUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);

@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import styles from "./session.module.css";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { logCardio, editCardio, deleteCardio, type SessionCardio } from "@/lib/sessionStore";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import { RestBanner } from "./RestBanner";
+import { RestConnector } from "./RestConnector";
 import { publishRestTimer } from "@/lib/restTimerBus";
 import { fmtRest, type CardControls, type LoggableOccurrence } from "./shared";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { CARDIO_FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
-import { resolveCardFields, type LogField } from "@/lib/logFields";
-import { kgToLb, kmToMi, lbToKg, miToKm, type WeightUnit, type DistanceUnit } from "@/lib/units";
+import { resolveCardFields, resolveMetricFields, type LogField } from "@/lib/logFields";
+import { metricTargetParts, hasMetricTarget } from "@/lib/targetValues";
+import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
+import { kgToLb, kmToMi, lbToKg, miToKm, displayLb, displayMi, type WeightUnit, type DistanceUnit } from "@/lib/units";
 import { useWeightUnit, useDistanceUnit } from "@/lib/useUnit";
 
 // Shape returned by the last-session route for a metric-routed exercise.
@@ -50,12 +53,12 @@ const CELL_LABEL: Record<string, string> = {
 function fmtCardioLast(fields: LogField[], c: CardioLast, wUnit: WeightUnit, dUnit: DistanceUnit): string {
   const parts: string[] = [];
   for (const f of fields) {
-    if (f === "weight" && c.load != null) parts.push(wUnit === "kg" ? `${lbToKg(Number(c.load))} kg` : `${c.load} lb`);
+    if (f === "weight" && c.load != null) parts.push(wUnit === "kg" ? `${lbToKg(Number(c.load))} kg` : `${displayLb(Number(c.load))} lb`);
     else if (f === "duration" && c.durationMin != null) parts.push(`${c.durationMin} min`);
     else if (f === "speed" && c.speed != null) parts.push(`${c.speed} speed`);
     else if (f === "incline" && c.incline != null) parts.push(`${c.incline} incline`);
     else if (f === "level" && c.level != null) parts.push(`level ${c.level}`);
-    else if (f === "distance" && c.distance != null) parts.push(dUnit === "km" ? `${miToKm(Number(c.distance))} km` : `${c.distance} mi`);
+    else if (f === "distance" && c.distance != null) parts.push(dUnit === "km" ? `${miToKm(Number(c.distance))} km` : `${displayMi(Number(c.distance))} mi`);
     else if (f === "effort" && c.effort != null) parts.push(EFFORT_LABEL[c.effort] ?? c.effort);
   }
   return parts.join(" · ") || "logged";
@@ -213,19 +216,29 @@ export function CardioCard({
   };
 
   const lastText = lastCardio ? fmtCardioLast(fields, lastCardio, wUnit, dUnit) : null;
+  // §3: the `target` reference — metric targets live on the exercise's params
+  // (exercise-level, always available), rendered through the same builder the
+  // program chip and Add-picker use.
+  const targetParts = hasMetricTarget(ex.params)
+    ? metricTargetParts(ex.params, resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }), dUnit, TARGET_EFFORT_LABEL)
+    : [];
+  const targetText = targetParts.length > 0 ? targetParts.join(" · ") : null;
 
-  // One entry row's summary text, honest about every stored value.
-  const entryText = (c: SessionCardio) =>
+  // §4 value hierarchy (mirrors the strength row): headline metrics read
+  // prominently; machine settings are a muted suffix; effort renders at the
+  // row's right (not inline); rest is its own connector row between entries.
+  const entryPrimary = (c: SessionCardio) =>
     [
-      c.load != null ? (wUnit === "kg" ? `${lbToKg(c.load)} kg` : `${c.load} lb`) : null,
+      c.load != null ? (wUnit === "kg" ? `${lbToKg(c.load)} kg` : `${displayLb(c.load)} lb`) : null,
       c.durationMin != null ? `${c.durationMin} min` : null,
-      c.incline != null ? `incline ${c.incline}` : null,
-      c.speed != null ? `speed ${c.speed}` : null,
-      c.distance != null ? (dUnit === "km" ? `${miToKm(c.distance)} km` : `${c.distance} mi`) : null,
+      c.distance != null ? (dUnit === "km" ? `${miToKm(c.distance)} km` : `${displayMi(c.distance)} mi`) : null,
+    ].filter(Boolean).join(" · ") || "logged";
+  const entrySuffix = (c: SessionCardio) =>
+    [
+      c.speed != null ? `${c.speed} speed` : null,
+      c.incline != null ? `${c.incline} incline` : null,
       c.level != null ? `level ${c.level}` : null,
-      c.effort != null ? EFFORT_LABEL[c.effort] ?? c.effort : null,
-      c.restSeconds != null ? `rest ${fmtRest(c.restSeconds)}${c.restSource && c.restSource !== "user" ? ` · ${c.restSource}` : ""}` : null,
-    ].filter(Boolean).join(", ") || "logged";
+    ].filter(Boolean).join(" · ");
 
   return (
     // Dim only while collapsed; expanded done = readable review (no input).
@@ -261,6 +274,11 @@ export function CardioCard({
                 </span>
               )}
             </div>
+            {targetText && (
+              <div className={styles.metaLine}>
+                <span className={styles.metaLabel}>target</span> {targetText}
+              </div>
+            )}
           </div>
 
           {entries.length > 0 && (
@@ -282,7 +300,17 @@ export function CardioCard({
                   );
                 }
                 return (
-                  <li key={c.localId}>
+                  <React.Fragment key={c.localId}>
+                    {/* Rest is the EDGE before this entry — its own sub-row,
+                        exactly as the strength card renders it. */}
+                    {idx > 0 && !isDrop && (
+                      <RestConnector
+                        restSeconds={c.restSeconds ?? null}
+                        restSource={c.restSource ?? null}
+                        onSave={async (sec) => { await editCardio(c.localId!, { restSeconds: sec, restSource: "user" }); onSessionChanged(); }}
+                      />
+                    )}
+                  <li>
                     <div className={isDrop ? styles.setDropWrap : undefined}>
                       <button type="button" className={`${styles.cardioEntryRow} ${revealedId === c.localId ? styles.setRowActive : ""}`} onClick={() => setRevealedId((cur) => (cur === c.localId ? null : c.localId!))}>
                         <span className={c.syncState !== "synced" ? styles.setTickPending : styles.setTick} title={c.syncState !== "synced" ? "Not yet synced" : "Synced"}>
@@ -290,8 +318,11 @@ export function CardioCard({
                         </span>
                         <span className={styles.setMain}>
                           {isDrop && <span className={styles.setKind}>↳ drop · </span>}
-                          {entryText(c)}
+                          {entryPrimary(c)}
+                          {entrySuffix(c) && <span className={styles.setSuffix}> · {entrySuffix(c)}</span>}
                         </span>
+                        {c.effort && <span className={styles.setEffort}>{EFFORT_LABEL[c.effort] ?? c.effort}</span>}
+                        <span className={styles.setChevron} aria-hidden="true">›</span>
                       </button>
                       {revealedId === c.localId && (
                         <div className={styles.setActions}>
@@ -311,9 +342,15 @@ export function CardioCard({
                       )}
                     </div>
                   </li>
+                  </React.Fragment>
                 );
               })}
             </ul>
+          )}
+          {/* Discoverability hint — the strength card's equivalent, worded for
+              entries (drops only where a load exists). */}
+          {entries.length > 0 && !completed && (
+            <p className={styles.tapHint}>tap an entry to edit{canDrop ? " or add a drop" : ""}</p>
           )}
 
           {entries.length > 0 && !completed && (
@@ -345,9 +382,6 @@ export function CardioCard({
                             <button type="button" className={styles.unitToggle} onClick={toggleWUnit} title="Switch entry unit — stores lb">{wUnit}</button>
                           </span>
                           <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
-                          {wUnit === "kg" && load.trim() !== "" && (
-                            <span className={styles.cellHint}>→ {canonicalLoad} lb</span>
-                          )}
                         </label>
                       );
                     }
@@ -358,9 +392,6 @@ export function CardioCard({
                             <button type="button" className={styles.unitToggle} onClick={toggleDUnit} title="Switch entry unit — stores mi">{dUnit}</button>
                           </span>
                           <input type="number" className={styles.cellInput} value={distance} onChange={(e) => setDistance(e.target.value)} />
-                          {dUnit === "km" && distance.trim() !== "" && (
-                            <span className={styles.cellHint}>→ {canonicalDistance} mi</span>
-                          )}
                         </label>
                       );
                     }
@@ -378,7 +409,7 @@ export function CardioCard({
             {fields.includes("effort") && (
               <label className={styles.effortRow}>
                 <span className={styles.cellLabel}>{CELL_LABEL.effort}</span>
-                <select className={styles.cellInput} value={effort} onChange={(e) => setEffort(e.target.value)}>
+                <select className={styles.cellSelect} value={effort} onChange={(e) => setEffort(e.target.value)}>
                   <option value="">—</option>
                   {EFFORT_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
