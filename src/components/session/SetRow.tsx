@@ -4,6 +4,7 @@ import { useState } from "react";
 import styles from "./session.module.css";
 import { editSet, deleteSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { EFFORT_LABEL, EFFORT_OPTIONS, type EffortTag } from "./shared";
+import { lbToKg, type WeightUnit } from "@/lib/units";
 
 // One logged set: a read-only row (rows show information). Tapping it reveals
 // its controls (Edit / Delete / + Drop) — controls appear on demand; the card
@@ -13,6 +14,7 @@ export function SetRow({
   set,
   isDrop,
   unilateral,
+  weightUnit = "lb",
   revealed,
   onToggleReveal,
   onChanged,
@@ -21,11 +23,14 @@ export function SetRow({
   set: SessionSet;
   isDrop: boolean;
   unilateral: boolean;
+  // Global display unit (read-side only — edits still enter canonical lb).
+  weightUnit?: WeightUnit;
   revealed: boolean;
   onToggleReveal: () => void;
   onChanged: () => void;
   onDrop: (parent: SessionSet) => void;
 }) {
+  const w = (n: number | string) => (weightUnit === "kg" ? lbToKg(Number(n)) : Number(n));
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
@@ -49,6 +54,7 @@ export function SetRow({
       <li>
         <div className={styles.setEditRow} style={isDrop ? { paddingLeft: 22 } : undefined}>
           <input type="number" value={load} onChange={(e) => setLoad(Number(e.target.value))} style={{ width: 64 }} />
+          {weightUnit === "kg" && <span className={styles.setSuffix}>lb</span>}
           <span>×</span>
           <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 52 }} />
           {/* Same effort pattern as the input trio — one dropdown everywhere. */}
@@ -91,9 +97,9 @@ export function SetRow({
           <span className={styles.setMain}>
             {isDrop && <span className={styles.setKind}>↳ drop · </span>}
             {!isDrop && set.setType === "warmup" && <span className={styles.setKind}>warm-up · </span>}
-            {set.load} lb × {set.reps}
+            {w(set.load)} {weightUnit} × {set.reps}
             {sideTag}
-            {hasOffset && <span className={styles.setSuffix}> · {set.loadEntered} + {set.builtinOffset} built-in</span>}
+            {hasOffset && <span className={styles.setSuffix}> · {w(set.loadEntered!)} + {w(set.builtinOffset!)} built-in</span>}
           </span>
           {set.effort && <span className={styles.setEffort}>{EFFORT_LABEL[set.effort]}</span>}
           <span className={styles.setChevron} aria-hidden="true">›</span>

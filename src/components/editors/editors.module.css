@@ -191,6 +191,18 @@
   font-size: 0.75rem;
   color: var(--text-2);
 }
+/* An inline link inside a hint line — hint tier, zero button chrome. */
+.inlineLink {
+  display: inline;
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 /* Tappable entry-unit label (lb↔kg, mi↔km) — entry-side only; storage stays
    canonical. Dotted underline signals "this toggles". */
 .unitToggle {

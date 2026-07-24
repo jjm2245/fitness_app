@@ -15,6 +15,7 @@ export function RestBanner({
   onStart,
   onStop,
   onDiscardHeld,
+  storesToNextSet = true,
 }: {
   timerStart: number | null;
   timerElapsed: number;
@@ -22,12 +23,16 @@ export function RestBanner({
   onStart: () => void;
   onStop: () => void;
   onDiscardHeld: () => void;
+  // The metric card has no rest column (cardio_logs) — its held state shows the
+  // time without the "written to your next set" claim. Strength default is
+  // unchanged.
+  storesToNextSet?: boolean;
 }) {
   if (heldRest != null) {
     return (
-      <div className={styles.timerHeld} title="Will be recorded automatically as the next set's rest (source: timed)">
+      <div className={styles.timerHeld} title={storesToNextSet ? "Will be recorded automatically as the next set's rest (source: timed)" : "Reference only — metric entries don't store rest"}>
         <span>
-          ⏱ rest <span className={styles.timerHeldDigits}>{fmtRest(heldRest)}</span> → written to your next set
+          ⏱ rest <span className={styles.timerHeldDigits}>{fmtRest(heldRest)}</span>{storesToNextSet ? " → written to your next set" : ""}
         </span>
         <button type="button" onClick={onDiscardHeld} className={styles.chipDismiss} title="Discard this timed rest" aria-label="Discard timed rest">
           ✕

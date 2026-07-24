@@ -4,12 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "@/components/editors/editors.module.css";
 import { EquipmentSheet, type EquipmentUnit } from "@/components/editors/EquipmentSheet";
 import { api } from "@/components/editors/types";
+import { lbToKg } from "@/lib/units";
+import { useWeightUnit } from "@/lib/useUnit";
 
 // Equipment (phase 3): list rows + a detail sheet. The always-visible
 // Edit/Merge/Delete buttons collapse into the sheet; the header paragraph
 // becomes one line. Units are surrogate-keyed (id opaque + stable), so labels
 // carry no data and deletes stay history-safe.
 export default function EquipmentPage() {
+  // Global weight display preference — unit weights follow the same toggle as
+  // every other weight surface (display-only; storage stays lb).
+  const [wUnit] = useWeightUnit();
   const [rows, setRows] = useState<EquipmentUnit[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
@@ -62,7 +67,7 @@ export default function EquipmentPage() {
                   <span className={styles.rowNameText}>{m.label}</span>
                   {m.equipmentType && <span className={styles.badge}>{m.equipmentType}</span>}
                   {m.builtInWeight != null && Number(m.builtInWeight) !== 0 && (
-                    <span className={styles.badge}>+{Number(m.builtInWeight)} lb built-in</span>
+                    <span className={styles.badge}>+{wUnit === "kg" ? `${lbToKg(Number(m.builtInWeight))} kg` : `${Number(m.builtInWeight)} lb`} built-in</span>
                   )}
                   {m.pulleyRatioKind !== "unknown" && <span className={styles.badge}>pulley {m.pulleyRatioKind}</span>}
                 </span>

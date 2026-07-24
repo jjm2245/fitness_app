@@ -353,16 +353,18 @@ export function ExerciseDetailSheet({
       <div className={styles.field} style={{ marginTop: 12 }}>
         <span className={styles.fieldLabel}>Logs &amp; targets</span>
         <div className={styles.viewDropWrap}>
-          <button type="button" className={styles.viewDropBtn} onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen} disabled={busy}>
-            {staged !== null
-              ? (staged === "reset" ? `${defaultProfile?.label} (default)` : staged.label)
-              : isCustomConfig && nearest
-              ? `Custom config — closest: ${nearest.profile.label} (±${nearest.diff})`
-              : `${currentProfile?.label}${!hasFieldOverride(ex) ? " (default)" : ""}`}
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
-              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-          </button>
+          <div className={styles.fieldRow}>
+            <span className={styles.readonlyName}>
+              {staged !== null
+                ? (staged === "reset" ? `${defaultProfile?.label} (default)` : staged.label)
+                : isCustomConfig && nearest
+                ? `Custom config — closest: ${nearest.profile.label} (±${nearest.diff})`
+                : `${currentProfile?.label}${!hasFieldOverride(ex) ? " (default)" : ""}`}
+            </span>
+            <button type="button" className={styles.quietBtn} onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen} disabled={busy}>
+              Change…
+            </button>
+          </div>
           {pickerOpen && (
             <>
               <div className={styles.viewMenuScrim} onClick={() => setPickerOpen(false)} />
@@ -439,26 +441,12 @@ export function ExerciseDetailSheet({
         {/* Cross-link: the fields govern what's logged/targeted, but the target
             VALUES live per-day in Program/Blocks — mirrors the target sheet's
             "Edit exercise →" link in the other direction. */}
-        <span className={styles.fieldNote} style={{ marginTop: 6 }}>
+        <p className={styles.fieldNote} style={{ margin: "6px 0 0" }}>
           Target values (sets, reps, duration…) are set per day in{" "}
-          <button
-            type="button"
-            className={styles.linkRemove}
-            style={{ minHeight: 0, display: "inline" }}
-            onClick={() => { onClose(); router.push("/program"); }}
-          >
-            Program
-          </button>{" "}
-          or{" "}
-          <button
-            type="button"
-            className={styles.linkRemove}
-            style={{ minHeight: 0, display: "inline" }}
-            onClick={() => { onClose(); router.push("/blocks"); }}
-          >
-            Blocks
-          </button>.
-        </span>
+          <button type="button" className={styles.inlineLink} onClick={() => { onClose(); router.push("/program"); }}>Program</button>
+          {" "}or{" "}
+          <button type="button" className={styles.inlineLink} onClick={() => { onClose(); router.push("/blocks"); }}>Blocks</button>.
+        </p>
       </div>
 
       {/* ── Unilateral (unchanged) ── */}

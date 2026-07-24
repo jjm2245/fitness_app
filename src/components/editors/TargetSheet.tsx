@@ -9,7 +9,8 @@ import { CARDIO_FIELD_KEY, type CardioField } from "@/lib/cardioFields";
 import { resolveLogFields, resolveMetricFields, routesToStrength } from "@/lib/logFields";
 import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib/targetEffort";
 import { parseRangeValue, storeRangeValue, rangeValueComplete, type ParsedRangeValue } from "@/lib/targetValues";
-import { kmToMi, getEntryUnit, setEntryUnit, type DistanceEntryUnit } from "@/lib/units";
+import { kmToMi, getEntryUnit, type DistanceUnit } from "@/lib/units";
+import { useDistanceUnit } from "@/lib/useUnit";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -103,13 +104,19 @@ export function TargetSheet({
   // [min,max] in params) through the ONE parse/store path in lib/targetValues.
   const [dur, setDur] = useState<ParsedRangeValue>(() => parseRangeValue(p.duration_min));
   const [dist, setDist] = useState<ParsedRangeValue>(() => parseRangeValue(p.distance));
-  // Entry-side distance unit (mi canonical; km converts on save — §7). The
-  // preference persists locally per field; storage stays mi everywhere.
-  const [distUnit, setDistUnit] = useState<DistanceEntryUnit>(() => getEntryUnit("distance"));
+  // Entry-side distance unit — the GLOBAL preference (same key the session
+  // cells read), km converts on save; storage stays mi everywhere.
+  // GUARD (latent-bug fix): a stored distance pre-fills CANONICAL mi digits, so
+  // the sheet must open in mi even when the global preference is km —
+  // otherwise a no-edit save would reinterpret mi digits as km and corrupt the
+  // value. `kmOverride` tracks an explicit in-sheet switch (which clears).
+  const globalDistUnit = useDistanceUnit()[0];
+  const [kmOverride, setKmOverride] = useState<DistanceUnit | null>(() =>
+    (p.distance !== undefined && p.distance !== null) && getEntryUnit("distance") === "km" ? "mi" : null
+  );
+  const distUnit: DistanceUnit = kmOverride ?? globalDistUnit;
   const toggleDistUnit = () => {
-    const next: DistanceEntryUnit = distUnit === "mi" ? "km" : "mi";
-    setDistUnit(next);
-    setEntryUnit("distance", next);
+    setKmOverride(distUnit === "mi" ? "km" : "mi");
     // Reinterpreting typed digits in a different unit would silently change the
     // value — clearing on toggle is the honest move.
     setDist((d) => ({ ...d, single: "", a: "", b: "" }));

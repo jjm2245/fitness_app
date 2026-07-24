@@ -5,10 +5,13 @@ import styles from "./session.module.css";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { logCardio, deleteCardio, type SessionCardio } from "@/lib/sessionStore";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
+import { RestBanner } from "./RestBanner";
+import { publishRestTimer } from "@/lib/restTimerBus";
 import type { CardControls, LoggableOccurrence } from "./shared";
 import { CARDIO_FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
 import { resolveCardFields, type LogField } from "@/lib/logFields";
-import { kgToLb, kmToMi, getEntryUnit, setEntryUnit, type WeightEntryUnit, type DistanceEntryUnit } from "@/lib/units";
+import { kgToLb, kmToMi, lbToKg, type WeightUnit, type DistanceUnit } from "@/lib/units";
+import { useWeightUnit, useDistanceUnit } from "@/lib/useUnit";
 
 // Shape returned by the last-session route for a metric-routed exercise.
 type CardioLast = {
@@ -43,10 +46,10 @@ const CELL_LABEL: Record<string, string> = {
 
 // The "last" line, in the units THIS exercise actually uses — e.g.
 // "30 min · 3.0 speed · 12 incline", or "135 lb · 5 min" for a loaded carry.
-function fmtCardioLast(fields: LogField[], c: CardioLast): string {
+function fmtCardioLast(fields: LogField[], c: CardioLast, wUnit: WeightUnit): string {
   const parts: string[] = [];
   for (const f of fields) {
-    if (f === "weight" && c.load != null) parts.push(`${c.load} lb`);
+    if (f === "weight" && c.load != null) parts.push(wUnit === "kg" ? `${lbToKg(Number(c.load))} kg` : `${c.load} lb`);
     else if (f === "duration" && c.durationMin != null) parts.push(`${c.durationMin} min`);
     else if (f === "speed" && c.speed != null) parts.push(`${c.speed} speed`);
     else if (f === "incline" && c.incline != null) parts.push(`${c.incline} incline`);
@@ -92,10 +95,10 @@ export function CardioCard({
   const [effort, setEffort] = useState<string>("");
   // Entry-side units (§7): type in kg/km, the shown conversion IS what stores
   // (lb nearest 0.5; mi 2 decimals). Canonical storage/display stays lb/mi.
-  const [wUnit, setWUnit] = useState<WeightEntryUnit>(() => getEntryUnit("weight"));
-  const [dUnit, setDUnit] = useState<DistanceEntryUnit>(() => getEntryUnit("distance"));
-  const toggleWUnit = () => { const n: WeightEntryUnit = wUnit === "lb" ? "kg" : "lb"; setWUnit(n); setEntryUnit("weight", n); setLoad(""); };
-  const toggleDUnit = () => { const n: DistanceEntryUnit = dUnit === "mi" ? "km" : "mi"; setDUnit(n); setEntryUnit("distance", n); setDistance(""); };
+  const [wUnit, toggleWeightUnit] = useWeightUnit();
+  const [dUnit, toggleDistanceUnit] = useDistanceUnit();
+  const toggleWUnit = () => { toggleWeightUnit(); setLoad(""); };
+  const toggleDUnit = () => { toggleDistanceUnit(); setDistance(""); };
   // What actually stores for the two convertible cells.
   const canonicalLoad = load.trim() === "" ? null : wUnit === "kg" ? kgToLb(Number(load)) : Number(load);
   const canonicalDistance = distance.trim() === "" ? null : dUnit === "km" ? kmToMi(Number(distance)) : Number(distance);
@@ -104,6 +107,23 @@ export function CardioCard({
   const [lastCardio, setLastCardio] = useState<CardioLast | null>(null);
   // Mixed-history honesty: earlier strength history exists in the other mode.
   const [hasStrengthHistory, setHasStrengthHistory] = useState(false);
+  // ── Rest (§2) — the SAME state machine + banner the strength card owns
+  // (timer, bus mirror to the session bar). No stored rest for metric entries:
+  // cardio_logs has no rest column, so the timer is reference-only here.
+  const [timerStart, setTimerStart] = useState<number | null>(null);
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const [heldRest, setHeldRest] = useState<number | null>(null);
+  useEffect(() => {
+    if (timerStart == null) return;
+    const iv = setInterval(() => {
+      setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [timerStart]);
+  useEffect(() => {
+    publishRestTimer(timerStart);
+    return () => publishRestTimer(null);
+  }, [timerStart]);
   const [manual, setManual] = useState<{ done: boolean; collapsed: boolean } | null>(null);
   const collapsed = manual && manual.done === completed ? manual.collapsed : completed;
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
@@ -148,6 +168,7 @@ export function CardioCard({
       effort: fields.includes("effort") && effort !== "" ? effort : null,
       notes: null,
     });
+    setHeldRest(null); // consumed visually — metric entries store no rest
     onSessionChanged();
   }
 
@@ -168,12 +189,12 @@ export function CardioCard({
     distance: [distance, setDistance],
   };
 
-  const lastText = lastCardio ? fmtCardioLast(fields, lastCardio) : null;
+  const lastText = lastCardio ? fmtCardioLast(fields, lastCardio, wUnit) : null;
 
   // One entry row's summary text, honest about every stored value.
   const entryText = (c: SessionCardio) =>
     [
-      c.load != null ? `${c.load} lb` : null,
+      c.load != null ? (wUnit === "kg" ? `${lbToKg(c.load)} kg` : `${c.load} lb`) : null,
       c.durationMin != null ? `${c.durationMin} min` : null,
       c.incline != null ? `incline ${c.incline}` : null,
       c.speed != null ? `speed ${c.speed}` : null,
@@ -236,6 +257,18 @@ export function CardioCard({
                 </li>
               ))}
             </ul>
+          )}
+
+          {entries.length > 0 && !completed && (
+            <RestBanner
+              timerStart={timerStart}
+              timerElapsed={timerElapsed}
+              heldRest={heldRest}
+              storesToNextSet={false}
+              onStart={() => { setTimerStart(Date.now()); setTimerElapsed(0); }}
+              onStop={() => { setHeldRest(Math.round((Date.now() - timerStart!) / 1000)); setTimerStart(null); }}
+              onDiscardHeld={() => setHeldRest(null)}
+            />
           )}
 
           {!completed && (

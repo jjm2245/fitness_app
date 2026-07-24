@@ -19,14 +19,48 @@ export function kmToMi(km: number): number {
   return Math.round(km * MI_PER_KM * 100) / 100;
 }
 
-/** The per-field entry-unit preference (local, entry-side only). */
-export type WeightEntryUnit = "lb" | "kg";
-export type DistanceEntryUnit = "mi" | "km";
+// ── Display conversion (read-side, cosmetic — NEVER feeds back into storage).
+// Display rounding is stated separately from entry rounding: kg → 1 decimal,
+// km → 2 decimals. A display conversion never writes.
+export function lbToKg(lb: number): number {
+  return Math.round((lb / LB_PER_KG) * 10) / 10;
+}
+
+export function miToKm(mi: number): number {
+  return Math.round((mi / MI_PER_KM) * 100) / 100;
+}
+
+/** Display-transform every "N lb" occurrence in a prose line ("120 lb × 10,
+ * 10, 8" → "54.4 kg × 10, 10, 8") — pure string mapping for reference lines
+ * built from canonical values. Identity when the unit is lb. */
+export function displayWeights(text: string, unit: WeightUnit): string {
+  if (unit === "lb") return text;
+  return text.replace(/(\d+(?:\.\d+)?) lb/g, (_, n) => `${lbToKg(Number(n))} kg`);
+}
+
+/** One GLOBAL preference per dimension (weight, distance) — every surface
+ * reads the same key, so added/built-in/reference can never disagree. The
+ * choice affects display + entry interpretation only; storage stays lb/mi. */
+export type WeightUnit = "lb" | "kg";
+export type DistanceUnit = "mi" | "km";
+// Back-compat aliases (pre-global naming).
+export type WeightEntryUnit = WeightUnit;
+export type DistanceEntryUnit = DistanceUnit;
 
 const KEYS = { weight: "entry-unit-weight", distance: "entry-unit-distance" } as const;
 
-export function getEntryUnit(field: "weight"): WeightEntryUnit;
-export function getEntryUnit(field: "distance"): DistanceEntryUnit;
+type UnitListener = () => void;
+const listeners = new Set<UnitListener>();
+
+/** Subscribe to unit-preference changes (so every mounted surface follows a
+ * toggle together). Returns the unsubscribe. */
+export function subscribeUnits(cb: UnitListener): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+export function getEntryUnit(field: "weight"): WeightUnit;
+export function getEntryUnit(field: "distance"): DistanceUnit;
 export function getEntryUnit(field: "weight" | "distance"): string {
   if (typeof window === "undefined") return field === "weight" ? "lb" : "mi";
   const v = window.localStorage.getItem(KEYS[field]);
@@ -35,6 +69,6 @@ export function getEntryUnit(field: "weight" | "distance"): string {
 }
 
 export function setEntryUnit(field: "weight" | "distance", unit: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(KEYS[field], unit);
+  if (typeof window !== "undefined") window.localStorage.setItem(KEYS[field], unit);
+  for (const cb of listeners) cb();
 }

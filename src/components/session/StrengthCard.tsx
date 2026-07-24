@@ -6,6 +6,8 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { publishRestTimer } from "@/lib/restTimerBus";
+import { displayWeights, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
+import { useWeightUnit } from "@/lib/useUnit";
 import { SetRow } from "./SetRow";
 import { RestConnector } from "./RestConnector";
 import { RestBanner } from "./RestBanner";
@@ -121,7 +123,15 @@ export function StrengthCard({
   });
   const [unitModalOpen, setUnitModalOpen] = useState(false);
   const [setType, setSetType] = useState<"warmup" | "working">("working");
-  const [load, setLoad] = useState(ex.loadType === "bodyweight" ? 0 : 45);
+  // ── Weight-unit layer (display + entry ONLY — every internal number stays
+  // canonical lb; the ONE conversion boundary is canonicalLoad below). With lb
+  // selected everything here is the identity, so the card is byte-identical to
+  // its pre-unit-layer behavior.
+  const [wUnit, toggleWeightUnit] = useWeightUnit();
+  const w = (n: number | string) => (wUnit === "kg" ? lbToKg(Number(n)) : Number(n));
+  const [load, setLoad] = useState(() =>
+    ex.loadType === "bodyweight" ? 0 : getEntryUnit("weight") === "kg" ? lbToKg(45) : 45
+  );
   const [reps, setReps] = useState(8);
   const [effort, setEffort] = useState<EffortTag | null>(null);
   // Unilateral side: recorded per set; auto-alternates L→R after logging.
@@ -287,7 +297,9 @@ export function StrengthCard({
   // for this exercise, and no explicit unit-stored offset backing it.
   const offsetNeedsConfirm = offsetRelevant && offsetNum !== 0 && !offsetConfirmed && selectedUnit?.builtInWeight == null;
   const effOffset = !offsetRelevant ? 0 : offsetNeedsConfirm ? 0 : offsetNum;
-  const totalLoad = load + effOffset;
+  // THE entry-conversion boundary: what the user typed, in canonical lb.
+  const canonicalLoad = wUnit === "kg" ? kgToLb(load) : load;
+  const totalLoad = canonicalLoad + effOffset;
   function confirmOffset(value: number) {
     localStorage.setItem(offsetOkKey(activeExercise.id, equipType), String(value));
     setOffsetConfirmed(true);
@@ -418,7 +430,7 @@ export function StrengthCard({
       // Effective load = entered + known offset; the components are stored too,
       // so the math stays visible ("90 + 20 = 110") and the core reads the total.
       load: totalLoad,
-      loadEntered: effOffset !== 0 ? load : null,
+      loadEntered: effOffset !== 0 ? canonicalLoad : null,
       builtinOffset: effOffset !== 0 ? effOffset : null,
       reps,
       effort,
@@ -477,7 +489,7 @@ export function StrengthCard({
   async function addDrop(e: React.FormEvent) {
     e.preventDefault();
     if (!dropFor) return;
-    const l = Number(dropLoad);
+    const l = wUnit === "kg" ? kgToLb(Number(dropLoad)) : Number(dropLoad);
     if (!Number.isFinite(l) || l < 0) return setError("Drop load can't be negative.");
     if (!Number.isFinite(dropReps) || dropReps < 1) return setError("Reps must be at least 1.");
     setError(null);
@@ -649,7 +661,7 @@ export function StrengthCard({
           <div className={styles.metaBlock}>
             <div className={styles.metaLine}>
               <span className={styles.metaLabel}>last</span>{" "}
-              {lastText ?? <span className={styles.metaEmpty}>— no prior data</span>}
+              {lastText != null ? displayWeights(lastText, wUnit) : <span className={styles.metaEmpty}>— no prior data</span>}
             </div>
             {targetText && (
               <div className={styles.metaLine}>
@@ -661,7 +673,7 @@ export function StrengthCard({
           {isRecal && !recalDismissed && (
             <div className={styles.chipsRow}>
               <span className={styles.chipRecal}>
-                {recalNote}
+                {displayWeights(String(recalNote), wUnit)}
                 <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
               </span>
             </div>
@@ -727,7 +739,7 @@ export function StrengthCard({
               {offsetRelevant && (
                 <div className={styles.equipRow}>
                   <label title="Constant added weight this equipment contributes (bar, carriage). Pre-filled from the unit/type default; editing here overrides THIS set only — the stored default is unchanged.">
-                    + built-in{" "}
+                    + built-in{wUnit === "kg" ? " (lb)" : ""}{" "}
                     <input
                       type="number"
                       className={styles.offsetInput}
@@ -738,7 +750,7 @@ export function StrengthCard({
                   </label>
                   {offsetRelevant && !offsetNeedsConfirm && loggedSets.length > 0 && offsetNum !== (occStoredOffset ?? 0) && (
                     <button type="button" onClick={applyOffsetToOccurrence} className={styles.applyAllChip} title="One machine, one offset: apply this built-in to every set of this exercise. Your entered numbers are kept.">
-                      apply +{offsetNum} to all {loggedSets.length} set{loggedSets.length === 1 ? "" : "s"}
+                      apply +{offsetNum}{wUnit === "kg" ? " lb" : ""} to all {loggedSets.length} set{loggedSets.length === 1 ? "" : "s"}
                     </button>
                   )}
                   {offsetRelevant && typeDef.defaultOffset == null && offsetInput.trim() === "" && (
@@ -797,6 +809,7 @@ export function StrengthCard({
                 <Fragment key={s.localId}>
                   {i > 0 && !isDrop && <RestConnector set={s} onChanged={onSessionChanged} />}
                   <SetRow
+                    weightUnit={wUnit}
                     set={s}
                     isDrop={isDrop}
                     unilateral={activeExercise.unilateral}
@@ -811,7 +824,7 @@ export function StrengthCard({
                     <li>
                       <form onSubmit={addDrop} className={styles.dropForm}>
                         <span style={{ color: "var(--text-3)" }}>↳ drop:</span>
-                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder="lb" autoFocus style={{ width: 64 }} />
+                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder={wUnit} autoFocus style={{ width: 64 }} />
                         <span>×</span>
                         <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 52 }} />
                         <button type="submit" className={styles.smallBtn}>Add drop</button>
@@ -850,7 +863,7 @@ export function StrengthCard({
                   <span>
                     {progression.signal.type}
                     {"reason" in progression.signal ? `: ${progression.signal.reason}` : ""}
-                    {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${progression.signal.suggestedLoad} lb)` : ""}
+                    {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${w(progression.signal.suggestedLoad)} ${wUnit})` : ""}
                   </span>
                   {progression.intervention && <div>Stall-buster: {progression.intervention.message}</div>}
                 </>
@@ -867,20 +880,30 @@ export function StrengthCard({
               </select>
               {effOffset !== 0 && (
                 <span className={styles.offsetMath} title="Effective load = what you set + the known built-in weight. Progression uses the total.">
-                  <strong>{totalLoad} lb</strong>
-                  <span className={styles.setSuffix}> · {load} + {effOffset} built-in</span>
+                  <strong>{w(totalLoad)} {wUnit}</strong>
+                  <span className={styles.setSuffix}> · {w(canonicalLoad)} + {w(effOffset)} built-in</span>
                 </span>
               )}
               {offsetNeedsConfirm && (
                 <button type="button" onClick={() => confirmOffset(offsetNum)} className={styles.confirmChip} title="A default offset is suggested but NOT applied until you confirm it — a wrong offset silently corrupts every set.">
-                  apply +{offsetNum} {typeDef.label.toLowerCase()}? ✓
+                  apply +{offsetNum}{wUnit === "kg" ? " lb" : ""} {typeDef.label.toLowerCase()}? ✓
                 </button>
               )}
             </div>
             <div className={styles.entryGrid} style={{ marginTop: 8 }}>
               <label className={styles.cell}>
-                <span className={styles.cellLabel}>{ex.loadType === "bodyweight" ? "added lb" : "lb"}</span>
+                <span className={styles.cellLabel}>
+                  <button
+                    type="button"
+                    className={styles.unitToggle}
+                    onClick={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
+                    title="Switch entry/display unit — storage stays lb"
+                  >
+                    {ex.loadType === "bodyweight" ? `added ${wUnit}` : wUnit}
+                  </button>
+                </span>
                 <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
+                {wUnit === "kg" && load > 0 && <span className={styles.cellHint}>→ {canonicalLoad} lb</span>}
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>reps</span>

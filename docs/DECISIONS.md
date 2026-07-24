@@ -3031,3 +3031,51 @@ and displayed history stay lb/mi/min. Duration stays min-only.
 verified 2×2; Loaded carry one row of 3); effort renders as a consistent
 full-width control below the grid — no orphan cells. 175 tests; params
 byte-identical throughout.
+
+## Units everywhere + rest on metric card + sheet integration (2026-07-23, no schema)
+
+**§1 Global units, display + entry, strength path included.** ONE preference
+per dimension (same localStorage keys as before — they were already
+one-per-dimension; now display-side too, with a subscription in `lib/units.ts`
++ `lib/useUnit.ts` so every mounted surface follows a toggle together).
+**Display rounding stated separately from entry rounding:** display kg → 1
+decimal, km → 2 decimals (`lbToKg`/`miToKm`); entry stays weight → nearest
+0.5 lb, distance → 2 decimals. Display conversion NEVER writes — proven: 6
+unit toggles with no entry left set_logs/cardio_logs/exercises md5-identical.
+
+*StrengthCard* took the layer WITHOUT touching its state machine: all internal
+numbers stay canonical lb; the ONE entry boundary is `canonicalLoad`
+(kg-typed → kgToLb), feeding the existing totalLoad/logSet math; display sites
+(last line + recal note via `displayWeights` string transform, SetRow rows +
+drop rows + offset suffix via a prop, offset-math line, progression
+suggestion, equipment-page built-in badges) convert read-side. Proven: lb mode
+renders byte-identically ("120 lb × 10", "↳ drop · 80 lb × 10") and stores
+today's exact shape (load 100, load_entered null); kg mode reads coherently
+everywhere (54.4 kg / 36.3 kg / 56.7 kg together), typed 10 kg → hint
+"→ 22 lb" → stored 22, and the row reads back "10 kg". **Scoped OUT (stated
+boundary, per the out-clause):** pre-filled canonical inputs stay lb-entry —
+the built-in offset input (labeled "(lb)" in kg mode) and SetRow's edit form
+(labeled "lb") — because reinterpreting pre-filled canonical digits under a kg
+label is the corruption hazard. Distance stays entry-side conversion (display
+remains mi everywhere), per the round's weight-display-only scope.
+
+**LATENT BUG found + fixed:** the previous round's target-sheet distance
+toggle persisted globally, so a sheet with a STORED mi distance could open
+under a km label and a no-edit save would reinterpret mi digits as km
+(2.49 → 1.55). Guard: a sheet with a stored distance always opens in mi (an
+explicit in-sheet toggle clears, as shipped). Proven: global km pref + stored
+2.49 → sheet opens "mi", no-edit save byte-identical 2.49.
+
+**§2 Rest on the metric card.** The SAME machine mirrored (timer state +
+restTimerBus mirror + the shared RestBanner — no second system). Stored rest:
+NONE for metric entries — cardio_logs has no rest column (schema out of
+scope); strength keeps writing set_logs.rest_seconds as today. The held state
+drops the "written to your next set" claim via a presentational
+`storesToNextSet` prop (strength copy byte-identical). Verified start/stop/
+hold/discard + the session-bar mirror.
+
+**§3/§4 Sheet integration.** The profile control now matches the Tag row
+grammar (readonly value + quiet "Change…", menu below; staging/hints in the
+hint tier). The Program/Blocks cross-link is ONE hint line with two inline
+links (`.inlineLink`, zero button chrome). Equipment note (§2 prior round)
+verified in place. 178 tests (+3 unit/display/coherence locks).

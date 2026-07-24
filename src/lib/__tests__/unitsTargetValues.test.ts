@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kgToLb, kmToMi } from "../units";
+import { kgToLb, kmToMi, lbToKg, miToKm, displayWeights, getEntryUnit, setEntryUnit, subscribeUnits } from "../units";
 import { parseRangeValue, storeRangeValue, formatRangeValue, rangeValueComplete, hasRangeValue } from "../targetValues";
 
 // §7 conversion locks — the shown converted value IS the stored value.
@@ -18,6 +18,37 @@ describe("unit entry conversion", () => {
     expect(kmToMi(1)).toBe(0.62);
     expect(kmToMi(10)).toBe(6.21);
     expect(kmToMi(42.195)).toBe(26.22); // marathon
+  });
+
+  // Display rounding is COSMETIC and separate from entry rounding: kg → 1
+  // decimal, km → 2. A display conversion never feeds back into storage.
+  it("display: lb → kg (1 decimal), mi → km (2 decimals)", () => {
+    expect(lbToKg(120)).toBe(54.4);
+    expect(lbToKg(45)).toBe(20.4);
+    expect(lbToKg(22)).toBe(10); // the 10 kg entry reads back as 10 kg
+    expect(miToKm(2.49)).toBe(4.01);
+    expect(miToKm(1)).toBe(1.61);
+  });
+
+  it("displayWeights transforms every 'N lb' in a reference line; identity in lb", () => {
+    expect(displayWeights("120 lb × 10, 10, 8", "kg")).toBe("54.4 kg × 10, 10, 8");
+    expect(displayWeights("you were at 90.5 lb on another unit", "kg")).toBe("you were at 41.1 kg on another unit");
+    expect(displayWeights("120 lb × 10", "lb")).toBe("120 lb × 10");
+    expect(displayWeights("no weights here", "kg")).toBe("no weights here");
+  });
+
+  // Global-preference coherence: ONE key per dimension; a set notifies every
+  // subscriber, so all mounted surfaces follow a toggle together.
+  it("global unit preference: one key, subscribers notified", () => {
+    let notified = 0;
+    const unsub = subscribeUnits(() => notified++);
+    setEntryUnit("weight", "kg");
+    expect(notified).toBe(1);
+    // jsdom-less environment: getEntryUnit falls back to defaults without
+    // window, so only the notification contract is asserted here.
+    unsub();
+    setEntryUnit("weight", "lb");
+    expect(notified).toBe(1); // unsubscribed — no further calls
   });
 });
 
