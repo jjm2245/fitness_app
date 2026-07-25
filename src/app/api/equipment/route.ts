@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { equipment, exerciseEquipment, exercises, setLogs } from "@/db/schema";
+import { equipment, exerciseEquipment, exercises, setLogs, workoutLogs } from "@/db/schema";
 
 // GET /api/equipment — the full managed machine list (Machines section, Part 3b):
 // structured fields + free-text notes, which exercises reference each machine,
@@ -13,15 +13,23 @@ export async function GET() {
     .select({ equipmentId: exerciseEquipment.equipmentId, exerciseId: exerciseEquipment.exerciseId, name: exercises.name })
     .from(exerciseEquipment)
     .innerJoin(exercises, eq(exerciseEquipment.exerciseId, exercises.id));
+  // loggedCount + the most recent date this unit was used — the latter feeds
+  // the "Recently used" sort. Read-only aggregate; no schema.
   const used = await db
-    .select({ equipmentId: setLogs.equipmentId, n: sql<number>`count(*)`.mapWith(Number) })
+    .select({
+      equipmentId: setLogs.equipmentId,
+      n: sql<number>`count(*)`.mapWith(Number),
+      lastUsed: sql<string | null>`max(${workoutLogs.date})`,
+    })
     .from(setLogs)
+    .innerJoin(workoutLogs, eq(setLogs.workoutLogId, workoutLogs.id))
     .groupBy(setLogs.equipmentId);
 
   const refsBy = new Map<string, Array<{ exerciseId: string; name: string }>>();
   for (const r of refs) (refsBy.get(r.equipmentId) ?? refsBy.set(r.equipmentId, []).get(r.equipmentId)!).push({ exerciseId: r.exerciseId, name: r.name });
   const usedBy = new Map<string, number>();
-  for (const u of used) if (u.equipmentId) usedBy.set(u.equipmentId, u.n);
+  const lastBy = new Map<string, string | null>();
+  for (const u of used) if (u.equipmentId) { usedBy.set(u.equipmentId, u.n); lastBy.set(u.equipmentId, u.lastUsed); }
 
   return NextResponse.json(
     rows.map((m) => ({
@@ -36,6 +44,7 @@ export async function GET() {
       notes: m.notes,
       exercises: refsBy.get(m.id) ?? [],
       loggedCount: usedBy.get(m.id) ?? 0,
+      lastUsed: lastBy.get(m.id) ?? null,
     }))
   );
 }

@@ -7,10 +7,18 @@ import { api } from "@/components/editors/types";
 import { lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
 
-// Equipment (phase 3): list rows + a detail sheet. The always-visible
-// Edit/Merge/Delete buttons collapse into the sheet; the header paragraph
-// becomes one line. Units are surrogate-keyed (id opaque + stable), so labels
-// carry no data and deletes stay history-safe.
+type SortId = "az" | "za" | "logged" | "recent";
+const SORTS: { id: SortId; label: string }[] = [
+  { id: "az", label: "A–Z" },
+  { id: "za", label: "Z–A" },
+  { id: "logged", label: "Most logged" },
+  { id: "recent", label: "Recently used" },
+];
+
+// Equipment: the same header grammar as the exercises page — search + add,
+// a type dropdown, a "Used" switch, and display-only sorts. ~20 rows, so no
+// pagination. Units are surrogate-keyed (id opaque + stable), so labels carry
+// no data and deletes stay history-safe.
 export default function EquipmentPage() {
   // Global weight display preference — unit weights follow the same toggle as
   // every other weight surface (display-only; storage stays lb).
@@ -18,6 +26,11 @@ export default function EquipmentPage() {
   const [rows, setRows] = useState<EquipmentUnit[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [usedOnly, setUsedOnly] = useState(false);
+  const [sort, setSort] = useState<SortId>("az");
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -28,31 +41,127 @@ export default function EquipmentPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Types present in the data (plus counts) — no invented vocabulary.
+  const typeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.equipmentType ?? "", (m.get(r.equipmentType ?? "") ?? 0) + 1);
+    return m;
+  }, [rows]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((m) =>
-      [m.label, m.gym, m.brand, m.model, m.equipmentType].filter(Boolean).some((f) => f!.toLowerCase().includes(needle))
-    );
-  }, [rows, q]);
+    let list = rows;
+    if (needle) {
+      list = list.filter((m) =>
+        [m.label, m.gym, m.brand, m.model, m.equipmentType].filter(Boolean).some((f) => f!.toLowerCase().includes(needle))
+      );
+    }
+    if (typeFilter) list = list.filter((m) => (m.equipmentType ?? "") === typeFilter);
+    if (usedOnly) list = list.filter((m) => m.loggedCount > 0);
+    // Sorts are display-only — they never write an order.
+    const byLabel = (a: EquipmentUnit, b: EquipmentUnit) => a.label.localeCompare(b.label);
+    return [...list].sort((a, b) => {
+      if (sort === "az") return byLabel(a, b);
+      if (sort === "za") return byLabel(b, a);
+      if (sort === "logged") return b.loggedCount - a.loggedCount || byLabel(a, b);
+      // recent: most recent session date first; never-used sink to the bottom
+      const av = a.lastUsed ?? "", bv = b.lastUsed ?? "";
+      if (av === bv) return byLabel(a, b);
+      if (!av) return 1;
+      if (!bv) return -1;
+      return bv.localeCompare(av);
+    });
+  }, [rows, q, typeFilter, usedOnly, sort]);
 
   const open = rows.find((m) => m.id === openId) ?? null;
+  const typeLabel = typeFilter === "" ? "All types" : typeFilter;
 
   return (
     <main className={styles.page}>
       <div className={styles.titleRow}>
         <h1 className={styles.title}>Equipment</h1>
       </div>
-      <p className={styles.hintLine}>Your labelled units — built-in weight auto-adds to loads; deleting is history-safe.</p>
+      <p className={styles.hintLine}>
+        The specific machines you train on. Pick one while logging and that machine keeps its own history, so your
+        numbers only ever compare against the same station — and its built-in weight is added to your load for you.
+      </p>
 
       <div className={styles.searchRow}>
         <input className={styles.fieldInput} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search units…" type="search" />
+        <button type="button" className={styles.searchAddBtn} onClick={() => setAdding(true)} aria-label="Add a unit" title="Add a unit">
+          ＋
+        </button>
+      </div>
+
+      <div className={styles.viewRow}>
+        <div className={styles.viewDropWrap}>
+          <button type="button" className={styles.viewDropBtn} onClick={() => setTypeOpen((v) => !v)} aria-expanded={typeOpen}>
+            {typeLabel}
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </button>
+          {typeOpen && (
+            <>
+              <div className={styles.viewMenuScrim} onClick={() => setTypeOpen(false)} />
+              <div className={styles.viewMenu} role="menu">
+                <button type="button" role="menuitem" className={typeFilter === "" ? styles.viewMenuItemActive : styles.viewMenuItem} onClick={() => { setTypeFilter(""); setTypeOpen(false); }}>
+                  <span>All types</span>
+                  <span className={styles.viewMenuCount}>{rows.length}</span>
+                </button>
+                {[...typeCounts.entries()].sort((a, b) => (a[0] || "~").localeCompare(b[0] || "~")).map(([t, n]) => (
+                  <button
+                    key={t || "(none)"}
+                    type="button"
+                    role="menuitem"
+                    className={typeFilter === t ? styles.viewMenuItemActive : styles.viewMenuItem}
+                    onClick={() => { setTypeFilter(t); setTypeOpen(false); }}
+                  >
+                    <span>{t === "" ? "no type set" : t}</span>
+                    <span className={styles.viewMenuCount}>{n}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className={styles.viewDropWrap}>
+          <button type="button" className={styles.viewDropBtn} onClick={() => setSortOpen((v) => !v)} aria-expanded={sortOpen}>
+            {SORTS.find((s) => s.id === sort)!.label}
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </button>
+          {sortOpen && (
+            <>
+              <div className={styles.viewMenuScrim} onClick={() => setSortOpen(false)} />
+              <div className={styles.viewMenu} role="menu">
+                {SORTS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="menuitem"
+                    className={sort === s.id ? styles.viewMenuItemActive : styles.viewMenuItem}
+                    onClick={() => { setSort(s.id); setSortOpen(false); }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <button type="button" className={styles.switchRow} role="switch" aria-checked={usedOnly} onClick={() => setUsedOnly((v) => !v)}>
+          <span className={styles.switchLabel}>Used</span>
+          <span className={`${styles.switchTrack} ${usedOnly ? styles.switchTrackOn : ""}`}>
+            <span className={styles.switchKnob} />
+          </span>
+        </button>
       </div>
 
       <div className={styles.rowsCard}>
-        <button type="button" className={styles.addRow} onClick={() => setAdding(true)}>
-          + Add a unit
-        </button>
         {!loaded ? (
           <p className={styles.emptyNote}>Loading…</p>
         ) : shown.length === 0 ? (
