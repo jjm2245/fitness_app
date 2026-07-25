@@ -483,14 +483,26 @@
   gap: 10px;
   margin-top: 8px;
 }
+/* Two dropdowns cluster on the left; the switch is pushed right. With three
+   controls, space-between distributed the gaps evenly and pulled the two
+   dropdowns apart — they belong together, since both narrow the same list. */
+.viewGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .viewDropWrap {
   position: relative;
+  min-width: 0;
 }
 .viewDropBtn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
+  min-width: 0;
+  max-width: 100%;
   padding: 6px 12px;
   font-size: 0.88rem;
   font-weight: 500;
@@ -498,6 +510,36 @@
   background: var(--card);
   border: 1px solid var(--hairline);
   color: var(--text);
+}
+/* A long type label ("plate_loaded") truncates rather than growing the row. */
+.viewDropLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewDropBtn svg {
+  flex-shrink: 0;
+}
+/* Width fallback — the row must never wrap (wrapping is what made the spacing
+   awkward). Below this width the SORT control drops its text and becomes an
+   icon button opening the same menu; the type filter keeps its label, since
+   which subset you're looking at matters more than which order it's in. */
+.viewSortIcon {
+  display: none;
+  flex-shrink: 0;
+}
+@media (max-width: 400px) {
+  .viewSortBtn {
+    gap: 0;
+    padding: 6px 10px;
+  }
+  .viewSortBtn .viewDropLabel,
+  .viewSortBtn .viewDropChevron {
+    display: none;
+  }
+  .viewSortBtn .viewSortIcon {
+    display: block;
+  }
 }
 /* Click-away scrim under the menu (page-local dropdown, no portal needed). */
 .viewMenuScrim {
@@ -553,6 +595,7 @@
   padding: 0;
   background: transparent;
   border: none;
+  flex-shrink: 0;
 }
 .switchLabel {
   font-size: 0.82rem;

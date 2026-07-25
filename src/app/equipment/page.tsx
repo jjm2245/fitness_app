@@ -82,8 +82,7 @@ export default function EquipmentPage() {
         <h1 className={styles.title}>Equipment</h1>
       </div>
       <p className={styles.hintLine}>
-        The specific machines you train on. Pick one while logging and that machine keeps its own history, so your
-        numbers only ever compare against the same station — and its built-in weight is added to your load for you.
+        The machines you train on — each keeps its own history, so your numbers compare against the same station.
       </p>
 
       <div className={styles.searchRow}>
@@ -94,63 +93,78 @@ export default function EquipmentPage() {
       </div>
 
       <div className={styles.viewRow}>
-        <div className={styles.viewDropWrap}>
-          <button type="button" className={styles.viewDropBtn} onClick={() => setTypeOpen((v) => !v)} aria-expanded={typeOpen}>
-            {typeLabel}
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
-              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-          </button>
-          {typeOpen && (
-            <>
-              <div className={styles.viewMenuScrim} onClick={() => setTypeOpen(false)} />
-              <div className={styles.viewMenu} role="menu">
-                <button type="button" role="menuitem" className={typeFilter === "" ? styles.viewMenuItemActive : styles.viewMenuItem} onClick={() => { setTypeFilter(""); setTypeOpen(false); }}>
-                  <span>All types</span>
-                  <span className={styles.viewMenuCount}>{rows.length}</span>
-                </button>
-                {[...typeCounts.entries()].sort((a, b) => (a[0] || "~").localeCompare(b[0] || "~")).map(([t, n]) => (
-                  <button
-                    key={t || "(none)"}
-                    type="button"
-                    role="menuitem"
-                    className={typeFilter === t ? styles.viewMenuItemActive : styles.viewMenuItem}
-                    onClick={() => { setTypeFilter(t); setTypeOpen(false); }}
-                  >
-                    <span>{t === "" ? "no type set" : t}</span>
-                    <span className={styles.viewMenuCount}>{n}</span>
+        <div className={styles.viewGroup}>
+          <div className={styles.viewDropWrap}>
+            <button type="button" className={styles.viewDropBtn} onClick={() => setTypeOpen((v) => !v)} aria-expanded={typeOpen}>
+              <span className={styles.viewDropLabel}>{typeLabel}</span>
+              <svg className={styles.viewDropChevron} width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </button>
+            {typeOpen && (
+              <>
+                <div className={styles.viewMenuScrim} onClick={() => setTypeOpen(false)} />
+                <div className={styles.viewMenu} role="menu">
+                  <button type="button" role="menuitem" className={typeFilter === "" ? styles.viewMenuItemActive : styles.viewMenuItem} onClick={() => { setTypeFilter(""); setTypeOpen(false); }}>
+                    <span>All types</span>
+                    <span className={styles.viewMenuCount}>{rows.length}</span>
                   </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+                  {[...typeCounts.entries()].sort((a, b) => (a[0] || "~").localeCompare(b[0] || "~")).map(([t, n]) => (
+                    <button
+                      key={t || "(none)"}
+                      type="button"
+                      role="menuitem"
+                      className={typeFilter === t ? styles.viewMenuItemActive : styles.viewMenuItem}
+                      onClick={() => { setTypeFilter(t); setTypeOpen(false); }}
+                    >
+                      <span>{t === "" ? "no type set" : t}</span>
+                      <span className={styles.viewMenuCount}>{n}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
-        <div className={styles.viewDropWrap}>
-          <button type="button" className={styles.viewDropBtn} onClick={() => setSortOpen((v) => !v)} aria-expanded={sortOpen}>
-            {SORTS.find((s) => s.id === sort)!.label}
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
-              <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-          </button>
-          {sortOpen && (
-            <>
-              <div className={styles.viewMenuScrim} onClick={() => setSortOpen(false)} />
-              <div className={styles.viewMenu} role="menu">
-                {SORTS.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    role="menuitem"
-                    className={sort === s.id ? styles.viewMenuItemActive : styles.viewMenuItem}
-                    onClick={() => { setSort(s.id); setSortOpen(false); }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          <div className={styles.viewDropWrap}>
+            <button
+              type="button"
+              className={`${styles.viewDropBtn} ${styles.viewSortBtn}`}
+              onClick={() => setSortOpen((v) => !v)}
+              aria-expanded={sortOpen}
+              // The label is the accessible name at every width — below the
+              // breakpoint the button is icon-only, so the current sort has to
+              // survive somewhere readable.
+              aria-label={`Sort: ${SORTS.find((s) => s.id === sort)!.label}`}
+              title={`Sort: ${SORTS.find((s) => s.id === sort)!.label}`}
+            >
+              <svg className={styles.viewSortIcon} width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M2 3.5h10M3.5 7h7M5.5 10.5h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              <span className={styles.viewDropLabel}>{SORTS.find((s) => s.id === sort)!.label}</span>
+              <svg className={styles.viewDropChevron} width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </button>
+            {sortOpen && (
+              <>
+                <div className={styles.viewMenuScrim} onClick={() => setSortOpen(false)} />
+                <div className={styles.viewMenu} role="menu">
+                  {SORTS.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="menuitem"
+                      className={sort === s.id ? styles.viewMenuItemActive : styles.viewMenuItem}
+                      onClick={() => { setSort(s.id); setSortOpen(false); }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+        </div>
         </div>
 
         <button type="button" className={styles.switchRow} role="switch" aria-checked={usedOnly} onClick={() => setUsedOnly((v) => !v)}>
