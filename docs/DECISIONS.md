@@ -3313,3 +3313,39 @@ cardio-typed row does too, with canonical == display today — so behavior is
 unchanged for every un-renamed exercise. Verified live: renaming Farmer's Walk
 to "Farmer Carry" kept "Loaded carry (default)" (kind line: Renamed · library:
 Farmer's Walk); rename reverted. 199 tests (+5 rename locks).
+
+#### Residual, accepted: rename-breakage is bounded to library exercises — customs still key on their display name
+
+The canonical-name fix **bounds** the problem; it doesn't eliminate it, and the
+remaining exposure is inherent rather than a gap to close.
+
+**Library/curated rows (canonical_name present) are now rename-proof.** Both
+default layers key on the canonical name, so renaming one cannot change how it
+logs.
+
+**Customs have no canonical name, so `cardioFields` still keys on their display
+name.** Consequences, accepted:
+- **Renaming a custom CARDIO exercise can change its resolved fields** — e.g. a
+  custom "Rowing intervals" (duration+distance+level → Cardio machine) renamed
+  to "Morning session" falls to duration+distance (Distance cardio).
+- **Custom names containing heuristic substrings still hit the trap** — a custom
+  named "Prowler pushes", "Throwing drills", or "Stair sprints" matches
+  `row`/`stair` inside the word and inherits that machine's field set.
+
+**Precise scope (read from `defaultLogFields`, not assumed):** the name is only
+consulted for **cardio-typed customs**. A strength-typed custom hits the
+`if (!ex.conditioningOnly) return strength` early return first, so its name is
+irrelevant no matter what it contains or what it is renamed to. The residual
+surface is therefore: *customs with `conditioning_only = true`* — currently
+zero in prod (all 15 cardio-typed rows are library/curated with canonicals).
+
+**Why accepted rather than fixed:** the display name is the ONLY identity signal
+a from-scratch custom has. There is no canonical to key on, and inventing a
+hidden per-custom "kind" would be a second, invisible source of truth competing
+with the profile the user can already see and set.
+
+**Mitigation (already shipped, no new work):** set an explicit profile on the
+custom. `sanitizeOverride` runs BEFORE every default layer, so a stored
+`log_fields` makes the name irrelevant permanently — renames and substring
+collisions both stop mattering. This is the same two-tap escape hatch that
+covers a wrongly-guessed default anywhere else.
