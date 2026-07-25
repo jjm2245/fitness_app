@@ -3544,3 +3544,74 @@ logging a set through the app then created the association — set 122 stored
 `load_entered 99 + builtin_offset 15 = load 114` and inserted
 `incline_bench_press ↔ press by the window`. Both the test set and the link it
 created were removed afterwards; the local baseline checksum was restored.
+
+---
+
+## The phantom unit: a remembered machine the sets never carried
+
+**The bug.** `StrengthCard` kept a per-exercise `fitness-app:last-machine:<id>`
+in localStorage, written on every logged set with a resolved unit and read to
+seed the picker. Opening an occurrence whose sets carried **no** `equipment_id`
+fell through to that value, so the card displayed a machine the history did not
+record. Because set rows render no per-set unit, an unattributed set was
+visually identical to an attributed one — **six hand-attributions were silently
+lost to it** (Seated Leg Curl 07-16, Seated Cable Rows 07-17): the owner saw the
+right machine, changed nothing, and the rows stayed NULL.
+
+**Correction to an earlier report.** A previous session's analysis claimed the
+`setItem` had been "dropped in the 2026-07-17 card rebuild and only the read
+survived." That was **wrong** — the write was live at the log-set handler the
+whole time. The error came from grepping the string literal `last-machine`
+(which only appears in the key builder) instead of the helper `lastEquipmentKey`.
+The mechanism is simpler than described: the key was actively maintained, which
+is exactly why it was so convincingly wrong.
+
+**Fix — deletion.** The key builder, its write, and all three reads are gone.
+The picker is now seeded ONLY by `occStoredUnit` (this occurrence's own sets);
+absent that it shows unspecified. **Cost, accepted:** the picker no longer
+pre-selects the last machine used for an exercise on a fresh occurrence. That
+convenience is not worth a control that can assert an untrue fact about
+recorded history — and a wrong pre-selection is one tap from being logged.
+
+**Visibility, so this class of bug is checkable by eye:**
+- A set with `equipment_id IS NULL` on a **context-bound** type (cable,
+  selectorized, Smith, plate-loaded) renders a muted `· no unit`. Portable types
+  (bodyweight, dumbbell, barbell) stay clean — there, no unit is the CORRECT
+  state, and marking it would be noise on nearly every row. Marking **absence**
+  rather than presence also keeps the common case quiet: 17 of 19 units are 1:1
+  with an exercise, so naming the unit on every row says nothing.
+  **Known gap:** legacy rows whose `equipment_type` is itself NULL (23 rows,
+  all 07-14 or earlier) get no marker, because the rule keys on the snapshotted
+  type and NULL is not context-bound. Inferring from the exercise's `load_type`
+  would be a guess about history; left alone deliberately.
+- The card chip stops over-claiming: a partially attributed occurrence reads
+  `VSL14 · 2 of 5 sets` instead of a bare unit name. Fully attributed
+  occurrences are unchanged.
+
+### Attribution applied (6 rows, prod)
+
+Seated Leg Curl 07-16 (70, 71, 72) → VSL16 `a7fc4f80…`; Seated Cable Rows 07-17
+(101, 102, 103) → longpull 302 `f18af4e3…`. Both `exercise_equipment` links
+already existed (no-op inserts). Orphans **75 → 69**. A checksum over `load`,
+`load_entered`, `builtin_offset`, `reps`, `effort`, `side`, `rest_seconds`,
+`rest_source`, `drop_set_group`, `set_type` **and `equipment_type`** was
+byte-identical before and after (`b64efaa1e53e8235271bac48b2bb90b7`): only
+`equipment_id` moved.
+
+### Open issue, logged not fixed: the set-edit path writes `equipment_type`
+
+The rule is that a set's recorded type is history — it describes what the set was
+performed on, not what the unit is today. The app's edit path violates it: when
+the owner hand-attributed sets via the UI, six rows had `equipment_type` written
+from NULL to `selectorized` (ids 13, 14, 22, 25, 28, 31) alongside
+`equipment_id`.
+
+**Is it worth changing? Probably yes, but it is not urgent.** The values written
+were *correct* (they matched the unit's type), so nothing is currently
+misrecorded. The risk is narrow but real: re-pointing an old set to a unit whose
+type differs from what was actually used would rewrite the historical type to
+match the new unit, silently. That is the same class of error as the phantom
+unit — the UI asserting a fact the history didn't contain. The fix is small
+(omit `equipmentType` from the set-edit PATCH payload unless explicitly edited);
+the reason to wait is that it needs its own verification pass over the edit and
+re-point flows.
