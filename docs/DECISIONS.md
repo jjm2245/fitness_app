@@ -3455,15 +3455,11 @@ ALL units via `GET /api/equipment` and groups them (On this exercise → Your
 \<type\> units → Other types). The prod duplicates all predate it (both VSL16s
 and both VSL13s created 07-17/07-18). What was genuinely missing:
 
-- **Linking happened on LOG, not on PICK.** `POST /api/set-logs` inserted the
-  association with the first set. Now `pickUnit` fires the link immediately, so
-  "On this exercise" and the unit's Used-by are true the moment you pick.
-  Optimistic + fire-and-forget: the log path still inserts the same row
-  (`onConflictDoNothing`), so the pick-time call is a nicety, never the
-  guarantee — which is what makes it safe offline.
 - **"Used by" was read-only text.** It now lists every linked exercise with a
   per-row Unlink and a `＋ Link an exercise…` search, filtered to exclude
   already-linked rows.
+- **Link-on-pick was tried here and reverted the same day** — see the entry
+  below.
 
 ### Type and gym filtering: proposed, then DROPPED on the owner's call
 
@@ -3514,3 +3510,37 @@ render. Renaming a unit already reflects everywhere. **One nuance:**
 `set_logs.equipment_type` IS snapshotted per set, so changing a unit's type does
 not retro-change past sets' recorded type — correct for history, but it means
 type is per-set truth while label is live truth.
+
+---
+
+## Link-on-log is the standing decision — link-on-pick was tried and reverted
+
+**Reverted.** For one day, picking a unit in the session dropdown fired the
+`exercise_equipment` insert immediately. It is now removed: `pickUnit` sets
+local state only, and `POST /api/set-logs` is again the **single** writer of the
+association (`onConflictDoNothing`).
+
+**Why, from live use:** a native `<select>` makes an accidental selection easy —
+scroll past an option on a phone and it commits — and every stray pick left a
+real link to go and unlink by hand. **Picking is exploratory; logging is the
+commitment.** Only actual use should create an association, because the link
+list is what the picker's "On this exercise" group and the unit's Used-by are
+built from; polluting it with hypotheticals makes both less trustworthy.
+
+The evidence is in prod: two `exercise_equipment` rows with **zero** logged sets
+for that pair — Hack Squat ↔ VSL03 and Hack Squat ↔ VSL04, both selectorized
+units belonging to other exercises, on a plate-loaded exercise. Neither could
+have been produced by logging. That is exactly the accidental-pick signature,
+and it appeared within a day.
+
+**The deliberate path is unaffected and is now the only way to link by hand:**
+the equipment sheet's "Used by" section (`＋ Link an exercise…` / `Unlink`).
+Deliberate linking belongs on a considered surface, not on a mid-workout
+dropdown.
+
+**Verified after the revert:** picking an unlinked unit in a session left
+`exercise_equipment` byte-identical (`379d097a…`, 5 rows, before and after);
+logging a set through the app then created the association — set 122 stored
+`load_entered 99 + builtin_offset 15 = load 114` and inserted
+`incline_bench_press ↔ press by the window`. Both the test set and the link it
+created were removed afterwards; the local baseline checksum was restored.

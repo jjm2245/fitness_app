@@ -251,6 +251,13 @@ export function StrengthCard({
   // Picking a unit REUSES its row. If the unit's own type differs from the
   // current selection, adopt it so the (type, unit) lane stays consistent —
   // this is also what makes an "Other types" unit selectable without breaking.
+  //
+  // Picking does NOT create the exercise↔unit link. Link-on-pick was tried and
+  // reverted: a native dropdown makes a stray selection easy, and every stray
+  // pick left a link to go and unlink by hand. Picking is exploratory; LOGGING
+  // is the commitment, so POST /api/set-logs is the only writer of the
+  // association (onConflictDoNothing). Deliberate linking lives in the
+  // equipment sheet's "Used by" (＋ Link an exercise… / Unlink).
   function pickUnit(value: string) {
     setEquipmentId(value);
     setOffsetTouched(false);
@@ -261,32 +268,6 @@ export function StrengthCard({
         setEquipType(u.equipmentType as EquipmentTypeId);
         localStorage.setItem(lastTypeKey(activeExercise.id), u.equipmentType);
       }
-      if (u) void linkUnitToExercise(u);
-    }
-  }
-
-  // One-tap link: picking a unit that isn't on this exercise yet associates it
-  // NOW rather than on the first logged set, so "On this exercise" and the
-  // unit's Used-by list are true the moment you pick. Logging still inserts the
-  // same row (onConflictDoNothing), so this is a nicety, not the guarantee —
-  // which is what makes it safe to fire-and-forget offline.
-  const [linkedToast, setLinkedToast] = useState<string | null>(null);
-  async function linkUnitToExercise(u: SessionUnit) {
-    if (u.exercises.some((e) => e.exerciseId === activeExercise.id)) return; // already linked
-    // Optimistic: the picker regroups immediately; the server is the backstop.
-    setEquipmentUnits((cur) =>
-      cur.map((m) => (m.id === u.id ? { ...m, exercises: [...m.exercises, { exerciseId: activeExercise.id }] } : m))
-    );
-    setLinkedToast(`${u.label} added to ${activeExercise.name}`);
-    setTimeout(() => setLinkedToast(null), 2600);
-    try {
-      await fetch(`/api/exercises/${encodeURIComponent(activeExercise.id)}/equipment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: u.id, label: u.label }),
-      });
-    } catch {
-      /* offline — the first logged set re-inserts the same association */
     }
   }
 
@@ -761,9 +742,6 @@ export function StrengthCard({
                     </select>
                     <button type="button" onClick={() => setUnitModalOpen(true)} className={styles.smallBtn} title="Add a new unit for this equipment type">+ New unit…</button>
                   </div>
-                  {/* Confirms the one-tap link without interrupting — a modal
-                      here would cost a dismiss mid-workout. */}
-                  {linkedToast && <p className={styles.equipNote}>✓ {linkedToast}</p>}
                 </div>
               )}
               {offsetRelevant && (
