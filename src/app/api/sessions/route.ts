@@ -1,15 +1,49 @@
 import { NextResponse } from "next/server";
-import { desc, isNotNull, sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { workoutLogs, setLogs, cardioLogs, sessionExercises } from "@/db/schema";
 
-// GET /api/sessions — the finished sessions that live on the server, newest
-// first. This is the *synced* half of the sessions list; the client merges it
-// with its local durable store (offline + in-flight), keyed by clientSessionId,
-// so the list never depends on a network round-trip. Each row carries a derived
-// short description (program day name — or "Ad-hoc" — plus a distinct exercise
-// count) so the client doesn't have to re-fetch every set to label a session.
+// A zero-content unfinished session is a husk: Start was tapped and nothing came
+// of it. Mirrors the local store's sweepEmptySessions age guard EXACTLY (5 min)
+// so there is ONE rule in two places rather than two rules that drift. The guard
+// is what makes it safe — a session started moments ago is never hidden
+// mid-entry, it just hasn't earned a row yet.
+const HUSK_AGE_MS = 5 * 60_000;
+
+// GET /api/sessions — the sessions that live on the server, newest first.
+//
+// Returns FINISHED sessions plus UNFINISHED ones that carry content
+// (sets + cardio + occurrences > 0). Unfinished sessions used to be filtered
+// out entirely, which made them invisible in the list — and since the list is
+// also the only place a session can be deleted, invisible meant undeletable:
+// seven of them accumulated silently. Content is counted across all three
+// children, never occurrences alone: one real session held 6 sets and 0
+// occurrences (pre-occurrence-model), and an occurrence-only predicate would
+// have hidden exactly the row most worth reaching.
+//
+// This is the *synced* half of the sessions list; the client merges it with its
+// local durable store (offline + in-flight), keyed by clientSessionId, so the
+// list never depends on a network round-trip. Each row carries a derived short
+// description (program day name — or "Ad-hoc" — plus a distinct exercise count)
+// so the client doesn't have to re-fetch every set to label a session.
 export async function GET() {
+  // (b) Husk sweep, best-effort and non-fatal: drop UNFINISHED sessions with no
+  // sets, no cardio, no occurrences, older than the age guard. Same predicate
+  // and same 5-minute threshold as the local sweep, so the two can't drift.
+  // Recoverable by construction — a device that still holds such a session
+  // locally re-creates the row on its next sync.
+  try {
+    await db.execute(sql`
+      delete from ${workoutLogs}
+      where ${workoutLogs.finishedAt} is null
+        and ${workoutLogs.createdAt} < ${new Date(Date.now() - HUSK_AGE_MS)}
+        and not exists (select 1 from ${setLogs} where ${setLogs.workoutLogId} = ${workoutLogs.id})
+        and not exists (select 1 from ${cardioLogs} where ${cardioLogs.workoutLogId} = ${workoutLogs.id})
+        and not exists (select 1 from ${sessionExercises} where ${sessionExercises.workoutLogId} = ${workoutLogs.id})`);
+  } catch {
+    /* sweeping is housekeeping — never fail the list because of it */
+  }
+
   const logs = await db
     .select({
       id: workoutLogs.id,
@@ -22,7 +56,16 @@ export async function GET() {
       firstFinishedAt: workoutLogs.firstFinishedAt,
     })
     .from(workoutLogs)
-    .where(isNotNull(workoutLogs.finishedAt))
+    // (a) Finished, OR unfinished-with-content. Content = sets + cardio +
+    // occurrences, never occurrences alone.
+    .where(
+      sql`(
+        ${workoutLogs.finishedAt} is not null
+        or exists (select 1 from ${setLogs} where ${setLogs.workoutLogId} = ${workoutLogs.id})
+        or exists (select 1 from ${cardioLogs} where ${cardioLogs.workoutLogId} = ${workoutLogs.id})
+        or exists (select 1 from ${sessionExercises} where ${sessionExercises.workoutLogId} = ${workoutLogs.id})
+      )`
+    )
     .orderBy(desc(workoutLogs.date), desc(workoutLogs.firstFinishedAt));
 
   if (logs.length === 0) return NextResponse.json([]);
