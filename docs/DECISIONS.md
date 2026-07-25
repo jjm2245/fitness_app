@@ -3615,3 +3615,66 @@ unit — the UI asserting a fact the history didn't contain. The fix is small
 (omit `equipmentType` from the set-edit PATCH payload unless explicitly edited);
 the reason to wait is that it needs its own verification pass over the edit and
 re-point flows.
+
+---
+
+## Unfinished-session lifecycle: visible, sweepable, and loudly undeletable-free
+
+**The bug, in one line:** `GET /api/sessions` filtered to
+`finished_at IS NOT NULL`, and the sessions list is also the only place a
+session can be deleted — so unfinished sessions were invisible **and therefore
+undeletable**, and seven accumulated silently. The delete path itself was never
+broken (the owner's `pending-session-deletes` queue was empty, proving no delete
+ever failed to drain); they were simply never listed to delete.
+
+### (a) Surface unfinished sessions that carry content
+
+The list now returns finished sessions **plus** unfinished ones where
+`sets + cardio + occurrences > 0`. Content is counted across **all three**
+children, never occurrences alone: session 1 held 6 sets and 0 occurrences
+(pre-occurrence-model), so an occurrence-only predicate would have hidden
+exactly the row most worth reaching. They render in the page's existing
+`inProgress` section, which already had the resume badge and a working ✕.
+
+### (b) Husk sweep, server-side, 5 minutes
+
+Zero-content unfinished sessions older than **5 minutes** are deleted on list
+load. The threshold is **not a new number** — it is `sweepEmptySessions`'s
+existing `maxAgeMs = 5 * 60_000`, mirrored deliberately so the two sweeps can't
+drift into disagreeing about what a husk is. The age guard is the safety: a
+session started moments ago is never eaten mid-entry. It's also recoverable by
+construction — a device still holding the session locally re-creates the row on
+its next sync. The sweep is wrapped in try/catch: housekeeping must never fail
+the list.
+
+A young husk (zero content, under 5 min) is swept by neither rule and listed by
+neither — it lives in the local store, which is where the device that started it
+already shows it. Correct: nothing to surface, nothing to reap.
+
+### (c) A stuck delete queue is now visible
+
+`deleteSession` wipes the local row immediately and queues the server DELETE, so
+a delete whose request never lands leaves **no visible trace** — the same
+invisible-failure class as the unlisted sessions. `pendingSessionDeletes()` is
+now exported and the History page shows a banner with a Retry when the queue is
+non-empty after a drain.
+
+**Not doing: auto-finishing content-bearing sessions.** Converting a fragment
+into a "real workout" on the user's behalf is its own surprise. Visible +
+deletable is enough.
+
+**Verified end to end on throwaway rows:** an unfinished session with 1 set (2 h
+old) rendered and was deleted with ✕ — server row gone, confirmed in the DB; a
+zero-content unfinished session (2 h old) was swept automatically; a
+zero-content one (45 s old) was neither swept nor listed. A simulated failing
+DELETE surfaced *"2 sessions deleted here but not yet on the server. Retry now"*,
+and the banner cleared once the request succeeded.
+
+### Cleanup applied (prod, owner-approved row by row)
+
+Seven `workout_logs` deleted with a pre-flight guard that aborts on any drift
+from the approved cascade counts. Result: **13 → 6 sessions, 200 → 188 sets,
+4 → 1 cardio, 69 → 57 session_exercises, orphans 69 → 57**, zero orphaned
+children, the Stairmaster cardio row (real training) intact, and the six
+finished sessions' set data **checksum-identical** before and after
+(`9260bd43a73d2af9234013c944281bc1`, 188 rows).
