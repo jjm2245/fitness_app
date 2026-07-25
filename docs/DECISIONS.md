@@ -3436,3 +3436,81 @@ link merged into a same-type target → both moved, source row deleted, and the
 checksum re-confirmed. Unit-preference parity confirmed on the shared form
 (45 lb ↔ 20.4 kg in both the row badge and the field, storage unchanged) and a
 session-side create with 10 kg typed stored canonical 22.05 lb.
+
+---
+
+## One unit, many exercises — the model was already right; the UI wasn't finished
+
+No schema change. The gate found the junction table has always been
+many-to-many: `exercise_equipment`'s only uniqueness is the **composite**
+`PRIMARY KEY (exercise_id, equipment_id)` (verified against prod's
+`pg_constraint`), with no unique index on `equipment_id` and no application code
+enforcing one. The observed 19-units/19-links 1:1 shape was **residue**, not a
+constraint.
+
+### What was already shipped, and what wasn't
+
+The picker restructure was largely done in `ec7bae1` (Jul 19) — it already loads
+ALL units via `GET /api/equipment` and groups them (On this exercise → Your
+\<type\> units → Other types). The prod duplicates all predate it (both VSL16s
+and both VSL13s created 07-17/07-18). What was genuinely missing:
+
+- **Linking happened on LOG, not on PICK.** `POST /api/set-logs` inserted the
+  association with the first set. Now `pickUnit` fires the link immediately, so
+  "On this exercise" and the unit's Used-by are true the moment you pick.
+  Optimistic + fire-and-forget: the log path still inserts the same row
+  (`onConflictDoNothing`), so the pick-time call is a nicety, never the
+  guarantee — which is what makes it safe offline.
+- **"Used by" was read-only text.** It now lists every linked exercise with a
+  per-row Unlink and a `＋ Link an exercise…` search, filtered to exclude
+  already-linked rows.
+
+### Type and gym filtering: proposed, then DROPPED on the owner's call
+
+The round asked to filter the "other units" group to compatible
+`equipment_type` and same `gym`. Both were rejected after the conflict was
+surfaced, and the reasoning is worth keeping:
+
+**Hiding a unit is the cause of the duplicates, not the cure.** The unit most
+likely to need reaching is the one whose type is *wrong* — and hiding it leaves
+only `＋ New unit…`, which is exactly the path that minted VSL13 and VSL16
+twice. Filtering would have reintroduced the trap `ec7bae1` removed. Ordering
+already solves the noise problem; filtering creates a failure mode. If "Other
+types" ever gets long the answer is better labels or sorting **within** the
+group, never hiding.
+
+**Gym is unreliable as a filter key by direct evidence:** prod holds
+`"Monroe PF"` (17) and `"MonroePF"` (2) for one physical gym, so a same-gym
+filter would hide `24res` and `LifeFitnessShoulder` from everything else. Don't
+build filtering on an unnormalized free-text field. If multi-gym becomes real,
+the prerequisite is normalizing gym into a picked entity first.
+
+### Linking never touches history — stated in the UI, proven in the DB
+
+A set's lane is its `equipment_id`; link rows don't write it. Unlinking only
+stops *offering* the unit for that exercise. The Used-by section says so
+verbatim, next to the Unlink buttons.
+
+Verified on throwaways (real local rows byte-identical before and after — three
+checksums over `equipment`, `exercise_equipment`, `set_logs`):
+- One unit linked to two exercises → both offer it; sets logged on each land in
+  the **same** lane (3 sets / 3 exercises / 1 `equipment_id`).
+- Unlink → link row gone, **all** sets keep their `equipment_id` and still
+  resolve to the unit (the unlinked exercise's set still renders its label).
+- One-tap link from the session: picking an unlinked unit created the
+  association with no set logged, regrouped it under "On this exercise", and
+  the subsequently logged set carried that `equipment_id`.
+- Re-picking an already-linked unit is silent — no toast, no write.
+- **Merge on a VSL13-shaped fixture** (two same-label units serving *different*
+  exercises, each with its own sets): result is ONE unit linked to **both**
+  exercises, all sets moved, source deleted, **0 orphans**, and each exercise's
+  history intact inside the merged lane.
+
+### Identity fields are read live (confirmed, not changed)
+
+`set_logs` stores only `equipment_id` — no `label`/`gym`/`brand` snapshot — and
+`/api/sessions/[id]` returns the id, with labels resolved from the live row at
+render. Renaming a unit already reflects everywhere. **One nuance:**
+`set_logs.equipment_type` IS snapshotted per set, so changing a unit's type does
+not retro-change past sets' recorded type — correct for history, but it means
+type is per-set truth while label is live truth.
