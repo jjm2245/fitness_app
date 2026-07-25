@@ -837,13 +837,21 @@ export async function healSingletonDropGroups(sessionId: string): Promise<number
   return healed;
 }
 
+/** Edit a logged set. NOTE the absence of `equipmentType`: it is snapshotted at
+ * log time and records what the set was PERFORMED on. Editing a set — including
+ * re-pointing it to a different unit — must never rewrite it, or a set logged on
+ * a cable machine would silently become "selectorized" when filed under a
+ * selectorized unit. NULL stays NULL too: "not recorded" is a fact, and filling
+ * it from the newly-assigned unit would be an inference about history. The type
+ * is not in this signature so the mistake can't be made by a future caller;
+ * only `logSet` writes it. */
 export async function editSet(
   localId: number,
   patch: {
     load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working";
     restSeconds?: number | null; restSource?: RestSource | null; dropGroupId?: string | null;
     side?: SetSide | null; loadEntered?: number | null; builtinOffset?: number | null;
-    equipmentId?: string | null; equipmentLabel?: string | null; equipmentType?: string | null;
+    equipmentId?: string | null; equipmentLabel?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -1279,7 +1287,10 @@ async function runSync(): Promise<SyncResult> {
             load: row.load, reps: row.reps, effort: row.effort, rir: row.rir, setType: row.setType,
             restSeconds: row.restSeconds ?? null, restSource: row.restSource ?? null,
             dropSetGroup: row.dropGroupId ?? null, side: row.side ?? null,
-            equipmentId: row.equipmentId ?? null, equipmentType: row.equipmentType ?? null,
+            // equipmentType is absent by design — an update must never restate
+            // the set's recorded type (see editSet). The create payload carries
+            // it; the update path does not.
+            equipmentId: row.equipmentId ?? null,
             loadEntered: row.loadEntered ?? null, builtinOffset: row.builtinOffset ?? null,
           }),
         });

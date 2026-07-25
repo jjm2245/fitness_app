@@ -23,7 +23,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     dropSetGroup?: string | null;
     side?: string | null;
     equipmentId?: string | null;
-    equipmentType?: string | null;
     loadEntered?: string | null;
     builtinOffset?: string | null;
   } = {};
@@ -41,8 +40,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body?.dropSetGroup === null || typeof body?.dropSetGroup === "string") updates.dropSetGroup = body.dropSetGroup;
   if (body?.side === null || ["left", "right", "both"].includes(body?.side)) updates.side = body.side;
   // Session-level relabel (3e): naming a unit re-points this session's sets.
+  // equipment_type is deliberately NOT patchable. It is snapshotted at log time
+  // and records what the set was PERFORMED on; re-pointing a set to a
+  // differently-typed unit must not rewrite that, and a NULL ("not recorded")
+  // must not be filled in from the new unit. An `equipmentType` in the body is
+  // ignored rather than rejected, so an older client's payload still applies its
+  // equipmentId change instead of failing outright.
   if (body?.equipmentId === null || typeof body?.equipmentId === "string") updates.equipmentId = body.equipmentId;
-  if (body?.equipmentType === null || typeof body?.equipmentType === "string") updates.equipmentType = body.equipmentType;
   if (body?.loadEntered === null) updates.loadEntered = null;
   else if (typeof body?.loadEntered === "number") updates.loadEntered = body.loadEntered.toString();
   if (body?.builtinOffset === null) updates.builtinOffset = null;

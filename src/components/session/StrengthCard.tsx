@@ -465,7 +465,7 @@ export function StrengthCard({
         ...offsetPatch(st, off), // shared with tests — the arithmetic can't drift
         equipmentId: resolvedUnitId,
         equipmentLabel: selectedUnit?.label ?? null,
-        equipmentType: equipType,
+        // equipmentType is NOT written here — see applyUnitToLoggedSets.
       });
     }
     if (selectedUnit) {
@@ -571,7 +571,9 @@ export function StrengthCard({
   async function relabelSessionSets(unit: EquipmentOption) {
     const toMove = loggedSets.filter((s) => s.equipmentId == null && s.equipmentType === equipType);
     for (const st of toMove) {
-      await editSet(st.localId!, { equipmentId: unit.id, equipmentLabel: unit.label, equipmentType: equipType });
+      // equipmentType is NOT written — these sets already carry the matching
+      // type (it's the filter above); re-asserting it could only overwrite.
+      await editSet(st.localId!, { equipmentId: unit.id, equipmentLabel: unit.label });
     }
     if (toMove.length) onSessionChanged();
   }
@@ -630,8 +632,16 @@ export function StrengthCard({
   // Re-point LOGGED sets to the currently-selected unit (2.11). The equipment
   // dropdown only governs NEW sets; this is the explicit, never-automatic way to
   // move already-logged sets onto the right unit — or to unspecified. It changes
-  // ONLY the unit identity (equipmentId/label/type); each set's load, entered
-  // load, and built-in offset are preserved exactly, so no load ever shifts.
+  // ONLY equipmentId; each set's load, entered load, and built-in offset are
+  // preserved exactly, so no load ever shifts.
+  //
+  // equipment_type is deliberately NOT written. It is snapshotted per set and
+  // records what the set was PERFORMED on — a fact about history, not about the
+  // unit it is now filed under. Re-pointing a set genuinely logged on a cable
+  // machine to a selectorized unit must not rewrite its recorded type to
+  // "selectorized"; that would silently manufacture history. NULL likewise
+  // stays NULL: "not recorded" is not the same as "the new unit's type", and
+  // filling it in would be an inference. Only logSet writes the type.
   const repointSets = review
     ? []
     : loggedSets.filter((s) => (s.equipmentId ?? null) !== resolvedUnitId || (s.equipmentType ?? null) !== equipType);
@@ -641,7 +651,6 @@ export function StrengthCard({
       await editSet(st.localId!, {
         equipmentId: resolvedUnitId,
         equipmentLabel: selectedUnit?.label ?? null,
-        equipmentType: equipType,
       });
     }
     onSessionChanged();
