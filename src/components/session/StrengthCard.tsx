@@ -33,9 +33,12 @@ function parseRepRangeMax(repRange: string | null): number {
   const max = Number(parts[parts.length - 1]);
   return Number.isFinite(max) ? max : 12;
 }
-function lastEquipmentKey(exerciseId: string) {
-  return `fitness-app:last-machine:${exerciseId}`;
-}
+// NOTE: there is deliberately no "last unit for this exercise" memory. A
+// remembered unit seeded the picker for occurrences whose sets carried NO
+// equipment_id, so the card displayed a machine the history didn't record —
+// and since set rows show no per-set unit, orphans were invisible. Six
+// hand-attributions were silently lost to it. The picker now reflects only
+// what is stored. See DECISIONS.
 function lastTypeKey(exerciseId: string) {
   return `fitness-app:last-equiptype:${exerciseId}`;
 }
@@ -117,11 +120,9 @@ export function StrengthCard({
   const occStoredType = (sessionSets.find((x) => x.instanceId === ex.instanceId && x.equipmentType)?.equipmentType) as EquipmentTypeId | undefined;
   const occStoredUnit = sessionSets.find((x) => x.instanceId === ex.instanceId && x.equipmentId)?.equipmentId ?? null;
   const [equipTouched, setEquipTouched] = useState(false);
-  const [equipmentId, setEquipmentId] = useState(() => {
-    if (occStoredUnit) return occStoredUnit; // server-restored named unit wins
-    if (typeof window === "undefined") return UNSPECIFIED_UNIT;
-    return localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT;
-  });
+  // ONLY the occurrence's own sets decide the unit. No fallback: an empty
+  // picker is the honest answer when nothing is recorded.
+  const [equipmentId, setEquipmentId] = useState(() => occStoredUnit ?? UNSPECIFIED_UNIT);
   const [unitModalOpen, setUnitModalOpen] = useState(false);
   const [setType, setSetType] = useState<"warmup" | "working">("working");
   // ── Weight-unit layer (display + entry ONLY — every internal number stays
@@ -447,7 +448,6 @@ export function StrengthCard({
       // If the rest timer is running, this set consumes it as an exact rest.
       timedRestSeconds: takeTimedRest(),
     });
-    if (resolvedUnitId) localStorage.setItem(lastEquipmentKey(activeExercise.id), resolvedUnitId);
     // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
     if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
     onSessionChanged();
@@ -554,14 +554,14 @@ export function StrengthCard({
   }
   function pickSwap(c: SubstitutionCandidate) {
     setActiveExercise({ id: c.id, name: c.name, loadType: c.loadType, portable: c.portable, unilateral: c.unilateral ?? false });
-    setEquipmentId(localStorage.getItem(lastEquipmentKey(c.id)) ?? UNSPECIFIED_UNIT);
+    setEquipmentId(UNSPECIFIED_UNIT); // a swapped-in exercise has no unit yet
     const storedT = localStorage.getItem(lastTypeKey(c.id));
     setEquipType(storedT && EQUIPMENT_TYPE_BY_ID.has(storedT as EquipmentTypeId) ? (storedT as EquipmentTypeId) : suggestEquipmentType(c.loadType, c.name));
     setSwapOpen(false);
   }
   function resetSwap() {
     setActiveExercise({ id: ex.exerciseId, name: ex.exerciseName, loadType: ex.loadType, portable: ex.portable, unilateral: ex.unilateral });
-    setEquipmentId(localStorage.getItem(lastEquipmentKey(ex.exerciseId)) ?? UNSPECIFIED_UNIT);
+    setEquipmentId(occStoredUnit ?? UNSPECIFIED_UNIT); // back to what the sets say
     const storedT = localStorage.getItem(lastTypeKey(ex.exerciseId));
     setEquipType(storedT && EQUIPMENT_TYPE_BY_ID.has(storedT as EquipmentTypeId) ? (storedT as EquipmentTypeId) : suggestEquipmentType(ex.loadType, ex.exerciseName));
     setSwapOpen(false);
@@ -598,8 +598,17 @@ export function StrengthCard({
   // Option A summary (2.9): the ONE equipment element at rest — "⚙ unit · type"
   // (named) or "⚙ Type · pick unit" (context-bound, no unit yet) or just the
   // type (portable). Tapping reveals full-width labeled Type/Unit fields.
+  // The chip reflects the PICKER, which is about to apply to the next set — but
+  // it sat above rows that may carry a different unit or none, reading as though
+  // it described them all. When the occurrence is only partly attributed, say so
+  // ("VSL14 · 2 of 5 sets"); a fully attributed one is unchanged.
+  const occSets = sessionSets.filter((x) => x.instanceId === ex.instanceId);
+  const onSelected = selectedUnit ? occSets.filter((x) => x.equipmentId === selectedUnit.id).length : 0;
+  const partial = selectedUnit != null && occSets.length > 0 && onSelected < occSets.length;
   const equipSummary = selectedUnit
-    ? `${selectedUnit.label} · ${typeDef.label.toLowerCase()}`
+    ? partial
+      ? `${selectedUnit.label} · ${onSelected} of ${occSets.length} sets`
+      : `${selectedUnit.label} · ${typeDef.label.toLowerCase()}`
     : contextBound
       ? `${typeDef.label} · pick unit`
       : typeDef.label;
