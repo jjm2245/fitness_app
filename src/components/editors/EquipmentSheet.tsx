@@ -1,9 +1,143 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { UnitFormFields, emptyUnitDraft, EQUIPMENT_UNIT_TYPES, type UnitDraft } from "./UnitFormFields";
+
+// "Used by" — the unit's exercise links, editable. A unit is a physical
+// machine, and one machine can serve any number of exercises (a rear-delt/pec
+// deck does flyes AND butterfly; a Precor combo does leg extension AND curl) —
+// the schema has always been many-to-many, so this is the surface for it.
+//
+// Linking and unlinking NEVER touch logged history: a set's lane is its
+// equipment_id, which these rows don't write. Unlinking only stops offering the
+// unit for that exercise going forward.
+function UsedBy({ unit, onChanged }: { unit: EquipmentUnit; onChanged: () => Promise<void> }) {
+  const [links, setLinks] = useState(unit.exercises);
+  const [adding, setAdding] = useState(false);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<Array<{ id: string; name: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => setLinks(unit.exercises), [unit.exercises]);
+
+  // Debounced search, same 2-char / 220 ms contract as ExerciseSearch.
+  useEffect(() => {
+    if (timer.current) clearTimeout(timer.current);
+    if (q.trim().length < 2) { setResults([]); return; }
+    timer.current = setTimeout(async () => {
+      const res = await fetch(`/api/exercises/search?q=${encodeURIComponent(q.trim())}`);
+      setResults(res.ok ? await res.json() : []);
+    }, 220);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [q]);
+
+  async function link(ex: { id: string; name: string }) {
+    if (busy || links.some((l) => l.exerciseId === ex.id)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/exercises/${encodeURIComponent(ex.id)}/equipment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: unit.id, label: unit.label }),
+      });
+      if (res.ok) {
+        setLinks((cur) => [...cur, { exerciseId: ex.id, name: ex.name }]);
+        setQ("");
+        setResults([]);
+        setAdding(false);
+        await onChanged();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlink(exerciseId: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `/api/exercises/${encodeURIComponent(exerciseId)}/equipment/${encodeURIComponent(unit.id)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        setLinks((cur) => cur.filter((l) => l.exerciseId !== exerciseId));
+        await onChanged();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const candidates = results.filter((r) => !links.some((l) => l.exerciseId === r.id));
+
+  return (
+    <>
+      <div className={styles.sectionLabel}>Used by</div>
+      {links.length === 0 ? (
+        <p className={styles.fieldNote}>
+          Not linked to any exercise yet — a link is added automatically the first time you log with this unit.
+        </p>
+      ) : (
+        <div className={styles.sheetList}>
+          {links.map((l) => (
+            <div key={l.exerciseId} className={styles.pickRow}>
+              <span className={styles.pickMain}>
+                <span className={styles.pickName}>{l.name}</span>
+              </span>
+              <button type="button" className={styles.quietBtn} onClick={() => void unlink(l.exerciseId)} disabled={busy}>
+                Unlink
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className={styles.fieldNote} style={{ marginTop: 6 }}>
+        Unlinking only stops offering this unit for that exercise. Sets you already logged on it keep their history and
+        stay in this unit&rsquo;s lane.
+      </p>
+
+      {!adding ? (
+        <button type="button" className={styles.quietBtn} style={{ marginTop: 8, alignSelf: "flex-start" }} onClick={() => setAdding(true)}>
+          ＋ Link an exercise…
+        </button>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          <input
+            className={styles.fieldInput}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search exercises…"
+            type="search"
+            autoFocus
+          />
+          {q.trim().length >= 2 && (
+            <div className={styles.sheetList} style={{ marginTop: 6 }}>
+              {candidates.length === 0 ? (
+                <p className={styles.fieldNote}>No matches.</p>
+              ) : (
+                candidates.slice(0, 8).map((r) => (
+                  <button key={r.id} type="button" className={styles.pickRow} onClick={() => void link(r)} disabled={busy}>
+                    <span className={styles.pickMain}>
+                      <span className={styles.pickName}>{r.name}</span>
+                    </span>
+                    <span className={styles.sheetRowMuted}>＋</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+          <button type="button" className={styles.quietBtn} style={{ marginTop: 6 }} onClick={() => { setAdding(false); setQ(""); }}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 
 export interface EquipmentUnit {
   id: string;
@@ -195,11 +329,8 @@ export function EquipmentSheet({
         </button>
       </div>
 
-      {!isNew && unit!.exercises.length > 0 && (
-        <>
-          <div className={styles.sectionLabel}>Used by</div>
-          <p className={styles.fieldNote}>{unit!.exercises.map((e) => e.name).join(", ")}</p>
-        </>
+      {!isNew && (
+        <UsedBy unit={unit!} onChanged={onChanged} />
       )}
 
       {!isNew && (
