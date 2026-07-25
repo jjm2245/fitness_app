@@ -1264,3 +1264,67 @@ describe("empty-session discard — husks die, content is sacred", () => {
     expect(await getSession(fresh.id)).toBeNull();
   });
 });
+
+// LOCK: equipment_type is snapshotted at log time and records what the set was
+// PERFORMED on. Re-pointing a set to a different unit must never rewrite it —
+// otherwise a set logged on a cable machine becomes "selectorized" the moment
+// it's filed under a selectorized unit, manufacturing history. NULL must stay
+// NULL too: "not recorded" is a fact, and filling it from the newly-assigned
+// unit is an inference. `editSet` doesn't accept the field at all, so this
+// locks both the type signature and the runtime behaviour.
+describe("equipment_type is history — the edit path can never rewrite it", () => {
+  it("re-pointing to a differently-typed unit leaves the recorded type untouched", async () => {
+    mockOffline();
+    const { id, inst } = await newSession();
+    await logSet({
+      ...baseInput,
+      sessionId: id,
+      instanceId: inst,
+      date: "x" as never,
+      equipmentId: "cable-station-1",
+      equipmentType: "cable", // performed on a CABLE machine
+    });
+    const [before] = await getSessionSets(id);
+    expect(before.equipmentType).toBe("cable");
+
+    // Re-point onto a SELECTORIZED unit — the dangerous case.
+    await editSet(before.localId!, { equipmentId: "vsl-20", equipmentLabel: "VSL20" });
+
+    const [after] = await getSessionSets(id);
+    expect(after.equipmentId).toBe("vsl-20"); // the lane moved…
+    expect(after.equipmentType).toBe("cable"); // …the recorded type did NOT
+    expect(after.load).toBe(before.load);
+    expect(after.reps).toBe(before.reps);
+  });
+
+  it("a NULL recorded type stays NULL when the set is re-pointed", async () => {
+    mockOffline();
+    const { id, inst } = await newSession();
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date: "x" as never });
+    const [before] = await getSessionSets(id);
+    expect(before.equipmentType ?? null).toBeNull();
+
+    await editSet(before.localId!, { equipmentId: "vsl-20", equipmentLabel: "VSL20" });
+
+    const [after] = await getSessionSets(id);
+    expect(after.equipmentId).toBe("vsl-20");
+    expect(after.equipmentType ?? null).toBeNull(); // never inferred from the unit
+  });
+
+  it("the update sync payload carries no equipmentType", async () => {
+    mockOnline();
+    const { id, inst } = await newSession();
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date: "x" as never, equipmentType: "cable" });
+    await sync();
+    const [row] = await getSessionSets(id);
+    await editSet(row.localId!, { equipmentId: "vsl-20" });
+    await sync();
+    // Inspect the PATCH bodies the store actually sent.
+    const calls = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls;
+    const patches = calls.filter(([u, o]) => o?.method === "PATCH" && /\/api\/set-logs\/\d+$/.test(String(u)));
+    expect(patches.length).toBeGreaterThan(0);
+    for (const [, init] of patches) {
+      expect(JSON.parse(String(init!.body))).not.toHaveProperty("equipmentType");
+    }
+  });
+});
