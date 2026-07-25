@@ -3349,3 +3349,90 @@ custom. `sanitizeOverride` runs BEFORE every default layer, so a stored
 `log_fields` makes the name irrelevant permanently — renames and substring
 collisions both stop mattering. This is the same two-tap escape hatch that
 covers a wrongly-guessed default anywhere else.
+
+---
+
+## Equipment section rework — copy, merge redesign, one shared form, sort/filter header
+
+No schema, no migrations. Existing units, links, and logged history untouched;
+canonical storage (lb) and the global unit preference apply as everywhere else.
+
+### 1. The subheader says what a unit BUYS you, not what it is
+
+The old copy described the noun. The new line states the two consequences that
+make picking a unit worth the tap: *"The specific machines you train on. Pick
+one while logging and that machine keeps its own history, so your numbers only
+ever compare against the same station — and its built-in weight is added to your
+load for you."* Both halves are literally true of the engine — per-unit history
+is how `previous` is scoped, and `builtin_offset` is added at log time.
+
+### 2. Merge is a picker, not a warning
+
+Merge **moves** history and links, then deletes the source — it never orphans a
+set. Rendering it in `warnBox` amber said "danger" about the safe operation
+while the genuinely destructive one (delete) wore the same colour. Amber is now
+reserved for the delete guard, and merge is a plain surface.
+
+The target list defaults to **same type as the source**, because built-in weight
+and pulley semantics don't transfer across types — merging a cable unit into a
+plate-loaded one silently re-interprets every load. But a MIS-TYPED unit is
+itself a reason to merge, so "Show all types" stays one tap away, and a source
+with no type set shows everything (it can't filter meaningfully). Search matches
+label / gym / manufacturer / model, and each row carries an identifying subline
+(type · gym · manufacturer · used-by · logged) — two units labelled "VSL13" are
+distinguishable only by those fields, and that duplicate pair exists in prod.
+
+### 3. ONE unit form, four functional groups
+
+`UnitFormFields` is now the single form for both places a unit is created or
+edited: the Equipment section and the session's "New … unit" sheet. Order and
+grouping are identical in both; the only difference is **Type**, which the
+session flow already knows (`presetType`) and therefore hides. Groups: Identity
+→ Load math → Where it is → Notes. Load math is grouped and annotated because
+built-in weight is the one field that changes what a logged set MEANS.
+
+**Built-in weight is empty by default, never 0.** Zero is a *claim* that the
+machine adds nothing — usually false for plate-loaded and smith units — and it
+would silently understate every set logged there. Blank means unknown; the
+placeholder says so.
+
+**Census (read-only prod, at the time of this change): 19 units — 16 NULL, 0
+zero, 3 positive** (HackSquatMonroePF 105, VPL-SMBP 25, 24res 24). Nothing
+stores 0, so there is **no backfill decision to make**; the empty-never-0 rule
+is forward-looking only.
+
+**Bug found by the verification, fixed here:** the session form sent `model` but
+`POST /api/exercises/[id]/equipment` never read it, so a model typed during a
+session was silently dropped. The route now persists it. This went unnoticed
+because `model` is populated on **0 of 19** prod units — the field had no users
+to notice it failing.
+
+### 4. Header mirrors the exercises page — and the sorts write nothing
+
+Search + ＋ in one row, then a type dropdown (options and counts derived from
+the data, including "no type set" — no invented vocabulary), a sort dropdown
+(A–Z / Z–A / Most logged / Recently used), and a "Used" switch. Filters and
+sorts compose. `lastUsed` (max session date per unit) was added to
+`GET /api/equipment` to make "Recently used" real rather than a proxy; never-used
+units sink to the bottom rather than sorting as "oldest".
+
+**Sorts are display-only and deliberately so.** Drag-and-drop ordering was
+explicitly NOT built: a stored order is a second ranking competing with the
+derived ones, and it would need a migration to hold something the data already
+answers. Verified: sorting issues only GETs — no write of any kind.
+
+### 5. The name is the identifier, so the name doesn't shrink
+
+`.rowName` badges are `flex-shrink: 0`, so in a `nowrap` flex row the NAME was
+the only thing that could give — a unit with three badges rendered as `p…`.
+The row now wraps, badges flow to a second line, and the name keeps the first.
+
+### Verification (local, throwaway fixture, real rows untouched)
+
+Merge proven end-to-end on throwaways: source with 2 logged sets + 1 exercise
+link merged into a same-type target → both moved, source row deleted, and the
+**real** equipment checksum byte-identical before and after
+(`49ab7d09d034d9aa9cec0ce1dd800906`, 6 rows). Throwaways deleted afterwards;
+checksum re-confirmed. Unit-preference parity confirmed on the shared form
+(45 lb ↔ 20.4 kg in both the row badge and the field, storage unchanged) and a
+session-side create with 10 kg typed stored canonical 22.05 lb.
