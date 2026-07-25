@@ -6,6 +6,7 @@ import styles from "./sessions.module.css";
 import {
   listLocalSessionSummaries,
   deleteSession,
+  pendingSessionDeletes,
   reconcileFinishedFromServer,
   reconcileOccurrenceList,
   rehydrateLocalFromServer,
@@ -93,6 +94,8 @@ export default function SessionsPage() {
   const [confirm, setConfirm] = useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [openDetail, setOpenDetail] = useState<string | null>(null);
+  // Queued session deletes the server has not confirmed yet.
+  const [stuckDeletes, setStuckDeletes] = useState<string[]>([]);
 
   const drain = useCallback(async () => {
     const r = await sync().catch(() => null);
@@ -125,6 +128,7 @@ export default function SessionsPage() {
     // Read local AFTER reconciling so the summaries reflect the corrected flags.
     setLocal(await listLocalSessionSummaries());
     setPending(await pendingCount());
+    setStuckDeletes(pendingSessionDeletes());
     setLoaded(true);
   }, []);
 
@@ -309,6 +313,19 @@ export default function SessionsPage() {
       {syncError === "auth" && (
         <div className={styles.authBanner}>
           Session expired — <a href="/login?next=/sessions">re-login to sync</a>
+        </div>
+      )}
+
+      {/* A queued delete wipes the local row immediately, so one that never
+          reaches the server leaves NO visible trace — the same invisible
+          failure that let seven undeletable sessions accumulate. Say it out
+          loud instead, and offer the retry. */}
+      {stuckDeletes.length > 0 && (
+        <div className={styles.authBanner}>
+          {stuckDeletes.length} session{stuckDeletes.length === 1 ? "" : "s"} deleted here but not yet on the server.{" "}
+          <button type="button" className={styles.linkBtn} onClick={() => { void drain().then(refresh); }}>
+            Retry now
+          </button>
         </div>
       )}
 

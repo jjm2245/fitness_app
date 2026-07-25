@@ -30,6 +30,15 @@
 .authBanner a {
   color: var(--warning);
 }
+/* Inline action inside a banner — reads as the link beside it, not a control. */
+.linkBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--warning);
+  font: inherit;
+  text-decoration: underline;
+}
 
 .sectionLabel {
   font-size: 0.78rem;

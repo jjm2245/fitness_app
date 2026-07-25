@@ -473,6 +473,14 @@ export async function deleteSession(id: string): Promise<void> {
   writeDeleteQueue([...readDeleteQueue(), id]);
 }
 
+/** Session deletes that have been queued but not yet confirmed by the server.
+ * Exposed so the UI can SHOW a stuck queue: the local row is wiped immediately,
+ * so a delete whose DELETE never lands leaves no visible trace — the same
+ * invisible-failure class as the sessions that were never listed. */
+export function pendingSessionDeletes(): string[] {
+  return readDeleteQueue();
+}
+
 // Empty-session discard (owner-approved, polish round 2): tapping Start and
 // backing out must not leave a "New session · 0 exercises" husk in History.
 // Discardable ONLY when the session has zero occurrences, zero sets, zero
