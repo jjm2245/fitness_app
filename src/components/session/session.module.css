@@ -256,6 +256,13 @@
   font-size: 0.85rem;
   color: var(--text-2);
 }
+/* Transient confirmation for the one-tap unit link — quiet, accent-tinted,
+   self-dismissing. Never a modal: this fires mid-workout. */
+.equipNote {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
 /* Option A editor fields (2.9): the summary chip is the rest state; when
    revealed, Type and Unit are full-width LABELED selects — no truncation
    (fixes the "Selectorized m…" / "Unspecified u…" cutoff of the compact row). */
