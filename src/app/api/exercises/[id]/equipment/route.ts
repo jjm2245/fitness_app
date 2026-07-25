@@ -62,6 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       equipmentType: str(body?.equipmentType),
       gym: str(body?.gym),
       brand: str(body?.brand),
+      model: str(body?.model),
       builtInWeight: typeof body?.builtInWeight === "number" && Number.isFinite(body.builtInWeight) ? body.builtInWeight.toString() : null,
       pulleyRatioKind: ["1:1", "2:1", "other", "unknown"].includes(body?.pulleyRatioKind) ? body.pulleyRatioKind : "unknown",
     })
