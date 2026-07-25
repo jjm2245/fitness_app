@@ -3606,6 +3606,9 @@ the owner hand-attributed sets via the UI, six rows had `equipment_type` written
 from NULL to `selectorized` (ids 13, 14, 22, 25, 28, 31) alongside
 `equipment_id`.
 
+**CLOSED — fixed. See "equipment_type is history" below.** Original assessment
+kept for context:
+
 **Is it worth changing? Probably yes, but it is not urgent.** The values written
 were *correct* (they matched the unit's type), so nothing is currently
 misrecorded. The risk is narrow but real: re-pointing an old set to a unit whose
@@ -3678,3 +3681,63 @@ from the approved cascade counts. Result: **13 → 6 sessions, 200 → 188 sets,
 children, the Stairmaster cardio row (real training) intact, and the six
 finished sessions' set data **checksum-identical** before and after
 (`9260bd43a73d2af9234013c944281bc1`, 188 rows).
+
+---
+
+## `equipment_type` is history — closed: the edit path can no longer write it
+
+The open item logged earlier is fixed. `set_logs.equipment_type` is snapshotted
+at log time and records what the set was **performed on**. Writing it at log
+time is correct; overwriting it on edit is not, because re-pointing a set to a
+differently-typed unit would silently rewrite the record — a set genuinely
+logged on a cable machine would become `selectorized` the moment it was filed
+under a selectorized unit. That is manufacturing history, the same class of
+error as the phantom unit.
+
+**NULL is treated as data, not as a gap to fill.** "Not recorded" is a fact
+about those 23 legacy rows. Filling it from the newly-assigned unit would be an
+inference dressed as a record, so the edit path leaves NULL alone.
+
+### What changed (four layers, so the mistake can't be re-made)
+
+- **`StrengthCard.applyUnitToLoggedSets`** (the explicit "Move N logged sets →
+  unit" re-point) — the dangerous path — no longer sends `equipmentType`.
+- **`StrengthCard.relabelSessionSets`** (session-level relabel) — same. These
+  sets already match the type by the filter that selects them, so re-asserting
+  it could only ever overwrite.
+- **`StrengthCard.applyOffsetToOccurrence`** (apply built-in offset to all sets)
+  — same; it changes loads and unit identity, never the recorded type.
+- **`editSet` in `sessionStore`** — `equipmentType` removed from the patch type
+  entirely, so a future caller cannot pass it. The type signature is the lock.
+- **`PATCH /api/set-logs/[id]`** — `equipmentType` is no longer read from the
+  body. It is **ignored rather than rejected**, so an older client's payload
+  still applies its `equipmentId` change instead of failing outright.
+- **The update sync payload** no longer carries the field. The create payload
+  still does — log-time behaviour is unchanged.
+
+**`cardio_logs` needed no change: it has no equipment columns at all**, so the
+metric-entry edit path cannot write a type by construction.
+
+### Not reverted, deliberately
+
+The six rows written NULL → `selectorized` before the fix (13, 14, 22, 25, 28,
+31 — all 2026-07-14) are **left as they are**. The values are correct; reverting
+would discard accurate information to restore an absence. Confirmed still
+`selectorized` and correctly unit-attributed (VSL13 ×2, VSL04, VSL20, VSL14 ×2).
+
+### Known display consequence, unchanged
+
+Sets whose `equipment_type` is NULL get no `· no unit` marker, because the
+marker keys on context-bound types and NULL is not one. Inferring the type from
+the exercise's `load_type` to force a marker would be the same inference this
+decision rejects.
+
+### Proof
+
+Three lock tests (202 total, +3): re-pointing a `cable` set to a selectorized
+unit keeps `cable`; a NULL-typed set stays NULL; the PATCH sync payload has no
+`equipmentType` key. Proven end-to-end at the API too — PATCHing two throwaway
+sets (one `cable`, one NULL) onto a selectorized unit **while deliberately
+sending `"equipmentType":"selectorized"` in the body** returned 200 and left both
+types untouched (`cable` stayed `cable`, NULL stayed NULL) with only
+`equipment_id` moved.
