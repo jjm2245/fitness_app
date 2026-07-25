@@ -71,7 +71,7 @@ export function TargetSheet({
   // Phase 2: the CONFIG routes the sheet's branch (reps -> strength target on
   // program_exercises; else the metric target on exercises.params) — the same
   // rule as the session card router. conditioning_only no longer decides.
-  const fieldSource = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
+  const fieldSource = { name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   const isCardio = !routesToStrength(fieldSource);
   // Effort is a target field wherever the config includes it (metric branch).
   const metricHasEffort = resolveLogFields(fieldSource).includes("effort");

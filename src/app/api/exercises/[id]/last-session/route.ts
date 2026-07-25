@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // the session card router — not conditioning_only.
   const metricRouted =
     exercise != null &&
-    !routesToStrength({ name: exercise.name, conditioningOnly: exercise.conditioningOnly, logFields: exercise.logFields });
+    !routesToStrength({ name: exercise.name, canonicalName: exercise.canonicalName, conditioningOnly: exercise.conditioningOnly, logFields: exercise.logFields });
 
   if (metricRouted) {
     const [last] = await db

@@ -149,7 +149,7 @@ describe("universal unit input contract (drift-proof)", () => {
 // in the resolved field set.
 describe("metric drop visibility", () => {
   const canDrop = (name: string, conditioningOnly: boolean, logFields: unknown) =>
-    resolveCardFields({ name, conditioningOnly, logFields }).includes("weight");
+    resolveCardFields({ name, canonicalName: name, conditioningOnly, logFields }).includes("weight");
   it("offered on Loaded carry / Timed hold; absent on treadmill/distance", () => {
     expect(canDrop("Farmer's Walk", false, ["weight", "duration", "distance", "effort"])).toBe(true);
     expect(canDrop("Plank Hold", false, ["weight", "duration"])).toBe(true);

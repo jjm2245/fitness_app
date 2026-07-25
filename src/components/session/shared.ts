@@ -15,6 +15,7 @@ export interface ProgramExerciseDetail {
   conditioningOnly: boolean;
   params: Record<string, unknown> | null;
   logFields?: unknown;
+  canonicalName: string | null;
   source: string;
   untagged: boolean;
   unilateral?: boolean;
@@ -77,6 +78,7 @@ export interface LoggableOccurrence {
   target: { targetSets: number; repRange: string | null; rirTarget: string | null } | null;
   params: Record<string, unknown> | null;
   logFields?: unknown;
+  canonicalName: string | null;
   source: string;
   provenance: string;
   untagged: boolean;

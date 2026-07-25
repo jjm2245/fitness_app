@@ -154,7 +154,7 @@ export function CardioCard({
   const [dropForId, setDropForId] = useState<number | null>(null);
 
   // weight → metrics → effort, from the ONE resolver.
-  const fields = resolveCardFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields });
+  const fields = resolveCardFields({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields });
   // "+ Drop" is a LOAD reduction — offered only when weight is in the resolved
   // field set (Loaded carry / Timed hold), never on a treadmill/distance entry.
   const canDrop = fields.includes("weight");
@@ -224,7 +224,7 @@ export function CardioCard({
   // (exercise-level, always available), rendered through the same builder the
   // program chip and Add-picker use.
   const targetParts = hasMetricTarget(ex.params)
-    ? metricTargetParts(ex.params, resolveMetricFields({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }), dUnit, TARGET_EFFORT_LABEL)
+    ? metricTargetParts(ex.params, resolveMetricFields({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }), dUnit, TARGET_EFFORT_LABEL)
     : [];
   const targetText = targetParts.length > 0 ? targetParts.join(" · ") : null;
 

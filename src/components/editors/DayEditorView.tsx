@@ -27,7 +27,7 @@ import { TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 // Cardio never shows "1 set" — it shows the prescription (duration/incline/speed)
 // from exercises.params, or "Set a target".
 function targetChip(ex: EditorExercise, distUnit: string): { text: string; muted: boolean } {
-  const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
+  const src = { name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   if (!routesToStrength(src)) {
     // Metric-routed (the same config router as the session card + target
     // sheet). Anchor generalized: a duration OR a distance makes the target

@@ -3283,3 +3283,33 @@ Verified in-app: Farmer's Walk → "Loaded carry (default)" + equipment note;
 Plank → "Timed hold (default)" (weight lb · duration min); Sled Push renders as
 a metric card with lb · min · mi · effort; struck Isometric Wipers unchanged at
 "Strength (default)" with its equipment section intact. 194 tests.
+
+### Follow-up: defaults key on the CANONICAL name (rename-proof)
+
+Owner asked whether a rename breaks a default. It did — **`ex.name` is the
+USER-FACING display name** (proof: `hanging_leg_raise` carries
+name "Captain's Chair Straight-Leg Raise" / canonical_name "Knee/Hip Raise On
+Parallel Bars"), and every payload selected `exercises.name`. So renaming
+"Farmer's Walk" → "Farmer Carry" would have silently dropped it to Strength,
+and "Walking, Treadmill" → "Morning Walk" would have lost speed/incline.
+
+Fixed in BOTH default layers:
+- the curated map is keyed on `canonicalName`, and is consulted ONLY when a
+  canonical name exists — so a from-scratch custom never inherits a library
+  default through a name collision (a custom called "Plank" stays Strength).
+- `cardioFields` is keyed on `canonicalName ?? name` — a renamed treadmill
+  keeps its treadmill fields; a custom still gets the name guess (its purpose).
+
+`LogFieldSource.canonicalName` is **required, not optional**: the compiler —
+not a convention — guarantees every surface resolves identically, since a
+missing value would silently make one surface disagree with another. That
+forced threading canonicalName through programs.ts, EditorExercise,
+ProgramExerciseDetail, LoggableOccurrence, the Occurrence store (+
+AttachExercise, hydrate, ServerSession), the sessions GET, the ad-hoc add path,
+and the last-session route — 11 call sites the compiler enumerated.
+
+Safe by data: all 15 remapped rows have a canonical_name (0 NULL), and every
+cardio-typed row does too, with canonical == display today — so behavior is
+unchanged for every un-renamed exercise. Verified live: renaming Farmer's Walk
+to "Farmer Carry" kept "Loaded carry (default)" (kind line: Renamed · library:
+Farmer's Walk); rename reverted. 199 tests (+5 rename locks).

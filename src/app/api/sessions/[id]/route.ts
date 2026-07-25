@@ -125,6 +125,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       unilateral: m?.unilateral ?? false,
       params: m?.params ?? null,
       logFields: m?.logFields ?? null,
+      canonicalName: m?.canonicalName ?? null,
       orderIndex: o.orderIndex,
       source: o.source,
       completed: o.completed,

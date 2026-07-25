@@ -34,7 +34,7 @@ export type AddLoc =
 // The target reference line under an exercise (same source the editor chip +
 // session card read): strength "3 × 8–12 · near failure", cardio fields, or null.
 function targetRef(ex: ProgramExerciseDetail, distUnit: string): string | null {
-  const src = { name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
+  const src = { name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields };
   if (!routesToStrength(src)) {
     const p = ex.params ?? {};
     if (!hasRangeValue(p.duration_min) && !hasRangeValue(p.distance)) return null;

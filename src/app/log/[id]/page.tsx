@@ -176,6 +176,7 @@ export default function LogSessionPage() {
       target: o.targetSets != null ? { targetSets: o.targetSets, repRange: o.repRange, rirTarget: o.rirTarget } : null,
       params: o.params,
       logFields: o.logFields,
+      canonicalName: o.canonicalName ?? null,
       source: o.source,
       provenance: o.provenance,
       untagged: o.untagged,
@@ -211,6 +212,7 @@ export default function LogSessionPage() {
     rirTarget: e.rirTarget,
     params: e.params,
     logFields: e.logFields ?? null,
+    canonicalName: e.canonicalName ?? null,
   });
 
   async function addFromPalette(e: ProgramExerciseDetail, source: string) {
@@ -256,6 +258,7 @@ export default function LogSessionPage() {
         untagged: r.untagged,
         unilateral: r.unilateral ?? false,
         logFields: r.logFields ?? null,
+        canonicalName: r.canonicalName ?? null,
         // A metric target lives on the EXERCISE (one unambiguous value), so an
         // ad-hoc add carries it; a strength target is per-day and stays absent.
         params: r.params ?? null,
@@ -338,7 +341,7 @@ export default function LogSessionPage() {
             // THE router (Phase 2): the resolved CONFIG decides — reps →
             // StrengthCard + set_logs; else the metric card + cardio_logs.
             // conditioning_only only seeds the default field set now.
-            return !routesToStrength({ name: ex.exerciseName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
+            return !routesToStrength({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
               <CardioCard
                 key={ex.instanceId}
                 ex={ex}

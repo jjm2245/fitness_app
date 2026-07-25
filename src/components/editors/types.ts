@@ -19,6 +19,9 @@ export interface EditorExercise {
   untagged: boolean;
   params?: Record<string, unknown> | null;
   logFields?: unknown;
+  // The library name this row references (null for customs) — defaults key off
+  // it so a rename can't change how an exercise logs.
+  canonicalName: string | null;
 }
 
 export interface EditorDay {

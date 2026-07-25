@@ -17,46 +17,46 @@ import {
 // type-default.
 describe("logFields resolver", () => {
   it("type-default: strength → weight/reps/effort (the Strength profile)", () => {
-    expect(resolveLogFields({ name: "Barbell Squat", conditioningOnly: false, logFields: null }))
+    expect(resolveLogFields({ name: "Barbell Squat", canonicalName: "Barbell Squat", conditioningOnly: false, logFields: null }))
       .toEqual(["weight", "reps", "effort"]);
   });
 
   it("name-default maps the cardio guess onto the nearest profile (Phase 2)", () => {
     // stair guess (duration+level) → Cardio machine (gains blank-optional distance)
-    expect(resolveLogFields({ name: "Stairmaster", conditioningOnly: true, logFields: null }))
+    expect(resolveLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: null }))
       .toEqual(expect.arrayContaining(["duration", "distance", "level"]));
-    expect(resolveLogFields({ name: "Stairmaster", conditioningOnly: true, logFields: null })).toHaveLength(3);
+    expect(resolveLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: null })).toHaveLength(3);
     // treadmill guess (duration+speed+incline) → Treadmill-style (gains distance)
-    expect(new Set(resolveLogFields({ name: "Walking, Treadmill", conditioningOnly: true, logFields: null })))
+    expect(new Set(resolveLogFields({ name: "Walking, Treadmill", canonicalName: "Walking, Treadmill", conditioningOnly: true, logFields: null })))
       .toEqual(new Set(["duration", "distance", "speed", "incline"]));
     // bike/row guess (duration+level+distance) → Cardio machine (same set)
-    expect(new Set(resolveLogFields({ name: "Recumbent Bike", conditioningOnly: true, logFields: null })))
+    expect(new Set(resolveLogFields({ name: "Recumbent Bike", canonicalName: "Recumbent Bike", conditioningOnly: true, logFields: null })))
       .toEqual(new Set(["duration", "distance", "level"]));
     // fallback guess (duration+distance) → Distance cardio (unchanged)
-    expect(new Set(resolveLogFields({ name: "Skating", conditioningOnly: true, logFields: null })))
+    expect(new Set(resolveLogFields({ name: "Skating", canonicalName: "Skating", conditioningOnly: true, logFields: null })))
       .toEqual(new Set(["duration", "distance"]));
   });
 
   it("every default is a named profile (defaults and profiles speak the same sets)", () => {
     for (const name of ["Barbell Squat", "Stairmaster", "Walking, Treadmill", "Recumbent Bike", "Skating"]) {
       for (const conditioningOnly of [false, true]) {
-        expect(matchProfile(defaultLogFields({ name, conditioningOnly }))).not.toBeNull();
+        expect(matchProfile(defaultLogFields({ name, canonicalName: name, conditioningOnly }))).not.toBeNull();
       }
     }
   });
 
   it("override wins over the name-default, for either type", () => {
-    expect(resolveLogFields({ name: "Power Stairs", conditioningOnly: true, logFields: ["duration", "distance"] }))
+    expect(resolveLogFields({ name: "Power Stairs", canonicalName: "Power Stairs", conditioningOnly: true, logFields: ["duration", "distance"] }))
       .toEqual(["duration", "distance"]);
-    expect(resolveLogFields({ name: "Barbell Squat", conditioningOnly: false, logFields: ["weight", "duration"] }))
+    expect(resolveLogFields({ name: "Barbell Squat", canonicalName: "Barbell Squat", conditioningOnly: false, logFields: ["weight", "duration"] }))
       .toEqual(["weight", "duration"]);
   });
 
   it("invalid/empty overrides fall through to defaults (never crash, never empty)", () => {
-    const stairDefault = defaultLogFields({ name: "Stairmaster", conditioningOnly: true });
-    expect(resolveLogFields({ name: "Stairmaster", conditioningOnly: true, logFields: [] })).toEqual(stairDefault);
-    expect(resolveLogFields({ name: "Stairmaster", conditioningOnly: true, logFields: ["bogus", 3] })).toEqual(stairDefault);
-    expect(resolveLogFields({ name: "Stairmaster", conditioningOnly: true, logFields: "duration" })).toEqual(stairDefault);
+    const stairDefault = defaultLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true });
+    expect(resolveLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: [] })).toEqual(stairDefault);
+    expect(resolveLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: ["bogus", 3] })).toEqual(stairDefault);
+    expect(resolveLogFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: "duration" })).toEqual(stairDefault);
   });
 
   it("sanitizeOverride dedupes, drops unknowns, and canonicalizes order", () => {
@@ -67,14 +67,14 @@ describe("logFields resolver", () => {
   });
 
   it("resolveMetricFields returns only the metric subset, in render order", () => {
-    expect(resolveMetricFields({ name: "X", conditioningOnly: false, logFields: ["weight", "reps", "incline", "duration"] }))
+    expect(resolveMetricFields({ name: "X", canonicalName: "X", conditioningOnly: false, logFields: ["weight", "reps", "incline", "duration"] }))
       .toEqual(["duration", "incline"]);
-    expect(resolveMetricFields({ name: "Barbell Squat", conditioningOnly: false, logFields: null }))
+    expect(resolveMetricFields({ name: "Barbell Squat", canonicalName: "Barbell Squat", conditioningOnly: false, logFields: null }))
       .toEqual([]); // pure strength default has no metric fields
   });
 
   it("defaultLogFields ignores the override (feeds the '(default)' highlight)", () => {
-    expect(new Set(defaultLogFields({ name: "Power Stairs", conditioningOnly: true })))
+    expect(new Set(defaultLogFields({ name: "Power Stairs", canonicalName: "Power Stairs", conditioningOnly: true })))
       .toEqual(new Set(["duration", "distance", "level"]));
     expect(hasFieldOverride({ logFields: ["duration"] })).toBe(true);
     expect(hasFieldOverride({ logFields: null })).toBe(false);
@@ -87,15 +87,15 @@ describe("routesToStrength (the config router)", () => {
   it("fixed point: NULL-config rows route exactly as conditioning_only did", () => {
     // strength defaults contain reps → strength; every cardio default profile
     // contains no reps → metric. So for every untouched row old === new.
-    expect(routesToStrength({ name: "Barbell Squat", conditioningOnly: false, logFields: null })).toBe(true);
-    expect(routesToStrength({ name: "Stairmaster", conditioningOnly: true, logFields: null })).toBe(false);
-    expect(routesToStrength({ name: "Walking, Treadmill", conditioningOnly: true, logFields: null })).toBe(false);
-    expect(routesToStrength({ name: "Skating", conditioningOnly: true, logFields: null })).toBe(false);
+    expect(routesToStrength({ name: "Barbell Squat", canonicalName: "Barbell Squat", conditioningOnly: false, logFields: null })).toBe(true);
+    expect(routesToStrength({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: null })).toBe(false);
+    expect(routesToStrength({ name: "Walking, Treadmill", canonicalName: "Walking, Treadmill", conditioningOnly: true, logFields: null })).toBe(false);
+    expect(routesToStrength({ name: "Skating", canonicalName: "Skating", conditioningOnly: true, logFields: null })).toBe(false);
   });
 
   it("the config decides, not the type: reps removed → metric; reps present → strength", () => {
-    expect(routesToStrength({ name: "Farmer's Walk", conditioningOnly: false, logFields: ["weight", "duration", "distance", "effort"] })).toBe(false);
-    expect(routesToStrength({ name: "Air Bike", conditioningOnly: true, logFields: ["weight", "reps", "effort"] })).toBe(true);
+    expect(routesToStrength({ name: "Farmer's Walk", canonicalName: "Farmer's Walk", conditioningOnly: false, logFields: ["weight", "duration", "distance", "effort"] })).toBe(false);
+    expect(routesToStrength({ name: "Air Bike", canonicalName: "Air Bike", conditioningOnly: true, logFields: ["weight", "reps", "effort"] })).toBe(true);
   });
 });
 
@@ -118,9 +118,9 @@ describe("profiles", () => {
   });
 
   it("resolveCardFields orders cells weight → metrics → effort (Loaded carry mock)", () => {
-    expect(resolveCardFields({ name: "Farmer's Walk", conditioningOnly: false, logFields: ["weight", "duration", "distance", "effort"] }))
+    expect(resolveCardFields({ name: "Farmer's Walk", canonicalName: "Farmer's Walk", conditioningOnly: false, logFields: ["weight", "duration", "distance", "effort"] }))
       .toEqual(["weight", "duration", "distance", "effort"]);
-    expect(resolveCardFields({ name: "Stairmaster", conditioningOnly: true, logFields: null }))
+    expect(resolveCardFields({ name: "Stairmaster", canonicalName: "Stairmaster", conditioningOnly: true, logFields: null }))
       .toEqual(["duration", "level", "distance"]);
   });
 });
@@ -128,8 +128,16 @@ describe("profiles", () => {
 // ── Curated default remaps (audit 2026-07-24) ──
 // These change what a NULL log_fields RESOLVES to — no row is ever written.
 describe("curated default remaps", () => {
+  // Library rows: canonical == display unless renamed (matches prod, where all
+  // 15 remapped rows have canonical_name identical to their display name).
   const prof = (name: string, conditioningOnly = false) =>
-    matchProfile(defaultLogFields({ name, conditioningOnly }))?.id ?? null;
+    matchProfile(defaultLogFields({ name, canonicalName: name, conditioningOnly }))?.id ?? null;
+  // A from-scratch custom has NO canonical name.
+  const customProf = (name: string, conditioningOnly = false) =>
+    matchProfile(defaultLogFields({ name, canonicalName: null, conditioningOnly }))?.id ?? null;
+  // A RENAMED library row: display name differs, canonical is the library name.
+  const renamedProf = (display: string, canonical: string, conditioningOnly = false) =>
+    matchProfile(defaultLogFields({ name: display, canonicalName: canonical, conditioningOnly }))?.id ?? null;
 
   it("carries default to Loaded carry", () => {
     for (const n of [
@@ -156,7 +164,8 @@ describe("curated default remaps", () => {
 
   it("remapped carries/holds ROUTE to the metric card (no reps)", () => {
     for (const n of ["Farmer's Walk", "Plank", "Prowler Sprint"]) {
-      expect(routesToStrength({ name: n, conditioningOnly: false, logFields: null })).toBe(false);
+      // library rows: canonical == display
+      expect(routesToStrength({ name: n, canonicalName: n, conditioningOnly: false, logFields: null })).toBe(false);
     }
   });
 
@@ -196,7 +205,46 @@ describe("curated default remaps", () => {
   });
 
   it("an explicit override still beats a curated remap", () => {
-    expect(resolveLogFields({ name: "Plank", conditioningOnly: false, logFields: ["weight", "reps", "effort"] }))
+    expect(resolveLogFields({ name: "Plank", canonicalName: "Plank", conditioningOnly: false, logFields: ["weight", "reps", "effort"] }))
       .toEqual(["weight", "reps", "effort"]);
+  });
+});
+
+// A rename must never change how an exercise logs. Defaults key on the
+// CANONICAL (library) name; customs fall back to their display name.
+describe("defaults survive a rename (canonical-name keying)", () => {
+  const d = (name: string, canonicalName: string | null, conditioningOnly = false) =>
+    matchProfile(defaultLogFields({ name, canonicalName, conditioningOnly }))?.id ?? null;
+
+  it("renaming a curated-remap exercise keeps its profile", () => {
+    expect(d("Farmer Carry", "Farmer's Walk")).toBe("loaded_carry");
+    expect(d("Front Hold", "Plank")).toBe("timed_hold");
+    expect(d("The Sled Thing", "Sled Push")).toBe("loaded_carry");
+    expect(d("Ellipticals", "Elliptical Trainer", true)).toBe("cardio_machine");
+  });
+
+  it("renaming a cardio exercise keeps its name-guessed fields", () => {
+    // the regression this guards: "Morning Walk" alone guesses duration+distance
+    expect(d("Morning Walk", "Walking, Treadmill", true)).toBe("treadmill");
+    expect(d("Morning Walk", null, true)).toBe("distance_cardio"); // no canonical → the guess
+    expect(d("My Stairs", "Stairmaster", true)).toBe("cardio_machine");
+  });
+
+  it("a CUSTOM does not inherit a curated remap by name collision", () => {
+    // renaming a from-scratch custom to "Plank" must NOT make it a Timed hold
+    expect(d("Plank", null)).toBe("strength");
+    expect(d("Farmer's Walk", null)).toBe("strength");
+    expect(d("Sled Push", null)).toBe("strength");
+  });
+
+  it("an unrenamed library row (canonical == display) is unchanged", () => {
+    expect(d("Plank", "Plank")).toBe("timed_hold");
+    expect(d("Farmer's Walk", "Farmer's Walk")).toBe("loaded_carry");
+    expect(d("Barbell Squat", "Barbell Squat")).toBe("strength");
+  });
+
+  it("the router follows the canonical default through a rename", () => {
+    expect(routesToStrength({ name: "Farmer Carry", canonicalName: "Farmer's Walk", conditioningOnly: false, logFields: null })).toBe(false);
+    expect(routesToStrength({ name: "Farmer Carry", canonicalName: null, conditioningOnly: false, logFields: null })).toBe(true);
   });
 });
