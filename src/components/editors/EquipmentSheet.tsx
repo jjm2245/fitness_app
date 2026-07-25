@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
-import { UnitNumberInput } from "@/components/UnitNumberInput";
-import { useWeightUnit } from "@/lib/useUnit";
+import { UnitFormFields, emptyUnitDraft, EQUIPMENT_UNIT_TYPES, type UnitDraft } from "./UnitFormFields";
 
 export interface EquipmentUnit {
   id: string;
@@ -18,33 +17,23 @@ export interface EquipmentUnit {
   notes: string | null;
   exercises: Array<{ exerciseId: string; name: string }>;
   loggedCount: number;
+  lastUsed?: string | null; // most recent session date this unit was logged on
 }
 
-export const EQUIPMENT_UNIT_TYPES = ["", "selectorized", "plate_loaded", "cable", "smith", "other"];
-const PULLEY_KINDS = ["unknown", "1:1", "2:1", "other"];
+export { EQUIPMENT_UNIT_TYPES };
 
-interface Draft {
-  label: string;
-  gym: string;
-  brand: string;
-  model: string;
-  builtInWeight: string;
-  equipmentType: string;
-  pulleyRatioKind: string;
-  notes: string;
-}
-
-function toDraft(m?: EquipmentUnit): Draft {
-  return {
+function toDraft(m?: EquipmentUnit): UnitDraft {
+  return emptyUnitDraft({
     label: m?.label ?? "",
     gym: m?.gym ?? "",
     brand: m?.brand ?? "",
     model: m?.model ?? "",
+    // Stored null stays EMPTY (unknown) — never rendered as 0.
     builtInWeight: m?.builtInWeight != null ? String(Number(m.builtInWeight)) : "",
     equipmentType: m?.equipmentType ?? "",
     pulleyRatioKind: m?.pulleyRatioKind ?? "unknown",
     notes: m?.notes ?? "",
-  };
+  });
 }
 
 // Equipment detail sheet — all fields editable, used-by list, merge (history-
@@ -63,13 +52,15 @@ export function EquipmentSheet({
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
-  const [wUnit] = useWeightUnit();
   const isNew = unit == null;
-  const [d, setD] = useState<Draft>(toDraft(unit ?? undefined));
+  const [d, setD] = useState<UnitDraft>(toDraft(unit ?? undefined));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ message: string; existingId?: string } | null>(null);
   const [section, setSection] = useState<null | "merge" | "delete">(null);
-  const set = (patch: Partial<Draft>) => setD((cur) => ({ ...cur, ...patch }));
+  const set = (patch: Partial<UnitDraft>) => setD((cur) => ({ ...cur, ...patch }));
+  // ── merge target picking ──
+  const [mergeQ, setMergeQ] = useState("");
+  const [mergeAllTypes, setMergeAllTypes] = useState(false);
 
   const structured = {
     gym: d.gym,
@@ -122,6 +113,23 @@ export function EquipmentSheet({
     }
   }
 
+  // Plausible targets: same type by default (built-in/pulley semantics don't
+  // transfer across types), with search + an escape hatch — a MIS-TYPED unit is
+  // itself a reason to merge, so "show all types" must stay reachable. A unit
+  // with no type set can't filter meaningfully, so it shows everything.
+  const mergeTargets = useMemo(() => {
+    if (isNew) return [];
+    const needle = mergeQ.trim().toLowerCase();
+    return allUnits
+      .filter((t) => t.id !== unit!.id)
+      .filter((t) => (mergeAllTypes || !unit!.equipmentType ? true : t.equipmentType === unit!.equipmentType))
+      .filter((t) =>
+        !needle
+          ? true
+          : [t.label, t.gym, t.brand, t.model].filter(Boolean).some((f) => f!.toLowerCase().includes(needle))
+      );
+  }, [allUnits, unit, isNew, mergeQ, mergeAllTypes]);
+
   async function merge(targetId: string) {
     if (isNew || busy) return;
     setBusy(true);
@@ -168,59 +176,7 @@ export function EquipmentSheet({
       subtitle={!isNew && unit!.loggedCount > 0 ? `${unit!.loggedCount} logged set${unit!.loggedCount === 1 ? "" : "s"} reference this unit` : undefined}
       onClose={onClose}
     >
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Label</span>
-        <input className={styles.fieldInput} value={d.label} onChange={(e) => set({ label: e.target.value })} autoFocus={isNew} />
-      </div>
-
-      <div className={styles.fieldRow} style={{ marginTop: 10 }}>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Type</span>
-          <select className={styles.fieldInput} value={d.equipmentType} onChange={(e) => set({ equipmentType: e.target.value })}>
-            {EQUIPMENT_UNIT_TYPES.map((t) => <option key={t} value={t}>{t === "" ? "type…" : t}</option>)}
-          </select>
-        </label>
-        <label className={styles.fieldHalf} title="Constant added weight (bar/handles/carriage) — auto-added to logged loads. Stored in lb; entered/shown in your unit.">
-          <span className={styles.fieldLabel}>Built-in {wUnit}</span>
-          <UnitNumberInput
-            canonical={d.builtInWeight}
-            onCanonical={(v) => set({ builtInWeight: v })}
-            dimension="weight"
-            className={styles.fieldInput}
-          />
-        </label>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Pulley</span>
-          <select
-            className={styles.fieldInput}
-            value={d.pulleyRatioKind}
-            onChange={(e) => set({ pulleyRatioKind: e.target.value })}
-            title="Interpretation only — never folded into logged loads (a ratio cancels out of every lane-scoped comparison)."
-          >
-            {PULLEY_KINDS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div className={styles.fieldRow} style={{ marginTop: 10 }}>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Gym / location</span>
-          <input className={styles.fieldInput} value={d.gym} onChange={(e) => set({ gym: e.target.value })} />
-        </label>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Manufacturer</span>
-          <input className={styles.fieldInput} value={d.brand} onChange={(e) => set({ brand: e.target.value })} />
-        </label>
-        <label className={styles.fieldHalf}>
-          <span className={styles.fieldLabel}>Model</span>
-          <input className={styles.fieldInput} value={d.model} onChange={(e) => set({ model: e.target.value })} />
-        </label>
-      </div>
-
-      <div className={styles.field} style={{ marginTop: 10 }}>
-        <span className={styles.fieldLabel}>Description</span>
-        <textarea className={styles.fieldArea} value={d.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="serials, links, quirks…" rows={2} />
-      </div>
+      <UnitFormFields draft={d} onChange={set} showType autoFocusLabel={isNew} />
 
       {err && (
         <div className={styles.warnBox} style={{ marginTop: 10 }}>
@@ -255,19 +211,59 @@ export function EquipmentSheet({
               <span className={styles.sheetRowMuted}>{section === "merge" ? "Close" : ""}</span>
             </button>
             {section === "merge" && (
-              <div className={styles.warnBox} style={{ marginTop: 8 }}>
-                <p style={{ marginBottom: 8 }}>
+              // Standard sheet surface — merge is history-SAFE by design, so
+              // amber is reserved for the genuine delete guard.
+              <div style={{ marginTop: 8 }}>
+                <p className={styles.fieldNote} style={{ marginBottom: 8 }}>
                   Merge <strong>{unit!.label}</strong> into another unit — its {unit!.loggedCount} logged set
                   {unit!.loggedCount === 1 ? "" : "s"} and exercise links move over (history moves, never orphans), then
                   this entry is deleted.
                 </p>
-                <div className={styles.sheetList}>
-                  {allUnits.filter((t) => t.id !== unit!.id).map((t) => (
-                    <button key={t.id} type="button" className={styles.sheetRow} onClick={() => merge(t.id)} disabled={busy}>
-                      → {t.label}
+                <input
+                  className={styles.fieldInput}
+                  value={mergeQ}
+                  onChange={(e) => setMergeQ(e.target.value)}
+                  placeholder="Search label / gym / manufacturer…"
+                  type="search"
+                />
+                <div className={styles.fieldRow} style={{ marginTop: 8, alignItems: "center", justifyContent: "space-between" }}>
+                  <span className={styles.fieldNote}>
+                    {mergeAllTypes || !unit!.equipmentType
+                      ? "Showing all types"
+                      : `Showing ${unit!.equipmentType} units`}
+                  </span>
+                  {unit!.equipmentType && (
+                    <button type="button" className={styles.quietBtn} onClick={() => setMergeAllTypes((v) => !v)}>
+                      {mergeAllTypes ? "Same type only" : "Show all types"}
+                    </button>
+                  )}
+                </div>
+                <div className={styles.sheetList} style={{ marginTop: 4 }}>
+                  {mergeTargets.map((t) => (
+                    <button key={t.id} type="button" className={styles.pickRow} onClick={() => merge(t.id)} disabled={busy}>
+                      <span className={styles.pickMain}>
+                        <span className={styles.pickName}>{t.label}</span>
+                        <span className={styles.pickSub}>
+                          {[
+                            t.equipmentType,
+                            [t.gym, t.brand].filter(Boolean).join(" · ") || null,
+                            t.exercises.length > 0 ? `used by ${t.exercises.length}` : null,
+                            t.loggedCount > 0 ? `${t.loggedCount} logged` : null,
+                          ].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      <span className={styles.sheetRowMuted}>→</span>
                     </button>
                   ))}
-                  {allUnits.length <= 1 && <p className={styles.sheetRowMuted}>No other units to merge into.</p>}
+                  {mergeTargets.length === 0 && (
+                    <p className={styles.fieldNote}>
+                      {allUnits.length <= 1
+                        ? "No other units to merge into."
+                        : mergeQ.trim()
+                        ? "No matches."
+                        : "No other units of this type — try “Show all types”."}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

@@ -5,8 +5,7 @@ import styles from "./session.module.css";
 import { Sheet } from "./Sheet";
 import { EQUIPMENT_TYPE_BY_ID, type EquipmentTypeId } from "@/lib/equipment";
 import type { EquipmentOption } from "./shared";
-import { UnitNumberInput } from "@/components/UnitNumberInput";
-import { useWeightUnit } from "@/lib/useUnit";
+import { UnitFormFields, emptyUnitDraft, type UnitDraft } from "@/components/editors/UnitFormFields";
 
 // New-unit entry (2.5-11: now a bottom sheet on the Sheet primitive, fields
 // on the design tokens — it was the last centered modal, visibly unstyled).
@@ -29,13 +28,11 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
   onClose: () => void;
   onCreated: (unit: EquipmentOption) => void;
 }) {
-  const [wUnit] = useWeightUnit();
-  const [label, setLabel] = useState("");
-  const [gym, setGym] = useState("");
-  const [brand, setBrand] = useState("");
-  const [offset, setOffset] = useState("");
-  const [ratio, setRatio] = useState("unknown");
-  const [notes, setNotes] = useState("");
+  // ONE shared draft/form with the equipment section — the type is supplied by
+  // this flow ("New selectorized machine unit"), so its picker stays hidden.
+  const [d, setD] = useState<UnitDraft>(() => emptyUnitDraft({ equipmentType: presetType }));
+  const set = (patch: Partial<UnitDraft>) => setD((cur) => ({ ...cur, ...patch }));
+  const label = d.label, gym = d.gym, brand = d.brand, offset = d.builtInWeight, ratio = d.pulleyRatioKind, notes = d.notes;
   const [busy, setBusy] = useState(false);
   // Dedupe (2.12): a match on label + type + gym (case-insensitive label; gym
   // is part of identity — the same label at two gyms is two machines). We
@@ -69,6 +66,7 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
             ? { id: existing.id, label: existing.label }
             : {
                 id, label: label.trim(), equipmentType: presetType, gym: gym.trim() || null, brand: brand.trim() || null,
+                model: d.model.trim() || null,
                 builtInWeight: offset.trim() !== "" ? Number(offset) : null, pulleyRatioKind: ratio, notes: notes.trim() || null,
               }
         ),
@@ -92,45 +90,8 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
 
   return (
     <Sheet title={`New ${typeDef?.label.toLowerCase()} unit`} onClose={onClose}>
-      <input
-        className={styles.unitField}
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        placeholder='Label — e.g. "leg ext by the mirror"'
-        autoFocus
-      />
-      <div className={styles.unitFieldRow}>
-        <input className={styles.unitField} value={gym} onChange={(e) => setGym(e.target.value)} placeholder="Gym / location" />
-        <input className={styles.unitField} value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Manufacturer" />
-      </div>
-      <div className={styles.unitFieldRow}>
-        <label className={styles.unitInlineLabel}>
-          built-in {wUnit}
-          <UnitNumberInput
-            canonical={offset}
-            onCanonical={setOffset}
-            dimension="weight"
-            className={styles.offsetInput}
-            placeholder={typeDef?.defaultOffset == null ? "?" : String(typeDef?.defaultOffset)}
-          />
-        </label>
-        <label className={styles.unitInlineLabel} title="Captured for interpretation only — a ratio cancels out of every lane-scoped comparison, so it is NEVER folded into the logged load.">
-          pulley
-          <select className={styles.selectQuiet} value={ratio} onChange={(e) => setRatio(e.target.value)}>
-            <option value="unknown">unknown</option>
-            <option value="1:1">1:1</option>
-            <option value="2:1">2:1</option>
-            <option value="other">other</option>
-          </select>
-        </label>
-      </div>
-      <textarea
-        className={styles.unitNotes}
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Description — quirks, cam feel, serial…"
-        rows={3}
-      />
+      <UnitFormFields draft={d} onChange={set} showType={false} autoFocusLabel />
+
       {dupe ? (
         <div className={styles.warnBox} style={{ marginTop: 4 }}>
           <p>
