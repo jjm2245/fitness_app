@@ -5,6 +5,7 @@ import styles from "./session.module.css";
 import { editSet, deleteSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { EFFORT_LABEL, EFFORT_OPTIONS, type EffortTag } from "./shared";
 import { lbToKg, displayLb, type WeightUnit } from "@/lib/units";
+import { isContextBound } from "@/lib/equipment";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 
 // One logged set: a read-only row (rows show information). Tapping it reveals
@@ -86,6 +87,13 @@ export function SetRow({
   // breakdown stays, but as a small muted suffix shown only when an offset
   // exists — no more equation soup.
   const hasOffset = set.builtinOffset != null && set.builtinOffset !== 0 && set.loadEntered != null;
+  // Mark ABSENCE, not presence: on a context-bound type (cable/selectorized/
+  // Smith/plate-loaded) the specific unit is what makes the number comparable,
+  // so a set carrying none is missing something. On portable types (bodyweight,
+  // dumbbell, barbell) no unit is the CORRECT state, so those rows stay clean.
+  // Naming every attributed unit would be noise — 17 of 19 units are 1:1 with
+  // an exercise; the informative case is the gap.
+  const noUnit = set.equipmentId == null && isContextBound(set.equipmentType);
 
   return (
     <li>
@@ -100,6 +108,7 @@ export function SetRow({
             {w(set.load)} {weightUnit} × {set.reps}
             {sideTag}
             {hasOffset && <span className={styles.setSuffix}> · {w(set.loadEntered!)} + {w(set.builtinOffset!)} built-in</span>}
+            {noUnit && <span className={styles.setSuffix} title="No specific machine recorded for this set — it sits in the unspecified lane"> · no unit</span>}
           </span>
           {set.effort && <span className={styles.setEffort}>{EFFORT_LABEL[set.effort]}</span>}
           <span className={styles.setChevron} aria-hidden="true">›</span>
