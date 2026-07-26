@@ -4029,3 +4029,82 @@ clicks — no closes, no reloads — showed 11/10, then 10/9.1, then 33/45.
 
 Cheap insurance with no behavioural change on the normal path, and it removes a
 class of bug rather than one instance.
+
+---
+
+## Retroactive built-in correction (P4 §4, deferred and now built)
+
+### Why this reaches backward when field-config changes don't
+
+A machine's carriage has always weighed what it weighs. A wrong
+`built_in_weight` is a **recording error**, and every affected row was always
+the corrected number — so correcting it is fixing a measurement, not rewriting
+history. A field-config change is genuinely different: there the *shape* of what
+was logged changed, which is why that stays forward-only.
+
+### One mechanism, not two
+
+The round scoped §1 (offer correction when built-in changes) and §2 (surface a
+pre-existing disagreement) as separate flows. They collapse into one:
+**always-on, read-only detection plus an explicit align action.**
+
+Detection has to be always-on anyway, because the case that motivated this
+PRE-DATES any change — the 07-14 Leverage Incline sets were logged against the
+plate-loaded type default before the unit existed, then attributed to 24res by
+the orphan pass. No change event would ever have fired. And editing a built-in
+simply *creates* a disagreement, which the same detector then surfaces. So §1
+falls out of §2 rather than needing its own trigger, and both directions are
+reachable: fix the rows to match the unit, or fix the unit and then the rows.
+
+### Semantics
+
+- **Scope**: `set_logs` rows with this `equipment_id`. Rows with a non-NULL
+  `builtin_offset` are re-based; rows without one are a **separate,
+  defaulted-off opt-in**, because giving them an offset asserts you were always
+  lifting more than recorded — a different claim from correcting one that
+  already exists.
+- **`load_entered` is never rewritten.** It is what you physically put on the
+  machine; no correction to the carriage changes it. The invariant
+  `load = load_entered + builtin_offset` is maintained throughout.
+- The arithmetic is `offsetPatch`, **shared with the session card**, so the two
+  cannot drift. Correcting to 0 clears the offset rather than storing a zero; a
+  negative built-in (an assist) reduces the effective load.
+- Rows already at the target are **not** rewritten — a no-op is not a change.
+- Applied in **one transaction**: a half-applied correction would leave the
+  invariant broken across the unit's history.
+- The preview renders in the machine's **marked unit** via the same
+  `resolveWeightUnit` path as the form, list badge, session card and load input
+  — a confirm dialog in a different unit would be the one place on that machine
+  speaking another language.
+- **`cardio_logs` has no `equipment_id`** and is out of scope by construction.
+- The preview warns that this unit's "last ..." references and progression
+  suggestions will shift.
+
+### Proven on throwaways; real rows untouched
+
+A fixture mirroring 24res (unit records 24; three rows at 25, three at 24, two
+with no offset):
+
+- **Preview** — 3 changes `125 -> 124`, 3 flagged already-correct, dates exact,
+  and it **wrote nothing**.
+- **Confirm** — stored rows matched the preview byte-for-byte
+  (`124 / 100 / 24`); `reps`, `set_type`, `effort`, `side`, `rest_seconds`,
+  `rest_source`, `drop_set_group`, `equipment_type`, `equipment_id` checksum
+  **identical** (`31235c69...`); invariant violations **0**; row count unchanged;
+  zero orphans.
+- **Cancel** — loads checksum identical (`071d44c5...`), zero writes.
+- **NULL-offset opt-in** — left off, changed **0** such rows; turned on, changed
+  exactly those two (`90 -> 114`, `95 -> 119`) and nothing else.
+- **Detection** — surfaced `25` vs `24` with count 3; a consistent unit surfaces
+  nothing; absence (NULL offset, or no recorded built-in) is never reported as
+  disagreement.
+
+### Prod state at ship: nothing to correct
+
+Re-derived read-only: **zero disagreements**, zero NULL-offset rows on
+built-in-bearing units, and zero invariant violations across all 215 sets. The
+24res rows now read `124 = 100 + 24` — the owner corrected them by hand between
+rounds, which is exactly what Align would have produced. The three
+built-in-bearing units (24res 9 rows, VPL-SMBP 6, HackSquatMonroePF 6) are all
+internally consistent, so the sheet shows the reassurance state rather than a
+warning. The feature ships with no work waiting on real data.

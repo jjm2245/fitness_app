@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./editors.module.css";
 import { UnitFormFields, emptyUnitDraft, EQUIPMENT_UNIT_TYPES, type UnitDraft } from "./UnitFormFields";
+import { parseStackMarking, resolveWeightUnit } from "@/lib/stack";
+import { formatForUnit } from "@/lib/units";
+import { useWeightUnit } from "@/lib/useUnit";
 
 // "Used by" — the unit's exercise links, editable. A unit is a physical
 // machine, and one machine can serve any number of exercises (a rear-delt/pec
@@ -133,6 +136,192 @@ function UsedBy({ unit, onChanged }: { unit: EquipmentUnit; onChanged: () => Pro
           <button type="button" className={styles.quietBtn} style={{ marginTop: 6 }} onClick={() => { setAdding(false); setQ(""); }}>
             Cancel
           </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+interface CorrectionReport {
+  label: string;
+  builtInWeight: number | null;
+  stackUnit: string | null;
+  counts: { withOffset: number; nullOffset: number };
+  disagreements: Array<{ offset: number; count: number; firstDate: string | null; lastDate: string | null }>;
+  preview: null | {
+    offset: number;
+    withOffset: { changes: RowChange[]; firstDate: string | null; lastDate: string | null; unchanged: number };
+    nullOffset: { changes: RowChange[]; firstDate: string | null; lastDate: string | null; unchanged: number };
+  };
+}
+interface RowChange {
+  id: number; date: string; exercise: string; reps: number;
+  loadBefore: number; loadAfter: number; loadEntered: number;
+  offsetBefore: number | null; offsetAfter: number | null;
+}
+
+// Retroactive built-in correction.
+//
+// A machine's carriage has always weighed what it weighs, so a wrong built-in is
+// a RECORDING ERROR and every affected row was always the corrected number —
+// which is why this reaches backward where field-config changes don't.
+//
+// Detection is always-on and read-only, because the disagreement this exists for
+// PRE-DATES any change: rows logged against a type default before the unit
+// existed, then attributed to it. Nothing would have fired a change-triggered
+// check. The correction itself is never automatic and never silent.
+function BuiltInCorrection({ unit, onChanged }: { unit: EquipmentUnit; onChanged: () => Promise<void> }) {
+  const [report, setReport] = useState<CorrectionReport | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
+  const [includeNull, setIncludeNull] = useState(false); // a DIFFERENT assertion — opt in
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [wUnit] = useWeightUnit();
+
+  const refresh = useCallback(async (offset?: number) => {
+    const q = offset != null ? `?offset=${offset}` : "";
+    const res = await fetch(`/api/equipment/${encodeURIComponent(unit.id)}/builtin-correction${q}`);
+    if (res.ok) setReport(await res.json());
+  }, [unit.id]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  // The unit's own markings govern, exactly as they do on the form, the list
+  // badge and the session card — a confirm dialog showing before/after in a
+  // different unit would be the one place on this machine speaking another
+  // language.
+  const u = resolveWeightUnit(parseStackMarking(report?.stackUnit ?? unit.stackUnit), wUnit);
+  const show = (lb: number) => `${formatForUnit(String(lb), u, "weight")} ${u}`;
+
+  if (!report) return null;
+  const recorded = report.builtInWeight;
+  const preview = report.preview;
+
+  async function openPreview(offset: number) {
+    setTarget(offset);
+    setDone(null);
+    await refresh(offset);
+  }
+  function cancel() {
+    // Cancel writes NOTHING — it only drops the local preview.
+    setTarget(null);
+    void refresh();
+  }
+  async function confirm() {
+    if (target == null || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/equipment/${encodeURIComponent(unit.id)}/builtin-correction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offset: target, includeNullOffset: includeNull }),
+      });
+      if (res.ok) {
+        const r = await res.json();
+        setDone(`Corrected ${r.updated + r.nullUpdated} set${r.updated + r.nullUpdated === 1 ? "" : "s"}.`);
+        setTarget(null);
+        await refresh();
+        await onChanged();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sample = (changes: RowChange[]) => changes.slice(0, 4);
+
+  return (
+    <>
+      <div className={styles.sectionLabel}>Built-in history</div>
+
+      {done && <p className={styles.fieldNote}>✓ {done}</p>}
+
+      {/* Always-on detection. */}
+      {report.disagreements.length === 0 && target == null && (
+        <p className={styles.fieldNote}>
+          {report.counts.withOffset === 0
+            ? "No logged sets on this unit carry a built-in."
+            : `All ${report.counts.withOffset} logged set${report.counts.withOffset === 1 ? "" : "s"} with a built-in match this unit's ${recorded != null ? show(recorded) : "recorded value"}.`}
+        </p>
+      )}
+      {report.disagreements.map((d) => (
+        <div key={d.offset} className={styles.warnBox} style={{ marginTop: 6 }}>
+          <p>
+            <strong>{d.count} set{d.count === 1 ? "" : "s"}</strong> on this unit use a built-in of {show(d.offset)};
+            this unit records {recorded != null ? show(recorded) : "nothing"}
+            {d.firstDate ? ` (${d.firstDate}${d.lastDate && d.lastDate !== d.firstDate ? ` – ${d.lastDate}` : ""})` : ""}.
+          </p>
+          {recorded != null && target == null && (
+            <button type="button" className={styles.quietBtn} style={{ marginTop: 8 }} onClick={() => void openPreview(recorded)}>
+              Align to {show(recorded)}…
+            </button>
+          )}
+        </div>
+      ))}
+
+      {/* Correcting to the recorded value is always offered, so a built-in that
+          was EDITED (creating a fresh disagreement) uses the same one flow. */}
+      {recorded != null && target == null && report.counts.withOffset > 0 && report.disagreements.length === 0 && (
+        <button type="button" className={styles.quietBtn} style={{ marginTop: 8, alignSelf: "flex-start" }} onClick={() => void openPreview(recorded)}>
+          Re-apply {show(recorded)} to logged sets…
+        </button>
+      )}
+
+      {/* Preview → Confirm / Cancel. */}
+      {preview && target != null && (
+        <div className={styles.formGroup}>
+          <span className={styles.fieldLabel}>Preview — correcting to {show(preview.offset)}</span>
+          {preview.withOffset.changes.length === 0 ? (
+            <p className={styles.fieldNote}>No sets with a built-in would change.</p>
+          ) : (
+            <>
+              <p className={styles.fieldNote}>
+                <strong>{preview.withOffset.changes.length} set{preview.withOffset.changes.length === 1 ? "" : "s"}</strong> change
+                {preview.withOffset.firstDate ? `, ${preview.withOffset.firstDate}${preview.withOffset.lastDate !== preview.withOffset.firstDate ? ` – ${preview.withOffset.lastDate}` : ""}` : ""}
+                {preview.withOffset.unchanged > 0 ? ` · ${preview.withOffset.unchanged} already correct` : ""}.
+              </p>
+              <div className={styles.sheetList}>
+                {sample(preview.withOffset.changes).map((c) => (
+                  <p key={c.id} className={styles.fieldNote}>
+                    {c.date} · {c.exercise} — {show(c.loadBefore)} → <strong>{show(c.loadAfter)}</strong> × {c.reps}
+                  </p>
+                ))}
+                {preview.withOffset.changes.length > 4 && (
+                  <p className={styles.fieldNote}>…and {preview.withOffset.changes.length - 4} more.</p>
+                )}
+              </div>
+              <p className={styles.fieldNote}>
+                What you put on the machine is unchanged — only the carriage weight added to it.
+              </p>
+            </>
+          )}
+
+          {/* A separate, defaulted-off assertion. */}
+          {preview.nullOffset.changes.length > 0 && (
+            <label className={styles.field} style={{ marginTop: 8 }}>
+              <span className={styles.fieldNote}>
+                <input type="checkbox" checked={includeNull} onChange={(e) => setIncludeNull(e.target.checked)} />{" "}
+                Also apply to {preview.nullOffset.changes.length} set
+                {preview.nullOffset.changes.length === 1 ? "" : "s"} on this unit logged <em>without</em> a built-in.
+                This claims you were always lifting {show(preview.offset)} more than recorded on those sets — a different
+                statement from correcting one, so it is off by default.
+              </span>
+            </label>
+          )}
+
+          <p className={styles.fieldNote} style={{ marginTop: 6 }}>
+            This unit&rsquo;s &ldquo;last …&rdquo; references and progression suggestions will shift to match.
+          </p>
+
+          <div className={styles.sheetActions} style={{ marginTop: 10 }}>
+            <button type="button" className={styles.primaryBtn} onClick={() => void confirm()} disabled={busy}>
+              {busy ? "Correcting…" : "Confirm correction"}
+            </button>
+            <button type="button" className={styles.quietBtn} onClick={cancel} disabled={busy}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </>
@@ -358,6 +547,10 @@ export function EquipmentSheet({
 
       {!isNew && (
         <UsedBy unit={unit!} onChanged={onChanged} />
+      )}
+
+      {!isNew && (
+        <BuiltInCorrection unit={unit!} onChanged={onChanged} />
       )}
 
       {!isNew && (
