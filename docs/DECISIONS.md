@@ -4179,3 +4179,96 @@ is worse than none.
 one still unrecorded — `longpull 302` (cable, Precor, 6 sets at 120–130 lb).
 Every lb marking is corroborated by its logged range: 50–340 lb across the
 estate, all consistent with US stacks. Nothing looks mismarked.
+
+---
+
+## Two units, two owners — and Settings gets a home
+
+### The rule
+
+| | what it is | owned by | governs |
+|---|---|---|---|
+| **Entry unit** | a fact about the MACHINE — what you type. The pin says 120, you type 120. | the unit's `stack_unit` marking | that machine's inputs and its card |
+| **Display preference** | a fact about YOU — what you read and think in. | global, in Settings | history, stats, totals, and anything not tied to a machine |
+
+One toggle in the exercise card used to do both, which is why changing it
+mid-session had the wrong blast radius: it looked local and behaved global. One
+tap silently re-interpreted every number typed afterwards.
+
+### Settings behind a gear; the More tab is gone
+
+There was no settings surface and the More tab was empty. It is **deleted**
+rather than filled — the route, the nav entry, and the page. A gear in Home's
+header pushes `/settings`, which holds one PREFERENCES section with exactly two
+rows (Weight, Distance) as segmented controls, unit values in the mono face
+because they are data. The app version moved here from More.
+
+**Navigation rationale (roadmap decision):** bottom-nav slots are for
+**frequent, direct destinations**. Settings is infrastructure and doesn't earn
+one. Consequences, recorded so they aren't re-litigated:
+
+- The freed fourth slot is held for **Nutrition** when it ships.
+- **Recovery / Oura data belongs as a Home card, not a tab** — it is glanceable,
+  not navigable.
+- The **"More" overflow pattern is rejected**. If a fifth domain ever appears,
+  consolidate related ones rather than introducing a two-tier hierarchy; an
+  overflow bucket is where IA goes to rot, which is exactly what the old More
+  tab demonstrated.
+
+### Preference inventory (asked for; nothing else moved)
+
+Every `localStorage` key in the app, audited:
+
+| key | kind | belongs in Settings? |
+|---|---|---|
+| `entry-unit-weight`, `entry-unit-distance` | global preference | **yes — moved this round** |
+| `fitness-app:hint-set-tap` | one-time dismissed hint | no — never returns once dismissed |
+| `fitness-app:last-equiptype:<exerciseId>` | per-exercise memory | no |
+| `fitness-app:offset-ok:<exerciseId>:<type>` | per-pair confirmation | no |
+| `fitness-app:pending-session-deletes` | sync queue | no |
+
+**There are no rest-timer defaults** or any other global preference. The two
+unit prefs were the whole set, so nothing was left behind.
+
+### The indicator is read-only; one sanctioned exception
+
+The unit label on an input now only *states* which unit is in play — muted
+`lb · marked` for a machine's fact, a tinted pill for a non-canonical mode
+you're in, quiet otherwise. None is tappable.
+
+The **confirm-on-switch from last round is removed**, and this is the reasoning:
+it existed because a global setting sat under a stray-tappable control in a
+session. Moving the setting to Settings fixes the cause; a confirmation on a
+screen you navigated to deliberately would be friction protecting against a
+mistake that can no longer happen.
+
+**The one exception** is the slip advisory's `Use 120 lb · switch to lb`. Being
+in the wrong mode IS the fault there, so leaving it is the fix — and unlike the
+old label toggle it is an explicitly labelled correction that says what it does.
+
+### Dual display, only on a real mismatch
+
+Where a machine's marking differs from the display preference, the card shows
+the machine's unit primary and yours in parentheses — `70.3 kg (155 lb) × 9` —
+on the "last" reference and the logged rows. You need the kg to set the pin and
+the lb to know how strong you are.
+
+Where they agree (all 18 current units) it is a **single value; the parenthetical
+never appears**, or every ordinary row would carry redundant noise. Unrecorded
+machines are already shown in the preference, so they get no second value
+either. Aggregate surfaces — history, stats, totals — stay in the preference
+only: a dual there would be noise in a place with no pin to set.
+
+The input itself stays single-unit, the machine's marking. You type what the pin
+says.
+
+### Known gap: distance has no per-machine marking
+
+`cardio_logs` has **no `equipment_id`**, so a metric entry cannot be attributed
+to a machine and a treadmill marked in km cannot be expressed. A European
+treadmill still requires switching the global distance preference in Settings.
+
+This is deliberate, not an oversight: giving cardio an equipment link is a
+schema change with real consequences (a lane model for metric entries, which the
+core does not read), and the payoff is one traveller's edge case. Recorded so
+the gap is a decision rather than a surprise.

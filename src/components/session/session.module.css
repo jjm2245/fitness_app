@@ -1225,6 +1225,12 @@
   font: inherit;
   color: var(--text-3);
 }
+/* The ordinary case: canonical unit, preference governing. Nothing to notice,
+   and nothing to tap — the preference lives in Settings now. */
+.unitQuiet {
+  font: inherit;
+  color: var(--text-3);
+}
 /* A NON-CANONICAL global preference is a MODE the user is in, and missing it is
    how the original 264.55 slip happened. Loud on purpose — and deliberately
    unlike .unitPinned, which is a quiet fact about a machine. Two different

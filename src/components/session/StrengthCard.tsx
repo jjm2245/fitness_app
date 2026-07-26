@@ -5,7 +5,7 @@ import styles from "./session.module.css";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
-import { parseStackMarking, resolveWeightUnit } from "@/lib/stack";
+import { parseStackMarking, resolveWeightUnit, formatDualWeight } from "@/lib/stack";
 import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
 import { EntryUnitLabel } from "./EntryUnitLabel";
 import { publishRestTimer } from "@/lib/restTimerBus";
@@ -242,6 +242,13 @@ export function StrengthCard({
   const entryUnit = resolveWeightUnit(stackMarking, wUnit);
   const unitPinned = stackMarking != null;
   const w = (n: number | string) => (entryUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
+  // §3 — when this machine's markings differ from the display preference, every
+  // weight on THIS card carries both: the machine's unit to set the pin by, and
+  // yours to know what it means. Identical units render one value, so the
+  // ordinary case stays clean.
+  const fmtUnit = (lb: number, u: "lb" | "kg") => String(u === "kg" ? lbToKg(lb) : displayLb(lb));
+  const dualWeights = (text: string) =>
+    text.replace(/(\d+(?:\.\d+)?) lb/g, (_, n) => formatDualWeight(Number(n), stackMarking, wUnit, fmtUnit));
   // Slip advisory. SKIPPED when a marked unit governs: the box is pinned to the
   // machine's markings, so the slip cannot occur and a warning would be noise.
   // Elsewhere it fires only on the slip's exact shape — the raw number matching
@@ -738,7 +745,7 @@ export function StrengthCard({
           <div className={styles.metaBlock}>
             <div className={styles.metaLine}>
               <span className={styles.metaLabel}>last</span>{" "}
-              {lastText != null ? displayWeights(lastText, entryUnit) : <span className={styles.metaEmpty}>— no prior data</span>}
+              {lastText != null ? dualWeights(lastText) : <span className={styles.metaEmpty}>— no prior data</span>}
             </div>
             {targetText && (
               <div className={styles.metaLine}>
@@ -894,6 +901,7 @@ export function StrengthCard({
                   )}
                   <SetRow
                     weightUnit={entryUnit}
+                    secondaryUnit={stackMarking != null && stackMarking !== wUnit ? wUnit : undefined}
                     set={s}
                     isDrop={isDrop}
                     unilateral={activeExercise.unilateral}
@@ -982,7 +990,6 @@ export function StrengthCard({
                     canonicalUnit="lb"
                     pinned={unitPinned}
                     label={ex.loadType === "bodyweight" ? "added" : undefined}
-                    onSwitch={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
                   />
                 </span>
                 <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
@@ -1018,12 +1025,16 @@ export function StrengthCard({
                   <button
                     type="button"
                     className={styles.unitConfirmYes}
-                    // Switching the preference IS the fix: being in the wrong
-                    // mode is the fault, and the number typed is already right.
-                    title="Switches entry back to lb and keeps the number you typed"
+                    // The ONE sanctioned inline preference change. Being in the
+                    // wrong mode IS the fault here, so leaving it is the fix —
+                    // and unlike the old tap-the-label toggle this is an
+                    // explicitly labelled correction, not a stray tap. It says
+                    // so on the button rather than changing a global setting
+                    // quietly. See DECISIONS.
+                    title="Switches your weight preference back to lb and keeps the number you typed"
                     onClick={() => { keepLoadThroughUnitChange.current = true; toggleWeightUnit(); setSlipDismissed(true); }}
                   >
-                    Use {slip.typed} lb
+                    Use {slip.typed} lb · switch to lb
                   </button>
                   <button type="button" className={styles.unitConfirmNo} onClick={() => setSlipDismissed(true)}>
                     Log {Math.round(slip.canonical)} lb

@@ -391,7 +391,7 @@ export function CardioCard({
                       return (
                         <label key={f} className={styles.cell}>
                           <span className={styles.cellLabel}>
-                            <EntryUnitLabel unit={wUnit} canonicalUnit="lb" onSwitch={toggleWUnit} />
+                            <EntryUnitLabel unit={wUnit} canonicalUnit="lb" />
                           </span>
                           <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
                         </label>
@@ -401,7 +401,7 @@ export function CardioCard({
                       return (
                         <label key={f} className={styles.cell}>
                           <span className={styles.cellLabel}>
-                            <EntryUnitLabel unit={dUnit} canonicalUnit="mi" onSwitch={toggleDUnit} />
+                            <EntryUnitLabel unit={dUnit} canonicalUnit="mi" />
                           </span>
                           <input type="number" className={styles.cellInput} value={distance} onChange={(e) => setDistance(e.target.value)} />
                         </label>

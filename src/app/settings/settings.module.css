@@ -1,0 +1,43 @@
+/* Settings — infrastructure, not a destination. Sparse on purpose: it reuses
+   the label / value / hint hierarchy of the exercise and equipment sheets so it
+   reads as the same app rather than a bolted-on panel. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 0;
+}
+.row + .row {
+  border-top: 1px solid var(--hairline);
+}
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* The segmented control carries the VALUE, so it must not shrink away. */
+.rowControl {
+  flex-shrink: 0;
+}
+/* Unit values are data — mono, like every other number the app asks you to
+   read precisely. */
+.segMono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.footnote {
+  margin-top: 18px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.version {
+  margin-top: 14px;
+  font-size: 0.7rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}

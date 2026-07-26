@@ -17,6 +17,7 @@ export function SetRow({
   isDrop,
   unilateral,
   weightUnit = "lb",
+  secondaryUnit,
   revealed,
   onToggleReveal,
   onChanged,
@@ -27,12 +28,18 @@ export function SetRow({
   unilateral: boolean;
   // Global display unit (read-side only — edits still enter canonical lb).
   weightUnit?: WeightUnit;
+  /** Set ONLY when this machine's marking differs from the display preference:
+   *  the row then shows the machine's unit primary and yours in parentheses.
+   *  Undefined in the ordinary matching case, so no row carries redundant noise. */
+  secondaryUnit?: WeightUnit;
   revealed: boolean;
   onToggleReveal: () => void;
   onChanged: () => void;
   onDrop: (parent: SessionSet) => void;
 }) {
   const w = (n: number | string) => (weightUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
+  const w2 = (n: number | string) =>
+    secondaryUnit == null ? null : secondaryUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n));
   const [editing, setEditing] = useState(false);
   const [load, setLoad] = useState(set.load);
   const [reps, setReps] = useState(set.reps);
@@ -105,7 +112,8 @@ export function SetRow({
           <span className={styles.setMain}>
             {isDrop && <span className={styles.setKind}>↳ drop · </span>}
             {!isDrop && set.setType === "warmup" && <span className={styles.setKind}>warm-up · </span>}
-            {w(set.load)} {weightUnit} × {set.reps}
+            {w(set.load)} {weightUnit}
+            {secondaryUnit && <span className={styles.setSuffix}> ({w2(set.load)} {secondaryUnit})</span>} × {set.reps}
             {sideTag}
             {hasOffset && <span className={styles.setSuffix}> · {w(set.loadEntered!)} + {w(set.builtinOffset!)} built-in</span>}
             {noUnit && <span className={styles.setSuffix} title="No specific machine recorded for this set — it sits in the unspecified lane"> · no unit</span>}

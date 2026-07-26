@@ -107,3 +107,31 @@ export function parseStackMarking(v: unknown): StackMarking {
 export function resolveWeightUnit(marking: StackMarking, preference: "lb" | "kg"): "lb" | "kg" {
   return marking ?? preference;
 }
+
+/**
+ * A weight rendered for a machine whose markings may differ from the reader's
+ * display preference.
+ *
+ * The case this exists for: you prefer lb but travel to a gym whose machines
+ * are marked kg. You need the kg to set the pin AND the lb to know how strong
+ * you are — so the machine's unit leads and yours follows in parentheses.
+ *
+ * When they agree — every one of the owner's current units — this returns a
+ * single value. The parenthetical must NEVER appear in the matching case, or
+ * every normal row would carry redundant noise.
+ *
+ * `fmt` converts canonical lb into a display string for a given unit.
+ */
+export function formatDualWeight(
+  canonicalLb: number,
+  marking: StackMarking,
+  preference: "lb" | "kg",
+  fmt: (lb: number, unit: "lb" | "kg") => string
+): string {
+  const primary = resolveWeightUnit(marking, preference);
+  const head = `${fmt(canonicalLb, primary)} ${primary}`;
+  // Only a RECORDED marking that disagrees with the preference earns a second
+  // value. An unrecorded machine is already being shown in the preference.
+  if (marking == null || marking === preference) return head;
+  return `${head} (${fmt(canonicalLb, preference)} ${preference})`;
+}

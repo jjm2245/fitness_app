@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit } from "../stack";
+import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit, formatDualWeight } from "../stack";
 
 // The suggestion is a LOWER BOUND on the plate size, not a measurement — which
 // is exactly why the form offers it rather than applying it.
@@ -131,5 +131,37 @@ describe("built-in weight resolves like the stack fields", () => {
     expect(builtIn(null, "kg")).toBe("kg");
     expect(stackField(null, "kg")).toBe("kg");
     expect(builtIn(null, "lb")).toBe("lb");
+  });
+});
+
+// Dual display exists for one situation: a machine marked in a unit that isn't
+// the one you think in. Everywhere else it must be invisible.
+describe("dual weight display — only on a real mismatch", () => {
+  const fmt = (lb: number, u: "lb" | "kg") =>
+    u === "kg" ? String(Math.round((lb / 2.2046226218) * 10) / 10) : String(lb);
+
+  it("shows the machine's unit first and yours in parentheses", () => {
+    // Travelling: you read lb, the machine is stamped kg.
+    expect(formatDualWeight(132.28, "kg", "lb", fmt)).toBe("60 kg (132.28 lb)");
+  });
+
+  it("shows a SINGLE value when the machine matches your preference", () => {
+    // The owner's real case — all 18 units lb, preference lb.
+    expect(formatDualWeight(120, "lb", "lb", fmt)).toBe("120 lb");
+    expect(formatDualWeight(120, "kg", "kg", fmt)).toBe("54.4 kg");
+  });
+
+  it("shows a SINGLE value when the machine records nothing", () => {
+    // Unrecorded already renders in the preference — a parenthetical would
+    // repeat the same number in the same unit.
+    expect(formatDualWeight(120, null, "lb", fmt)).toBe("120 lb");
+    expect(formatDualWeight(120, null, "kg", fmt)).toBe("54.4 kg");
+  });
+
+  it("never emits a parenthetical in any matching combination", () => {
+    for (const pref of ["lb", "kg"] as const) {
+      expect(formatDualWeight(100, pref, pref, fmt)).not.toContain("(");
+      expect(formatDualWeight(100, null, pref, fmt)).not.toContain("(");
+    }
   });
 });
