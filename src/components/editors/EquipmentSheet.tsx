@@ -174,7 +174,7 @@ function toDraft(m?: EquipmentUnit): UnitDraft {
     plateIncrement: m?.plateIncrement != null ? String(Number(m.plateIncrement)) : "",
     addOnWeight: m?.addOnWeight != null ? String(Number(m.addOnWeight)) : "",
     stackMax: m?.stackMax != null ? String(Number(m.stackMax)) : "",
-    stackUnit: m?.stackUnit === "kg" ? "kg" : "lb",
+    stackUnit: m?.stackUnit === "kg" || m?.stackUnit === "lb" ? m.stackUnit : "",
     notes: m?.notes ?? "",
   });
 }
@@ -223,7 +223,7 @@ export function EquipmentSheet({
     plateIncrement: d.plateIncrement.trim() === "" ? null : Number(d.plateIncrement),
     addOnWeight: d.addOnWeight.trim() === "" ? null : Number(d.addOnWeight),
     stackMax: d.stackMax.trim() === "" ? null : Number(d.stackMax),
-    stackUnit: d.stackUnit === "kg" ? "kg" : null,
+    stackUnit: d.stackUnit === "kg" || d.stackUnit === "lb" ? d.stackUnit : null,
   };
 
   async function save() {

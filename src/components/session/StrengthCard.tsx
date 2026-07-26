@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./session.module.css";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
+import { parseStackMarking, resolveWeightUnit } from "@/lib/stack";
 import { publishRestTimer } from "@/lib/restTimerBus";
 import { displayWeights, displayLb, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
@@ -65,6 +66,8 @@ interface SessionUnit {
   equipmentType: string | null;
   gym: string | null;
   builtInWeight: string | null;
+  // How this machine's stack is marked ('lb' | 'kg' | null = not recorded).
+  stackUnit?: string | null;
   notes: string | null;
   exercises: { exerciseId: string }[];
 }
@@ -229,6 +232,22 @@ export function StrengthCard({
   const resolvedUnitId = contextBound && equipmentId !== "" && equipmentId !== UNSPECIFIED_UNIT ? equipmentId : null;
   const selectedUnit = resolvedUnitId ? equipmentUnits.find((m) => m.id === resolvedUnitId) ?? null : null;
   const lane = laneKey(equipType, resolvedUnitId);
+  // Input-boundary only: derived from the already-resolved unit, feeding the
+  // load box's label and its one conversion. No lane, offset, timer or drop
+  // state is involved.
+  const stackMarking = parseStackMarking(selectedUnit?.stackUnit ?? null);
+  const entryUnit = resolveWeightUnit(stackMarking, wUnit);
+  const unitPinned = stackMarking != null;
+  // Changing the effective entry unit re-interprets whatever is in the box, so
+  // clear it — the SAME convention the manual unit toggle already uses. Guarded
+  // to fire only on a genuine change, never on first resolution.
+  const prevEntryUnit = useRef(entryUnit);
+  useEffect(() => {
+    if (prevEntryUnit.current === entryUnit) return;
+    prevEntryUnit.current = entryUnit;
+    setLoad(0);
+    setDropLoad("");
+  }, [entryUnit]);
 
   // Group the whole unit list for the picker (2.12): this exercise's units of
   // the selected type first, then the rest of that type, then other types —
@@ -307,7 +326,14 @@ export function StrengthCard({
   const offsetNeedsConfirm = offsetRelevant && offsetNum !== 0 && !offsetConfirmed && selectedUnit?.builtInWeight == null;
   const effOffset = !offsetRelevant ? 0 : offsetNeedsConfirm ? 0 : offsetNum;
   // THE entry-conversion boundary: what the user typed, in canonical lb.
-  const canonicalLoad = wUnit === "kg" ? kgToLb(load) : load;
+  //
+  // A unit that RECORDS how its stack is marked pins this box to those
+  // markings, because the number you read off the pin is a fact about the
+  // machine, not a preference. That makes a kg-mode slip structurally
+  // impossible on a marked machine — you cannot type 120 at an lb-marked stack
+  // and have it stored as 264.55. Unrecorded markings, portable types, and "no
+  // unit" all fall back to the global preference, exactly as before.
+  const canonicalLoad = entryUnit === "kg" ? kgToLb(load) : load;
   const totalLoad = canonicalLoad + effOffset;
   function confirmOffset(value: number) {
     localStorage.setItem(offsetOkKey(activeExercise.id, equipType), String(value));
@@ -925,14 +951,25 @@ export function StrengthCard({
             <div className={styles.entryGrid} style={{ marginTop: 8 }}>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>
-                  <button
-                    type="button"
-                    className={styles.unitToggle}
-                    onClick={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
-                    title="Switch entry/display unit — storage stays lb"
-                  >
-                    {ex.loadType === "bodyweight" ? `added ${wUnit}` : wUnit}
-                  </button>
+                  {unitPinned ? (
+                    // Stating a fact about the machine — not a control. Tapping
+                    // it must not offer to change what the stack is stamped in.
+                    <span
+                      className={styles.unitPinned}
+                      title={`This machine's stack is marked in ${entryUnit} — the weight box matches the markings you're reading. Storage stays lb.`}
+                    >
+                      {ex.loadType === "bodyweight" ? `added ${entryUnit}` : entryUnit} · marked
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.unitToggle}
+                      onClick={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
+                      title="Switch entry/display unit — storage stays lb"
+                    >
+                      {ex.loadType === "bodyweight" ? `added ${entryUnit}` : entryUnit}
+                    </button>
+                  )}
                 </span>
                 <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
               </label>

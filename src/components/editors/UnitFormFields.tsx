@@ -5,7 +5,7 @@ import styles from "./editors.module.css";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { useWeightUnit } from "@/lib/useUnit";
 import { formatForUnit } from "@/lib/units";
-import { suggestPlateIncrement, selectableLoads, formatSelectableLoads } from "@/lib/stack";
+import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit } from "@/lib/stack";
 
 // THE unit form — one component for both places a unit is created or edited:
 // the Equipment section (generic add/edit, Type is a picker) and the session's
@@ -27,7 +27,7 @@ export interface UnitDraft {
   plateIncrement: string;
   addOnWeight: string;
   stackMax: string;
-  stackUnit: string; // 'lb' | 'kg' — how THIS machine's stack is marked
+  stackUnit: string; // 'lb' | 'kg' | '' — '' = not recorded (falls back to preference)
   pulleyRatioKind: string;
   gym: string;
   brand: string;
@@ -50,7 +50,7 @@ export function emptyUnitDraft(over: Partial<UnitDraft> = {}): UnitDraft {
     plateIncrement: "",
     addOnWeight: "",
     stackMax: "",
-    stackUnit: "lb",
+    stackUnit: "", // not recorded
     pulleyRatioKind: "unknown",
     gym: "",
     brand: "",
@@ -82,9 +82,12 @@ export function UnitFormFields({
 }) {
   const [wUnit] = useWeightUnit();
   // The stack's markings are a property of the MACHINE — the plates are stamped
-  // in one unit — so they override the global lb/kg preference for these three
-  // fields. Storage stays canonical lb either way; this is entry/display only.
-  const sUnit: "lb" | "kg" = draft.stackUnit === "kg" ? "kg" : "lb";
+  // in one unit — so a RECORDED marking overrides the global lb/kg preference
+  // for these three fields. Not recorded (NULL) falls back to the preference,
+  // exactly as before markings existed. Storage stays canonical lb either way;
+  // this is entry/display only.
+  const marking = parseStackMarking(draft.stackUnit);
+  const sUnit = resolveWeightUnit(marking, wUnit);
   // A gym not in the known list (or a brand-new unit with none) starts in
   // free-text mode so nothing is ever silently coerced to a wrong existing gym.
   const [gymFreeText, setGymFreeText] = useState(
@@ -173,15 +176,17 @@ export function UnitFormFields({
           <span className={styles.fieldLabel}>Marked in</span>
           <select
             className={styles.fieldInput}
-            value={sUnit}
+            value={marking ?? ""}
             onChange={(e) => onChange({ stackUnit: e.target.value })}
           >
+            <option value="">not recorded</option>
             <option value="lb">lb</option>
             <option value="kg">kg</option>
           </select>
           <span className={styles.fieldNote}>
-            How this machine&rsquo;s plates are stamped. A fact about the machine, so it overrides your display
-            preference for the fields below.
+            How this machine&rsquo;s plates are stamped. Recording it states a fact about the machine, so it overrides
+            your display preference below — and, when you log on this unit, pins the weight box to the markings you&rsquo;re
+            reading off the stack. Left unrecorded, your display preference governs as usual.
           </span>
         </label>
         <div className={styles.fieldRow} style={{ marginTop: 8 }}>
@@ -223,8 +228,10 @@ export function UnitFormFields({
             </>
           )}
         </div>
-        {/* A lower bound derived from real logs — offered, never applied. */}
-        {suggestion != null && (
+        {/* A lower bound derived from real logs — offered, never applied, and
+            withdrawn once the field has an answer. A suggestion that lingers
+            beside a filled field reads as a correction rather than an offer. */}
+        {suggestion != null && draft.plateIncrement.trim() === "" && (
           <button
             type="button"
             className={styles.quietBtn}
@@ -302,11 +309,11 @@ export function UnitFormFields({
                 onChange({ gym: e.target.value });
               }}
             >
-              {/* Disabled + empty-valued: visible as prompt text, never a
-                  choosable value. A selectable "gym…" could be SAVED as a
-                  literal gym name — the exact faulty value this dropdown
-                  exists to prevent. */}
-              <option value="" disabled>gym…</option>
+              {/* No placeholder ROW: the field label already says what this is,
+                  so prompt text in the list is redundant. `hidden` keeps the
+                  empty value matchable — an unset gym renders blank — while
+                  keeping it out of the options the user can pick. */}
+              {draft.gym === "" && <option value="" hidden />}
               {knownGyms.map((g) => <option key={g} value={g}>{g}</option>)}
               <option value={ADD_NEW_GYM}>Add new gym…</option>
             </select>

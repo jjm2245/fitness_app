@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestPlateIncrement, selectableLoads, formatSelectableLoads } from "../stack";
+import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit } from "../stack";
 
 // The suggestion is a LOWER BOUND on the plate size, not a measurement — which
 // is exactly why the form offers it rather than applying it.
@@ -70,5 +70,37 @@ describe("selectable loads (the stack grid)", () => {
     // kg display of a 10/240 lb stack — storage is untouched, this is display.
     const kg = (lb: number) => String(Math.round((lb / 2.2046226218) * 10) / 10);
     expect(formatSelectableLoads(selectableLoads(10, null, 240), "kg", kg)).toBe("4.5, 9.1, 13.6 … 108.9 kg");
+  });
+});
+
+// Tri-state lock: NULL is ABSENCE, not lb. Defaulting a missing marking to lb
+// would assert something the user never said — and on a genuinely kg-marked
+// machine it would reproduce the kg-slip error in the opposite direction.
+describe("stack marking is a tri-state, and a recorded one wins", () => {
+  it("parses only real markings; everything else is not-recorded", () => {
+    expect(parseStackMarking("lb")).toBe("lb");
+    expect(parseStackMarking("kg")).toBe("kg");
+    expect(parseStackMarking(null)).toBeNull();
+    expect(parseStackMarking("")).toBeNull();
+    expect(parseStackMarking("LB")).toBeNull(); // not a silent coercion
+    expect(parseStackMarking(undefined)).toBeNull();
+  });
+
+  it("not recorded falls back to the preference — both ways", () => {
+    expect(resolveWeightUnit(null, "lb")).toBe("lb");
+    expect(resolveWeightUnit(null, "kg")).toBe("kg");
+  });
+
+  it("a recorded marking overrides the preference — both ways", () => {
+    expect(resolveWeightUnit("lb", "kg")).toBe("lb"); // the 264.55 case
+    expect(resolveWeightUnit("kg", "lb")).toBe("kg"); // and its mirror
+    expect(resolveWeightUnit("lb", "lb")).toBe("lb");
+    expect(resolveWeightUnit("kg", "kg")).toBe("kg");
+  });
+
+  it("NULL is not a disguised lb default", () => {
+    // The distinction that matters: with a kg preference, an unrecorded machine
+    // must NOT be pinned to lb.
+    expect(resolveWeightUnit(null, "kg")).not.toBe("lb");
   });
 });

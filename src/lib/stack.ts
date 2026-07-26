@@ -81,3 +81,29 @@ export function formatSelectableLoads(
   if (loads.length <= 4) return `${loads.map(fmt).join(", ")} ${unitLabel}`;
   return `${head.join(", ")} … ${fmt(last)} ${unitLabel}`;
 }
+
+/** How a machine's stack is marked. NULL/absent = NOT RECORDED — the same
+ * absence rule as `target_sets`, `log_fields` and `built_in_weight`: a missing
+ * value is a missing statement, never a silent default. */
+export type StackMarking = "lb" | "kg" | null;
+
+export function parseStackMarking(v: unknown): StackMarking {
+  return v === "lb" || v === "kg" ? v : null;
+}
+
+/**
+ * Which unit a machine-scoped weight field should use.
+ *
+ * A RECORDED marking wins, because it states a fact about the machine (the
+ * plates are stamped in one unit) rather than a preference about reading. When
+ * nothing is recorded we fall back to the user's global preference — the
+ * behaviour before markings existed.
+ *
+ * The distinction matters most for logging: pinning an input to "lb" because a
+ * column defaulted to lb would assert something the user never said, and would
+ * reproduce the kg-slip error in the opposite direction on a genuinely
+ * kg-marked machine.
+ */
+export function resolveWeightUnit(marking: StackMarking, preference: "lb" | "kg"): "lb" | "kg" {
+  return marking ?? preference;
+}

@@ -1218,6 +1218,13 @@
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
+/* A machine with recorded stack markings states a fact rather than offering a
+   choice — so it is deliberately NOT the accent-coloured, dotted-underlined
+   affordance above. Muted text reads as a label, which is what it is. */
+.unitPinned {
+  font: inherit;
+  color: var(--text-3);
+}
 /* Live conversion under a cell: "→ 22 lb" — exactly what stores. */
 .cellHint {
   font-size: 0.7rem;

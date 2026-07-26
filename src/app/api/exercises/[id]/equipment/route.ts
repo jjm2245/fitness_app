@@ -69,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       plateIncrement: num(body?.plateIncrement),
       addOnWeight: num(body?.addOnWeight),
       stackMax: num(body?.stackMax),
-      stackUnit: body?.stackUnit === "kg" ? "kg" : null,
+      stackUnit: body?.stackUnit === "kg" || body?.stackUnit === "lb" ? body.stackUnit : null,
     })
     .onConflictDoNothing();
   await db.insert(exerciseEquipment).values({ exerciseId: id, equipmentId }).onConflictDoNothing();

@@ -223,10 +223,13 @@ export const equipment = pgTable("equipment", {
   addOnWeight: numeric("add_on_weight"), // micro-adjust lever, e.g. 5 → 10/15/20/25
   stackMax: numeric("stack_max"), // top of the stack, e.g. 240
   // How THIS machine's stack is marked. A fact about the machine (the plates
-  // are stamped in one unit), not a user preference — so it overrides the
-  // global lb/kg display for this unit's stack fields. NULL = lb, the canonical
-  // default, so every existing row keeps behaving exactly as before.
-  stackUnit: text("stack_unit"), // 'lb' | 'kg' | null (= lb)
+  // are stamped in one unit), not a user preference — so a RECORDED value
+  // overrides the global lb/kg display for this unit's stack fields, and pins
+  // the weight box when logging on it. NULL = NOT RECORDED (falls back to the
+  // preference) — the same absence rule as target_sets / log_fields /
+  // built_in_weight. Defaulting NULL to lb would assert something the user
+  // never said, and would reproduce the kg-slip in reverse on a kg machine.
+  stackUnit: text("stack_unit"), // 'lb' | 'kg' | null (= not recorded)
   // Structured, NEVER folded into logged loads: a multiplicative ratio cancels
   // out of every lane-scoped comparison (an additive offset doesn't — that's
   // why offsets ARE in the number). Interpretation for the future agent only.

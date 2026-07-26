@@ -71,8 +71,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // How the machine's stack is MARKED. NULL = lb (the canonical default).
   if (body?.stackUnit !== undefined) {
-    if (body.stackUnit === null || body.stackUnit === "" || body.stackUnit === "lb") updates.stackUnit = null;
-    else if (body.stackUnit === "kg") updates.stackUnit = "kg";
+    // Tri-state: null/"" = NOT RECORDED (falls back to the preference); "lb"
+    // and "kg" are both recorded statements about the machine.
+    if (body.stackUnit === null || body.stackUnit === "") updates.stackUnit = null;
+    else if (body.stackUnit === "kg" || body.stackUnit === "lb") updates.stackUnit = body.stackUnit;
     else return NextResponse.json({ error: "stackUnit must be lb or kg" }, { status: 400 });
   }
 

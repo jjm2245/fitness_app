@@ -3833,3 +3833,82 @@ moved those rows onto the unit, and they kept the offset applied at log time.
 That is precisely the disagreement §4 resolves.
 
 `cardio_logs` has no `equipment_id` and is out of scope by construction.
+
+---
+
+## Stack marking is a tri-state, and a recorded one governs logging
+
+### NULL means NOT RECORDED, not lb
+
+`equipment.stack_unit` was first written as "NULL = lb, the canonical default".
+That was wrong in the same way the phantom unit was wrong: it asserts something
+the user never said. All 18 units read NULL because nothing has been recorded,
+not because anyone confirmed lb — and silently pinning them to lb would
+reproduce the kg-slip error in the opposite direction on a genuinely kg-marked
+machine.
+
+Adopted instead, matching the absence rule already used by `target_sets`,
+`log_fields` and `built_in_weight`:
+
+- `'lb'` / `'kg'` — **recorded**: a statement about how this machine's stack is
+  stamped.
+- `NULL` — **not recorded**: falls back to the global weight preference, exactly
+  as before markings existed.
+
+No migration change (still nullable text) — only the meaning, and one resolver
+(`resolveWeightUnit(marking, preference)`) so the rule exists once.
+
+### Where the marking wins, and where it doesn't
+
+| field | governed by | why |
+|---|---|---|
+| Plate size / Add-on lever / Max load | the **marking** when recorded | They describe the machine's own grid; the plates are stamped in one unit. |
+| The selectable-loads preview | the **marking** | It's a rendering of those same fields. |
+| **Built-in weight** | always the **global preference** | It's a LOAD, not a marking — the same kind of number as a logged set. |
+| The logging load box | the **marking** when recorded, else preference | See below. |
+
+### Marking governs the logging input — a structural fix, not a warning
+
+A machine that records its markings pins the weight box when you log on it. The
+number on the pin is a fact about the machine, so typing `120` at an lb-marked
+stack stores 120 — the 264.55 error (120 kg read as the lb stack number) is
+**impossible there by construction**. Warnings are the wrong tool for this: they
+fire mid-set, which is exactly when they get dismissed.
+
+Fallbacks are unchanged: an unrecorded marking, a portable type (dumbbell,
+barbell, bodyweight), or no unit at all all follow the global preference.
+
+**Done at the input boundary only**, as required — the card's state machine
+(lanes, offsets, timer, drop groups, swap) is untouched. Concretely: one derived
+`entryUnit`, used by the single existing conversion (`canonicalLoad`) and the
+box's label. The one added effect clears the field when the effective unit
+changes, which is the SAME convention the manual unit toggle already used
+(`setLoad(0)`), guarded to fire only on a genuine change rather than on first
+resolution.
+
+**A pinned label is not a control.** Where the global toggle renders an
+accent-coloured, dotted-underlined button, a marked machine renders muted text
+reading `lb · marked` — because it states a fact rather than offering a choice,
+and tapping it must not imply you can change what the stack is stamped in.
+
+**Verified with the global preference set to kg:** picking an lb-marked unit
+flipped the box from `kg` to `lb · marked`; typing 120 stored **120**; a
+portable exercise in the same session still read `kg`; and the equipment
+checksum was byte-identical across every flip (`f054ba1d…`), so no display or
+resolution path writes.
+
+### Two form corrections
+
+- **The increment suggestion withdraws once answered.** It stays hidden while
+  Plate size has a value and returns if cleared — a suggestion lingering beside
+  a filled field reads as a correction rather than an offer.
+- **The gym placeholder row is gone entirely.** Not merely disabled: the field
+  label already says what it is, so prompt text in the list was redundant. An
+  unset gym renders blank via a `hidden` empty option, and the list contains
+  only real gyms plus "Add new gym…". *(Correction to an earlier claim: the old
+  placeholder could never have been SAVED as the literal string "gym…" — its
+  value was `""`, which the PATCH route maps to NULL. The real fault was milder:
+  it read as a choice, and picking it silently cleared the gym.)*
+
+The **Type** placeholder is deliberately left selectable — blank is a legitimate
+state there, and disabling it would remove the ability to clear a type.
