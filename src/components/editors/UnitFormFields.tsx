@@ -5,7 +5,7 @@ import styles from "./editors.module.css";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { useWeightUnit } from "@/lib/useUnit";
 import { formatForUnit } from "@/lib/units";
-import { suggestPlateIncrement } from "@/lib/stack";
+import { suggestPlateIncrement, selectableLoads, formatSelectableLoads } from "@/lib/stack";
 
 // THE unit form — one component for both places a unit is created or edited:
 // the Equipment section (generic add/edit, Type is a picker) and the session's
@@ -88,19 +88,33 @@ export function UnitFormFields({
   // something. Hidden values are hidden, never cleared — dropping stored data
   // to match a display rule would be the tail wagging the dog.
   //
-  // Pulley: cables only. On a lever machine a ratio isn't a withheld
-  // capability, it's a category error.
-  const showPulley = draft.equipmentType === "cable";
   // Add-on and max are WEIGHT-STACK concepts — a selector pin has a lever and a
   // ceiling. On plate-loaded and Smith you hang plates: there is no lever to
   // add, and no stack to run out of.
   const hasWeightStack = draft.equipmentType === "selectorized" || draft.equipmentType === "cable";
+  // Pulley rides the SAME rule: many selectorized machines are cable-driven
+  // internally, and the twelve-inch pull test works on any visible stack. It
+  // stays out on plate-loaded and Smith, where a ratio is a category error
+  // rather than a withheld capability.
+  const showPulley = hasWeightStack;
   // Plate increment survives on every loaded type: on a stack it's the plate
   // size, on plate-loaded or Smith it's the smallest plate you can add. Only
   // bodyweight-ish units (no type set / "other") have nothing to say.
   const hasLoadedIncrement = hasWeightStack || draft.equipmentType === "plate_loaded" || draft.equipmentType === "smith";
   const showStack = hasLoadedIncrement;
   const suggestion = suggestPlateIncrement(loggedLoads);
+  // §2b — show the OUTPUT of the three fields. Explaining "plate size" in words
+  // is weaker than showing the grid it produces, and a wrong entry makes an
+  // obviously wrong preview, so this doubles as validation.
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  // Only a weight stack has a grid to preview. On plate-loaded/Smith the add-on
+  // and max fields are HIDDEN, and deriving a visible line from fields the user
+  // can't see would be the phantom-unit mistake again — showing output from
+  // input they have no way to inspect or correct.
+  const grid = hasWeightStack
+    ? selectableLoads(num(draft.plateIncrement), num(draft.addOnWeight), num(draft.stackMax))
+    : [];
+  const gridLine = formatSelectableLoads(grid, wUnit, (lb) => formatForUnit(String(lb), wUnit, "weight"));
 
   return (
     <>
@@ -151,7 +165,7 @@ export function UnitFormFields({
         <span className={styles.fieldLabel}>{hasWeightStack ? "Stack" : "Plates"}</span>
         <div className={styles.fieldRow}>
           <label className={styles.fieldHalf}>
-            <span className={styles.fieldLabel}>Plate {wUnit}</span>
+            <span className={styles.fieldLabel}>Plate size {wUnit}</span>
             <UnitNumberInput
               canonical={draft.plateIncrement}
               onCanonical={(v) => onChange({ plateIncrement: v })}
@@ -163,7 +177,7 @@ export function UnitFormFields({
           {hasWeightStack && (
             <>
               <label className={styles.fieldHalf}>
-                <span className={styles.fieldLabel}>Add-on {wUnit}</span>
+                <span className={styles.fieldLabel}>Add-on lever {wUnit}</span>
                 <UnitNumberInput
                   canonical={draft.addOnWeight}
                   onCanonical={(v) => onChange({ addOnWeight: v })}
@@ -173,7 +187,7 @@ export function UnitFormFields({
                 />
               </label>
               <label className={styles.fieldHalf}>
-                <span className={styles.fieldLabel}>Max {wUnit}</span>
+                <span className={styles.fieldLabel}>Max load {wUnit}</span>
                 <UnitNumberInput
                   canonical={draft.stackMax}
                   onCanonical={(v) => onChange({ stackMax: v })}
@@ -208,10 +222,25 @@ export function UnitFormFields({
           </label>
         )}
         <span className={styles.fieldNote}>
-          {hasWeightStack
-            ? "What loads this machine can select. These drive suggestions only — they never change a stored load."
-            : "The smallest plate you can add here. Drives suggestions only — it never changes a stored load."}
+          {hasWeightStack ? (
+            <>
+              <strong>Plate size</strong> — the weight of one plate on this stack.{" "}
+              <strong>Add-on lever</strong> — extra weight the lever adds <em>when engaged</em>, which is what lets you
+              select in-between loads; it is not weight that&rsquo;s always applied.{" "}
+              <strong>Max load</strong> — the top of the stack.
+            </>
+          ) : (
+            <>
+              <strong>Plate size</strong> — the smallest plate you can add here.
+            </>
+          )}{" "}
+          These drive suggestions only — they never change a stored load.
         </span>
+        {gridLine && (
+          <span className={styles.fieldNote} style={{ marginTop: 4 }}>
+            Selectable: {gridLine}
+          </span>
+        )}
       </div>
       )}
 
@@ -249,7 +278,11 @@ export function UnitFormFields({
                 onChange({ gym: e.target.value });
               }}
             >
-              <option value="">gym…</option>
+              {/* Disabled + empty-valued: visible as prompt text, never a
+                  choosable value. A selectable "gym…" could be SAVED as a
+                  literal gym name — the exact faulty value this dropdown
+                  exists to prevent. */}
+              <option value="" disabled>gym…</option>
               {knownGyms.map((g) => <option key={g} value={g}>{g}</option>)}
               <option value={ADD_NEW_GYM}>Add new gym…</option>
             </select>
