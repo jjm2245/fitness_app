@@ -4108,3 +4108,74 @@ rounds, which is exactly what Align would have produced. The three
 built-in-bearing units (24res 9 rows, VPL-SMBP 6, HackSquatMonroePF 6) are all
 internally consistent, so the sheet shows the reassurance state rather than a
 warning. The feature ships with no work waiting on real data.
+
+---
+
+## Unit-slip guard, narrowed to what markings don't already cover
+
+Machine markings made the original slip structurally impossible whenever a
+marked unit is selected — the input is pinned to the machine. This round covers
+only the remaining exposure, and deliberately drops most of the original scope.
+
+### Confirm before switching the global preference
+
+Switching weight or distance units now asks first, inline (never a modal — this
+sits mid-workout). The copy states what changes and what doesn't: entry and
+display where the preference still governs, storage always canonical, nothing
+already logged moves. One shared `EntryUnitLabel` serves the strength card and
+both cardio inputs, so the three sites cannot diverge.
+
+### A non-canonical preference is loud where it governs
+
+The unit label was easy to miss, which is how the original slip happened. When
+the global preference is not lb/mi AND it is the thing governing that input, the
+label is a tinted warning-toned pill with a dot. A marked machine keeps its
+muted `· marked` tag. **The two are deliberately unlike**: one is a MODE the
+user is in, the other a FACT about a machine, and things that mean different
+things must not look alike.
+
+### Slip detection — one high-precision check, skipped where it can't apply
+
+**Skipped entirely on a marked unit.** The box is pinned there; a warning would
+be noise about an impossible failure.
+
+Elsewhere the signal is: **the raw number matches history while the converted
+number does not.** That is the exact shape of a slip — you typed the number you
+always type, in the wrong unit. It is silent for honest kg entry (converted
+matches history), for a genuine PR (raw nowhere near history), and where there
+is no history at all.
+
+Thresholds: raw within 15% of the recent load, converted at least 40% away.
+Verified quiet across **all 18 real unit ranges** (50–340 lb) for honest kg
+entry, and firing for the slip at every one of them.
+
+**`MIN_HISTORY = 1`, and the reason matters:** the "last" reference is one
+working weight with several rep counts (`120 lb × 12, 11, 10`), so requiring two
+distinct loads silenced the check on essentially every real exercise — caught in
+the browser, not by the unit tests, which had been feeding it multi-load
+fixtures that never occur. One recent load is the right reference, and the
+two-sided test keeps a lone data point from over-firing.
+
+Advisory only — one tap to proceed, never blocks a log. `Use 120 lb` switches the
+preference back and **keeps the typed number**; being in the wrong mode is the
+fault, and the number was already right.
+
+**Bug found and fixed during verification:** that fix action initially cleared
+the box to 0, because the entry-unit-change effect (which clears the field, by
+the same convention the manual toggle uses) fired on the switch and defeated the
+whole point. A one-shot ref now lets the typed value survive precisely that
+transition.
+
+### Deliberately NOT built
+
+The general large-jump warning (>=1.75x / <=0.6x). That is where false positives
+live — a real PR or a first heavy session trips it — and with the exposure now
+this narrow it would be pure nagging. A warning that gets learned-and-dismissed
+is worse than none.
+
+### §0 markings audit (read-only, at time of writing)
+
+17 of 18 units marked `lb`; **zero marked `kg`** (the reverse-direction hazard);
+one still unrecorded — `longpull 302` (cable, Precor, 6 sets at 120–130 lb).
+Every lb marking is corroborated by its logged range: 50–340 lb across the
+estate, all consistent with US stacks. Nothing looks mismarked.

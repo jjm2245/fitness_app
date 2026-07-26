@@ -1225,6 +1225,80 @@
   font: inherit;
   color: var(--text-3);
 }
+/* A NON-CANONICAL global preference is a MODE the user is in, and missing it is
+   how the original 264.55 slip happened. Loud on purpose — and deliberately
+   unlike .unitPinned, which is a quiet fact about a machine. Two different
+   things must not look alike. */
+.unitToggleLoud {
+  padding: 1px 7px;
+  min-height: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+  font: inherit;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.unitLoudDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+/* Inline switch confirmation — a row, never a modal: this sits mid-workout. */
+.unitConfirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+.unitConfirmYes {
+  min-height: 30px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+.unitConfirmNo {
+  min-height: 30px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 0.8rem;
+}
+.unitConfirmNote {
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+/* The slip advisory — specific, one tap to proceed, never blocks a log. */
+.slipWarn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.slipWarnActions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
 /* Live conversion under a cell: "→ 22 lb" — exactly what stores. */
 .cellHint {
   font-size: 0.7rem;

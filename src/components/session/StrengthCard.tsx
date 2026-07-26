@@ -6,6 +6,8 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { parseStackMarking, resolveWeightUnit } from "@/lib/stack";
+import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
+import { EntryUnitLabel } from "./EntryUnitLabel";
 import { publishRestTimer } from "@/lib/restTimerBus";
 import { displayWeights, displayLb, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
@@ -240,13 +242,34 @@ export function StrengthCard({
   const entryUnit = resolveWeightUnit(stackMarking, wUnit);
   const unitPinned = stackMarking != null;
   const w = (n: number | string) => (entryUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
+  // Slip advisory. SKIPPED when a marked unit governs: the box is pinned to the
+  // machine's markings, so the slip cannot occur and a warning would be noise.
+  // Elsewhere it fires only on the slip's exact shape — the raw number matching
+  // history while the converted one doesn't. Advisory only; never blocks a log.
+  const [slipDismissed, setSlipDismissed] = useState(false);
+  const slip = unitPinned
+    ? null
+    : detectUnitSlip({
+        typed: load,
+        canonical: entryUnit === "kg" ? kgToLb(load) : load,
+        entryUnit,
+        canonicalUnit: "lb",
+        recentCanonical: recentLoadsFromLastText(lastText),
+      });
   // Changing the effective entry unit re-interprets whatever is in the box, so
   // clear it — the SAME convention the manual unit toggle already uses. Guarded
   // to fire only on a genuine change, never on first resolution.
   const prevEntryUnit = useRef(entryUnit);
+  // The slip fix ("Use 120 lb") switches the preference precisely IN ORDER to
+  // reinterpret the number already typed, so it must survive the clear below.
+  const keepLoadThroughUnitChange = useRef(false);
   useEffect(() => {
     if (prevEntryUnit.current === entryUnit) return;
     prevEntryUnit.current = entryUnit;
+    if (keepLoadThroughUnitChange.current) {
+      keepLoadThroughUnitChange.current = false;
+      return; // the typed number IS the corrected value — keep it
+    }
     setLoad(0);
     setDropLoad("");
   }, [entryUnit]);
@@ -954,25 +977,13 @@ export function StrengthCard({
             <div className={styles.entryGrid} style={{ marginTop: 8 }}>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>
-                  {unitPinned ? (
-                    // Stating a fact about the machine — not a control. Tapping
-                    // it must not offer to change what the stack is stamped in.
-                    <span
-                      className={styles.unitPinned}
-                      title={`This machine's stack is marked in ${entryUnit} — the weight box matches the markings you're reading. Storage stays lb.`}
-                    >
-                      {ex.loadType === "bodyweight" ? `added ${entryUnit}` : entryUnit} · marked
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.unitToggle}
-                      onClick={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
-                      title="Switch entry/display unit — storage stays lb"
-                    >
-                      {ex.loadType === "bodyweight" ? `added ${entryUnit}` : entryUnit}
-                    </button>
-                  )}
+                  <EntryUnitLabel
+                    unit={entryUnit}
+                    canonicalUnit="lb"
+                    pinned={unitPinned}
+                    label={ex.loadType === "bodyweight" ? "added" : undefined}
+                    onSwitch={() => { toggleWeightUnit(); setLoad(0); setDropLoad(""); }}
+                  />
                 </span>
                 <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
               </label>
@@ -995,6 +1006,29 @@ export function StrengthCard({
                     {s === "left" ? "L" : s === "right" ? "R" : "Alternating"}
                   </button>
                 ))}
+              </div>
+            )}
+            {slip && !slipDismissed && (
+              <div className={styles.slipWarn}>
+                <span>
+                  You entered <strong>{slip.typed} {slip.entryUnit}</strong> = {Math.round(slip.canonical)} lb. Recent{" "}
+                  {activeExercise.name} is ~{slip.typical} lb. Did you mean {slip.typed} lb?
+                </span>
+                <span className={styles.slipWarnActions}>
+                  <button
+                    type="button"
+                    className={styles.unitConfirmYes}
+                    // Switching the preference IS the fix: being in the wrong
+                    // mode is the fault, and the number typed is already right.
+                    title="Switches entry back to lb and keeps the number you typed"
+                    onClick={() => { keepLoadThroughUnitChange.current = true; toggleWeightUnit(); setSlipDismissed(true); }}
+                  >
+                    Use {slip.typed} lb
+                  </button>
+                  <button type="button" className={styles.unitConfirmNo} onClick={() => setSlipDismissed(true)}>
+                    Log {Math.round(slip.canonical)} lb
+                  </button>
+                </span>
               </div>
             )}
             <button type="submit" className={styles.logBtn} style={{ marginTop: 8 }}>Log set</button>

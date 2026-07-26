@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import styles from "./session.module.css";
+import { EntryUnitLabel } from "./EntryUnitLabel";
 import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { logCardio, editCardio, deleteCardio, type SessionCardio } from "@/lib/sessionStore";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
@@ -390,7 +391,7 @@ export function CardioCard({
                       return (
                         <label key={f} className={styles.cell}>
                           <span className={styles.cellLabel}>
-                            <button type="button" className={styles.unitToggle} onClick={toggleWUnit} title="Switch entry unit — stores lb">{wUnit}</button>
+                            <EntryUnitLabel unit={wUnit} canonicalUnit="lb" onSwitch={toggleWUnit} />
                           </span>
                           <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
                         </label>
@@ -400,7 +401,7 @@ export function CardioCard({
                       return (
                         <label key={f} className={styles.cell}>
                           <span className={styles.cellLabel}>
-                            <button type="button" className={styles.unitToggle} onClick={toggleDUnit} title="Switch entry unit — stores mi">{dUnit}</button>
+                            <EntryUnitLabel unit={dUnit} canonicalUnit="mi" onSwitch={toggleDUnit} />
                           </span>
                           <input type="number" className={styles.cellInput} value={distance} onChange={(e) => setDistance(e.target.value)} />
                         </label>
