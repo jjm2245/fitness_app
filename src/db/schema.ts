@@ -210,17 +210,23 @@ export const equipment = pgTable("equipment", {
   brand: text("brand"),
   model: text("model"),
   // Additive built-in weight (bar, fixed handles, loaded carriage) auto-applied
-  // to a set's effective load: load = entered + built_in_weight. Distinct from
-  // counterweight_lb (which REDUCES effective load and stays descriptive).
+  // to a set's effective load: load = entered + built_in_weight. An ASSIST is
+  // expressed as a NEGATIVE value here rather than a separate counterweight
+  // column — same additive math, one field the engine already reads.
   // Null = UNKNOWN (plate-loaded prompts per unit) — never invent precision.
   builtInWeight: numeric("built_in_weight"),
   equipmentType: text("equipment_type"), // cable | selectorized | smith | plate_loaded | …
+  // ── Stack geometry: what loads are SELECTABLE on this unit. These describe
+  // the machine's grid and drive suggestions; none of them is ever folded into
+  // a stored load (unlike built_in_weight, which is).
+  plateIncrement: numeric("plate_increment"), // stack plate size, e.g. 10
+  addOnWeight: numeric("add_on_weight"), // micro-adjust lever, e.g. 5 → 10/15/20/25
+  stackMax: numeric("stack_max"), // top of the stack, e.g. 240
   // Structured, NEVER folded into logged loads: a multiplicative ratio cancels
   // out of every lane-scoped comparison (an additive offset doesn't — that's
   // why offsets ARE in the number). Interpretation for the future agent only.
+  // Meaningful on CABLE units; the form hides it elsewhere.
   pulleyRatioKind: text("pulley_ratio_kind").default("unknown"), // 1:1 | 2:1 | other | unknown
-  counterweightLb: numeric("counterweight_lb"), // Smith bar ~15-20 lb at PF
-  camProfile: text("cam_profile"),
   notes: text("notes"), // free-text description: serials, links, quirks
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
