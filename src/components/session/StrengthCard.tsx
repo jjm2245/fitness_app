@@ -133,7 +133,8 @@ export function StrengthCard({
   // selected everything here is the identity, so the card is byte-identical to
   // its pre-unit-layer behavior.
   const [wUnit, toggleWeightUnit] = useWeightUnit();
-  const w = (n: number | string) => (wUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
+  // Declared after entryUnit resolves (below) — every weight this card shows for
+  // THIS machine renders in the machine's markings when it records them.
   const [load, setLoad] = useState(() =>
     ex.loadType === "bodyweight" ? 0 : getEntryUnit("weight") === "kg" ? lbToKg(45) : 45
   );
@@ -238,6 +239,7 @@ export function StrengthCard({
   const stackMarking = parseStackMarking(selectedUnit?.stackUnit ?? null);
   const entryUnit = resolveWeightUnit(stackMarking, wUnit);
   const unitPinned = stackMarking != null;
+  const w = (n: number | string) => (entryUnit === "kg" ? lbToKg(Number(n)) : displayLb(Number(n)));
   // Changing the effective entry unit re-interprets whatever is in the box, so
   // clear it — the SAME convention the manual unit toggle already uses. Guarded
   // to fire only on a genuine change, never on first resolution.
@@ -523,7 +525,7 @@ export function StrengthCard({
   async function addDrop(e: React.FormEvent) {
     e.preventDefault();
     if (!dropFor) return;
-    const l = wUnit === "kg" ? kgToLb(Number(dropLoad)) : Number(dropLoad);
+    const l = entryUnit === "kg" ? kgToLb(Number(dropLoad)) : Number(dropLoad);
     if (!Number.isFinite(l) || l < 0) return setError("Drop load can't be negative.");
     if (!Number.isFinite(dropReps) || dropReps < 1) return setError("Reps must be at least 1.");
     setError(null);
@@ -713,7 +715,7 @@ export function StrengthCard({
           <div className={styles.metaBlock}>
             <div className={styles.metaLine}>
               <span className={styles.metaLabel}>last</span>{" "}
-              {lastText != null ? displayWeights(lastText, wUnit) : <span className={styles.metaEmpty}>— no prior data</span>}
+              {lastText != null ? displayWeights(lastText, entryUnit) : <span className={styles.metaEmpty}>— no prior data</span>}
             </div>
             {targetText && (
               <div className={styles.metaLine}>
@@ -725,7 +727,7 @@ export function StrengthCard({
           {isRecal && !recalDismissed && (
             <div className={styles.chipsRow}>
               <span className={styles.chipRecal}>
-                {displayWeights(String(recalNote), wUnit)}
+                {displayWeights(String(recalNote), entryUnit)}
                 <button type="button" className={styles.chipDismiss} onClick={() => setRecalDismissed(true)} aria-label="Dismiss">✕</button>
               </span>
             </div>
@@ -796,13 +798,14 @@ export function StrengthCard({
                       canonical={offsetInput}
                       onCanonical={(v) => { setOffsetTouched(true); setOffsetInput(v); if (!offsetConfirmed) confirmOffset(Number(v) || 0); }}
                       dimension="weight"
+                      unit={entryUnit}
                       className={styles.offsetInput}
-                      placeholder={typeDef.defaultOffset == null ? "?" : wUnit}
+                      placeholder={typeDef.defaultOffset == null ? "?" : entryUnit}
                     />
                   </label>
                   {offsetRelevant && !offsetNeedsConfirm && loggedSets.length > 0 && offsetNum !== (occStoredOffset ?? 0) && (
                     <button type="button" onClick={applyOffsetToOccurrence} className={styles.applyAllChip} title="One machine, one offset: apply this built-in to every set of this exercise. Your entered numbers are kept.">
-                      apply +{offsetNum}{wUnit === "kg" ? " lb" : ""} to all {loggedSets.length} set{loggedSets.length === 1 ? "" : "s"}
+                      apply +{offsetNum}{entryUnit === "kg" ? " lb" : ""} to all {loggedSets.length} set{loggedSets.length === 1 ? "" : "s"}
                     </button>
                   )}
                   {offsetRelevant && typeDef.defaultOffset == null && offsetInput.trim() === "" && (
@@ -867,7 +870,7 @@ export function StrengthCard({
                     />
                   )}
                   <SetRow
-                    weightUnit={wUnit}
+                    weightUnit={entryUnit}
                     set={s}
                     isDrop={isDrop}
                     unilateral={activeExercise.unilateral}
@@ -882,7 +885,7 @@ export function StrengthCard({
                     <li>
                       <form onSubmit={addDrop} className={styles.dropForm}>
                         <span style={{ color: "var(--text-3)" }}>↳ drop:</span>
-                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder={wUnit} autoFocus style={{ width: 64 }} />
+                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder={entryUnit} autoFocus style={{ width: 64 }} />
                         <span>×</span>
                         <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 52 }} />
                         <button type="submit" className={styles.smallBtn}>Add drop</button>
@@ -921,7 +924,7 @@ export function StrengthCard({
                   <span>
                     {progression.signal.type}
                     {"reason" in progression.signal ? `: ${progression.signal.reason}` : ""}
-                    {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${w(progression.signal.suggestedLoad)} ${wUnit})` : ""}
+                    {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${w(progression.signal.suggestedLoad)} ${entryUnit})` : ""}
                   </span>
                   {progression.intervention && <div>Stall-buster: {progression.intervention.message}</div>}
                 </>
@@ -938,13 +941,13 @@ export function StrengthCard({
               </select>
               {effOffset !== 0 && (
                 <span className={styles.offsetMath} title="Effective load = what you set + the known built-in weight. Progression uses the total.">
-                  <strong>{w(totalLoad)} {wUnit}</strong>
+                  <strong>{w(totalLoad)} {entryUnit}</strong>
                   <span className={styles.setSuffix}> · {w(canonicalLoad)} + {w(effOffset)} built-in</span>
                 </span>
               )}
               {offsetNeedsConfirm && (
                 <button type="button" onClick={() => confirmOffset(offsetNum)} className={styles.confirmChip} title="A default offset is suggested but NOT applied until you confirm it — a wrong offset silently corrupts every set.">
-                  apply +{offsetNum}{wUnit === "kg" ? " lb" : ""} {typeDef.label.toLowerCase()}? ✓
+                  apply +{offsetNum}{entryUnit === "kg" ? " lb" : ""} {typeDef.label.toLowerCase()}? ✓
                 </button>
               )}
             </div>

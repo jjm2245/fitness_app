@@ -111,6 +111,14 @@ export function UnitFormFields({
   // bodyweight-ish units (no type set / "other") have nothing to say.
   const hasLoadedIncrement = hasWeightStack || draft.equipmentType === "plate_loaded" || draft.equipmentType === "smith";
   const showStack = hasLoadedIncrement;
+  // Built-in is scoped more GENTLY than the stack fields: it is typically only
+  // nonzero on plate-loaded and Smith, but it is genuinely possible elsewhere —
+  // a stack can have a starting resistance, and an assisted machine records its
+  // assist as a NEGATIVE built-in (the capability we relied on when dropping
+  // counterweight_lb). So it stays on every loaded type and only disappears
+  // where a per-unit carriage is meaningless: portable types, where the number
+  // you log IS the weight.
+  const showBuiltIn = hasLoadedIncrement;
   const suggestion = suggestPlateIncrement(loggedLoads);
   // §2b — show the OUTPUT of the three fields. Explaining "plate size" in words
   // is weaker than showing the grid it produces, and a wrong entry makes an
@@ -150,30 +158,38 @@ export function UnitFormFields({
       )}
 
       {/* ── 2. Load — the only field here that enters a logged number ── */}
+      {showBuiltIn && (
       <div className={styles.formGroup}>
         <span className={styles.fieldLabel}>Load</span>
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>Built-in {wUnit}</span>
+          <span className={styles.fieldLabel}>
+            Built-in {sUnit}
+            {marking != null && <span className={styles.markedTag}> · marked</span>}
+          </span>
           <UnitNumberInput
             canonical={draft.builtInWeight}
             onCanonical={(v) => onChange({ builtInWeight: v })}
             dimension="weight"
+            unit={sUnit}
             className={styles.fieldInput}
             placeholder="unknown"
           />
         </label>
         <span className={styles.fieldNote}>
-          Added to every load you log on this unit (bar, handles, carriage). Leave blank if you don&rsquo;t know it —
-          blank means unknown, not zero. An assist goes in as a negative number.
+          {hasWeightStack
+            ? "Usually 0 — set it only if this machine has a starting resistance. An assisted machine records its assist as a negative number."
+            : "The weight of the empty carriage or bar, added to every load you log here."}{" "}
+          Leave blank if you don&rsquo;t know it — blank means unknown, not zero.
         </span>
       </div>
+      )}
 
       {/* ── 3. Stack — what the machine can SELECT. None of this enters a load. ── */}
       {showStack && (
       <div className={styles.formGroup}>
         <span className={styles.fieldLabel}>{hasWeightStack ? "Stack" : "Plates"}</span>
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>Marked in</span>
+          <span className={styles.fieldLabel}>Weights marked in</span>
           <select
             className={styles.fieldInput}
             value={marking ?? ""}
@@ -184,9 +200,9 @@ export function UnitFormFields({
             <option value="kg">kg</option>
           </select>
           <span className={styles.fieldNote}>
-            How this machine&rsquo;s plates are stamped. Recording it states a fact about the machine, so it overrides
-            your display preference below — and, when you log on this unit, pins the weight box to the markings you&rsquo;re
-            reading off the stack. Left unrecorded, your display preference governs as usual.
+            How this machine&rsquo;s weights are marked — its plates, and its carriage or starting resistance. Recording
+            it states a fact about the machine, so it governs every weight on this unit and pins the weight box when you
+            log here, matching the markings you&rsquo;re reading. Left unrecorded, your display preference governs as usual.
           </span>
         </label>
         <div className={styles.fieldRow} style={{ marginTop: 8 }}>

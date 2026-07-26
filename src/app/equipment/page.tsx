@@ -5,6 +5,7 @@ import styles from "@/components/editors/editors.module.css";
 import { EquipmentSheet, type EquipmentUnit } from "@/components/editors/EquipmentSheet";
 import { api } from "@/components/editors/types";
 import { lbToKg } from "@/lib/units";
+import { parseStackMarking, resolveWeightUnit } from "@/lib/stack";
 import { useWeightUnit } from "@/lib/useUnit";
 
 type SortId = "az" | "za" | "logged" | "recent";
@@ -189,9 +190,14 @@ export default function EquipmentPage() {
                 <span className={styles.rowName}>
                   <span className={styles.rowNameText}>{m.label}</span>
                   {m.equipmentType && <span className={styles.badge}>{m.equipmentType}</span>}
-                  {m.builtInWeight != null && Number(m.builtInWeight) !== 0 && (
-                    <span className={styles.badge}>+{wUnit === "kg" ? `${lbToKg(Number(m.builtInWeight))} kg` : `${Number(m.builtInWeight)} lb`} built-in</span>
-                  )}
+                  {m.builtInWeight != null && Number(m.builtInWeight) !== 0 && (() => {
+                    // A machine that records its markings is read in them —
+                    // otherwise the list would show one number in the unit the
+                    // form doesn't use.
+                    const u = resolveWeightUnit(parseStackMarking(m.stackUnit), wUnit);
+                    const v = u === "kg" ? lbToKg(Number(m.builtInWeight)) : Number(m.builtInWeight);
+                    return <span className={styles.badge}>+{v} {u} built-in</span>;
+                  })()}
                   {m.pulleyRatioKind !== "unknown" && <span className={styles.badge}>pulley {m.pulleyRatioKind}</span>}
                 </span>
                 <span className={styles.rowSub}>

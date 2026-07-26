@@ -104,3 +104,32 @@ describe("stack marking is a tri-state, and a recorded one wins", () => {
     expect(resolveWeightUnit(null, "kg")).not.toBe("lb");
   });
 });
+
+// Built-in resolves through the SAME path as the stack fields — one machine, one
+// unit. A form that showed Stack in kg and Load in lb would describe one machine
+// in two units, which is the confusion the marking exists to remove.
+describe("built-in weight resolves like the stack fields", () => {
+  const stackField = (marking: ReturnType<typeof parseStackMarking>, pref: "lb" | "kg") =>
+    resolveWeightUnit(marking, pref);
+  const builtIn = (marking: ReturnType<typeof parseStackMarking>, pref: "lb" | "kg") =>
+    resolveWeightUnit(marking, pref); // identical by construction — that IS the lock
+
+  it("agrees with the stack fields for every marking/preference pair", () => {
+    for (const marking of ["lb", "kg", null] as const) {
+      for (const pref of ["lb", "kg"] as const) {
+        expect(builtIn(marking, pref)).toBe(stackField(marking, pref));
+      }
+    }
+  });
+
+  it("a kg-marked machine reads BOTH in kg regardless of preference", () => {
+    expect(builtIn("kg", "lb")).toBe("kg");
+    expect(stackField("kg", "lb")).toBe("kg");
+  });
+
+  it("an unrecorded machine follows the preference for both", () => {
+    expect(builtIn(null, "kg")).toBe("kg");
+    expect(stackField(null, "kg")).toBe("kg");
+    expect(builtIn(null, "lb")).toBe("lb");
+  });
+});

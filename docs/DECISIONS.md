@@ -3912,3 +3912,74 @@ resolution path writes.
 
 The **Type** placeholder is deliberately left selectable — blank is a legitimate
 state there, and disabling it would remove the ability to clear a type.
+
+---
+
+## One machine, one unit — the marking governs every weight on it
+
+`built_in_weight` now resolves through the same `resolveWeightUnit(marking,
+preference)` path as the stack fields. Previously the Stack group honoured a
+machine's marking while Built-in followed the global preference, so a kg-marked
+machine rendered **two units on one form describing one machine** — precisely
+the mixed-unit confusion the marking exists to remove. A carriage weight is
+known in whatever unit the placard or spec sheet uses, which is the unit the
+stack is stamped in.
+
+Recorded `'lb'`/`'kg'` wins; NULL (not recorded) falls back to the preference,
+unchanged. Storage stays canonical lb — entry and display only.
+
+### Derived surfaces swept, not just the form
+
+The rule is worth nothing if the numbers it produces are rendered elsewhere in a
+different unit, so every weight the card shows for the selected machine now uses
+the resolved unit: the logged-row breakdown (`74.9 kg × 8 · 49.9 + 25
+built-in`), the "last" reference line, the recalibration note, the total-load
+preview, the progression suggestion, the drop-set entry, the per-set built-in
+offset input, and the apply-to-all chips. The equipment list's built-in badge
+resolves **per row**, so a kg-marked machine reads `+25 kg` in a list where its
+neighbours read lb.
+
+**This needed no state-machine changes.** Every one of those was a display or
+entry-boundary usage of `wUnit`; swapping them to the derived `entryUnit` left
+lanes, offsets, timer, drop groups and swap untouched.
+
+### Framing
+
+The setting governs every weight on the unit, so it is no longer "the stack
+unit" in the UI — it reads **"Weights marked in"**, and its hint says it covers
+the plates *and* the carriage or starting resistance. **The column name stays
+`stack_unit`**: a rename would cost a migration and a coordinated
+expand/contract deploy to change nothing but a string, which is not free.
+
+### Built-in scoped by type — gently
+
+Built-in is nonzero only on plate-loaded and Smith across all 18 prod units, but
+it is genuinely possible elsewhere, so it is scoped more loosely than the stack
+fields:
+
+- **Visible** on every loaded type — plate_loaded, smith, selectorized, cable.
+  It is deliberately NOT hidden on selectorized: some stacks have a starting
+  resistance, and an **assisted machine records its assist as a negative
+  built-in** — the capability we relied on when dropping `counterweight_lb`.
+  Hiding it there would quietly remove the replacement for a column we deleted.
+- **Hidden** on portable types (bodyweight, dumbbell, free weight), where the
+  number you log IS the weight and a per-unit carriage is meaningless.
+- Hidden values are hidden, never cleared — same rule as pulley and the stack
+  fields. Proven: a portable unit carrying a stored built-in of 33 was saved
+  with the field hidden and kept its 33.
+
+The hint is type-aware, because the field means different things: on
+plate-loaded/Smith it is *the weight of the empty carriage or bar*; on
+selectorized/cable it is *usually 0 — set it only if this machine has a starting
+resistance*, with the assist framed as a negative value.
+
+### Proof
+
+With the global preference on **lb**, a kg-marked plate-loaded machine rendered
+Built-in and Plate size **both in kg** (`25` / `20` from stored `55.12` / `44.09`
+lb) with a muted `· marked` tag; its list badge read `+25 KG BUILT-IN` while
+neighbours read lb; and its session card read `last 74.9 kg × 8`, `74.9 kg × 8 ·
+49.9 + 25 built-in`, `KG · MARKED`. Three unmarked cards in the same session
+still read `lb` / `added lb`. The equipment checksum was byte-identical across
+every sheet open, preference flip and save (`aa8a7a25…`) — no resolution path
+writes.

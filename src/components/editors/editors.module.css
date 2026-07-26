@@ -934,3 +934,11 @@
   color: var(--text-3);
   margin-top: 10px;
 }
+
+/* A machine that RECORDS its markings states a fact, so the tag is muted label
+   text — never the accent-coloured affordance used for a real choice. */
+.markedTag {
+  color: var(--text-3);
+  text-transform: none;
+  letter-spacing: 0;
+}
