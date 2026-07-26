@@ -3741,3 +3741,95 @@ sets (one `cable`, one NULL) onto a selectorized unit **while deliberately
 sending `"equipmentType":"selectorized"` in the body** returned 200 and left both
 types untouched (`cable` stayed `cable`, NULL stayed NULL) with only
 `equipment_id` moved.
+
+---
+
+## Equipment P4 — stack geometry, gym as a dropdown, dead columns dropped
+
+### Migration 0028 (written by hand)
+
+`drizzle-kit generate` needs a TTY to resolve a drop+add as "is this a rename?",
+so the SQL is hand-written — the safer choice for a destructive drop anyway,
+since the intent is explicit rather than inferred.
+
+**Added** (nullable, canonical lb, no backfill): `plate_increment`,
+`add_on_weight`, `stack_max`. **Dropped**: `counterweight_lb`, `cam_profile` —
+both declared in `schema.ts`, referenced by no read, no write and no UI, and
+NULL on every prod row (re-verified immediately before the gate).
+
+An **assist is now expressed as a negative `built_in_weight`** rather than a
+separate counterweight column: same additive math, one field the engine already
+reads, no second concept to keep in sync.
+
+### The Load / Stack split is the point
+
+`built_in_weight` is the ONE unit field that enters a logged number. The three
+new fields describe what the machine can **select** and never enter a load.
+Putting them in one "load math" group invited exactly the error that would hurt
+most — typing the plate size into the field that gets added to every set. They
+are now separate groups with the distinction stated in each hint.
+
+### Pulley is scoped to cables
+
+It renders only for `equipment_type = "cable"`. On a lever machine a pulley
+ratio isn't a capability being withheld, it's a category error. Stored values on
+non-cable units are left untouched — hidden, not cleared, since deleting data to
+match a display rule would be the tail wagging the dog.
+
+### Plate-increment suggestion: a lower bound, offered not applied
+
+With >=3 distinct logged loads, the form offers the **GCD** of them. The GCD is a
+lower bound on the true plate size, not a measurement: loads of 100/150 give 50,
+correct as a divisor and wrong as a plate. A 10 lb stack with a 5 lb add-on
+correctly yields 5 — the finest real step. It stays a one-tap suggestion the user
+accepts or overrides, and it is stated in the ACTIVE unit (a "10 lb" hint beside
+kg fields reads as a contradiction). Silent below 3 distinct loads, on
+fractional loads, or when the GCD collapses to 1.
+
+### Gym is a dropdown (no schema)
+
+Free text is why one gym became "Monroe PF" x17 and "MonroePF" x2 — and a
+hand-created unit reintroduced the split AFTER the owner normalised it, which is
+the proof it is a UI problem, not a data problem. The field is now a dropdown of
+existing distinct values plus "Add new gym..." (free text, for genuinely new
+gyms), in BOTH surfaces via the shared form. Still the same text column: no
+normalisation table, no schema change. A unit whose stored gym is not in the
+known list opens in free-text mode so nothing is silently coerced to a
+neighbouring spelling.
+
+**Multi-gym per unit stays out of scope**: a unit is one physical machine, and
+letting it span gyms would merge two machines into one lane.
+
+## The snapshot asymmetry, stated deliberately
+
+Three unit-adjacent facts behave differently on purpose. The rule is **what kind
+of claim the field makes**, not which table it lives in:
+
+| field | behaviour | why |
+|---|---|---|
+| `set_logs.equipment_type` | **snapshotted** — a unit's type change never alters past sets | It records what the set was PERFORMED on. A set logged on a cable machine was logged on a cable machine, whatever the unit is reclassified as later. |
+| `label` / `gym` / `brand` | **read live** — renames show retroactively everywhere | They name a thing that still exists. No "what it was called then" claim is being made; a rename fixes the name, not the history. |
+| `built_in_weight` | **corrects backward, on explicit confirmation** | The carriage has always weighed what it weighs. A wrong value is a RECORDING ERROR, and every affected row was always the corrected number. Fixing it is fixing a measurement, not rewriting history. |
+
+This is why the forward-only rule for field configs does NOT extend here: there,
+the shape of what was logged genuinely changed; here, the machine did not.
+
+## §4 retroactive built-in correction — DEFERRED, not built
+
+Scoped honestly and stopped, per the round's own instruction to ship §1-§3
+rather than half-verify a history rewrite. What it needs that is not built: a
+preview endpoint (affected count, date range, before->after loads), a
+transactional confirm, the separately-defaulted-off NULL-offset option, the
+progression-baseline warning, cancel-writes-nothing proof, and arithmetic locks.
+
+**Prod scope when it is built** (read-only, at deferral): 21 offset-bearing rows
+across three units — 24res 9 (07-14 -> 07-25), VPL-SMBP 6, HackSquatMonroePF 6.
+ZERO rows on a built-in-bearing unit lack an offset, so the NULL-offset opt-in
+would currently affect nothing.
+
+**A live case already exists:** 24res's 07-14 rows carry `builtin_offset = 25`
+while the unit records `built_in_weight = 24` — the orphan attribution (P3)
+moved those rows onto the unit, and they kept the offset applied at log time.
+That is precisely the disagreement §4 resolves.
+
+`cardio_logs` has no `equipment_id` and is out of scope by construction.

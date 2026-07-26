@@ -1,12 +1,12 @@
 {
   "migrations": {
-    "count": 28,
-    "latest": "0027_cool_epoch",
-    "expected": 28
+    "count": 29,
+    "latest": "0028_equipment_stack_fields",
+    "expected": 29
   },
   "tests": {
-    "files": 17,
-    "cases": 208
+    "files": 18,
+    "cases": 212
   },
   "tables": 19,
   "routes": 36
