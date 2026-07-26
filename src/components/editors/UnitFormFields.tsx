@@ -84,9 +84,22 @@ export function UnitFormFields({
   const [gymFreeText, setGymFreeText] = useState(
     () => draft.gym !== "" && !knownGyms.includes(draft.gym)
   );
-  // Cables are the only type where the pulley ratio means anything; on a lever
-  // machine it isn't a capability being withheld, it's a category error.
+  // ── Type scoping. Same rule throughout: a field appears where it MEANS
+  // something. Hidden values are hidden, never cleared — dropping stored data
+  // to match a display rule would be the tail wagging the dog.
+  //
+  // Pulley: cables only. On a lever machine a ratio isn't a withheld
+  // capability, it's a category error.
   const showPulley = draft.equipmentType === "cable";
+  // Add-on and max are WEIGHT-STACK concepts — a selector pin has a lever and a
+  // ceiling. On plate-loaded and Smith you hang plates: there is no lever to
+  // add, and no stack to run out of.
+  const hasWeightStack = draft.equipmentType === "selectorized" || draft.equipmentType === "cable";
+  // Plate increment survives on every loaded type: on a stack it's the plate
+  // size, on plate-loaded or Smith it's the smallest plate you can add. Only
+  // bodyweight-ish units (no type set / "other") have nothing to say.
+  const hasLoadedIncrement = hasWeightStack || draft.equipmentType === "plate_loaded" || draft.equipmentType === "smith";
+  const showStack = hasLoadedIncrement;
   const suggestion = suggestPlateIncrement(loggedLoads);
 
   return (
@@ -133,8 +146,9 @@ export function UnitFormFields({
       </div>
 
       {/* ── 3. Stack — what the machine can SELECT. None of this enters a load. ── */}
+      {showStack && (
       <div className={styles.formGroup}>
-        <span className={styles.fieldLabel}>Stack</span>
+        <span className={styles.fieldLabel}>{hasWeightStack ? "Stack" : "Plates"}</span>
         <div className={styles.fieldRow}>
           <label className={styles.fieldHalf}>
             <span className={styles.fieldLabel}>Plate {wUnit}</span>
@@ -146,26 +160,30 @@ export function UnitFormFields({
               placeholder="—"
             />
           </label>
-          <label className={styles.fieldHalf}>
-            <span className={styles.fieldLabel}>Add-on {wUnit}</span>
-            <UnitNumberInput
-              canonical={draft.addOnWeight}
-              onCanonical={(v) => onChange({ addOnWeight: v })}
-              dimension="weight"
-              className={styles.fieldInput}
-              placeholder="—"
-            />
-          </label>
-          <label className={styles.fieldHalf}>
-            <span className={styles.fieldLabel}>Max {wUnit}</span>
-            <UnitNumberInput
-              canonical={draft.stackMax}
-              onCanonical={(v) => onChange({ stackMax: v })}
-              dimension="weight"
-              className={styles.fieldInput}
-              placeholder="—"
-            />
-          </label>
+          {hasWeightStack && (
+            <>
+              <label className={styles.fieldHalf}>
+                <span className={styles.fieldLabel}>Add-on {wUnit}</span>
+                <UnitNumberInput
+                  canonical={draft.addOnWeight}
+                  onCanonical={(v) => onChange({ addOnWeight: v })}
+                  dimension="weight"
+                  className={styles.fieldInput}
+                  placeholder="—"
+                />
+              </label>
+              <label className={styles.fieldHalf}>
+                <span className={styles.fieldLabel}>Max {wUnit}</span>
+                <UnitNumberInput
+                  canonical={draft.stackMax}
+                  onCanonical={(v) => onChange({ stackMax: v })}
+                  dimension="weight"
+                  className={styles.fieldInput}
+                  placeholder="—"
+                />
+              </label>
+            </>
+          )}
         </div>
         {/* A lower bound derived from real logs — offered, never applied. */}
         {suggestion != null && (
@@ -190,9 +208,12 @@ export function UnitFormFields({
           </label>
         )}
         <span className={styles.fieldNote}>
-          What loads this machine can select. These drive suggestions only — they never change a stored load.
+          {hasWeightStack
+            ? "What loads this machine can select. These drive suggestions only — they never change a stored load."
+            : "The smallest plate you can add here. Drives suggestions only — it never changes a stored load."}
         </span>
       </div>
+      )}
 
       {/* ── 4. Where it is ── */}
       <div className={styles.formGroup}>

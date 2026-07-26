@@ -1,8 +1,8 @@
 {
   "migrations": {
-    "count": 29,
-    "latest": "0028_equipment_stack_fields",
-    "expected": 29
+    "count": 30,
+    "latest": "0029_drop_dead_equipment_columns",
+    "expected": 30
   },
   "tests": {
     "files": 18,
