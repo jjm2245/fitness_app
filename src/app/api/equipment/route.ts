@@ -6,6 +6,11 @@ import { equipment, exerciseEquipment, exercises, setLogs, workoutLogs } from "@
 // GET /api/equipment — the full managed machine list (Machines section, Part 3b):
 // structured fields + free-text notes, which exercises reference each machine,
 // and how many logged sets point at it (drives history-safe delete/merge).
+function parsePgNumArray(v: unknown): number[] {
+  const raw = Array.isArray(v) ? v : typeof v === "string" ? v.replace(/^\{|\}$/g, "").split(",") : [];
+  return raw.map(Number).filter((n) => Number.isFinite(n));
+}
+
 export async function GET() {
   const rows = await db.select().from(equipment).orderBy(equipment.label);
 
@@ -15,11 +20,16 @@ export async function GET() {
     .innerJoin(exercises, eq(exerciseEquipment.exerciseId, exercises.id));
   // loggedCount + the most recent date this unit was used — the latter feeds
   // the "Recently used" sort. Read-only aggregate; no schema.
+  // array_agg arrives as a Postgres array LITERAL ("{140,150,160}") through this
+  // driver path, not a JS array — accept either shape rather than assume one.
   const used = await db
     .select({
       equipmentId: setLogs.equipmentId,
       n: sql<number>`count(*)`.mapWith(Number),
       lastUsed: sql<string | null>`max(${workoutLogs.date})`,
+      // Distinct logged loads — the input to the plate-increment suggestion.
+      // Free here: this aggregate already scans the same grouped rows.
+      loads: sql<number[]>`array_agg(distinct ${setLogs.load}::numeric)`,
     })
     .from(setLogs)
     .innerJoin(workoutLogs, eq(setLogs.workoutLogId, workoutLogs.id))
@@ -29,7 +39,12 @@ export async function GET() {
   for (const r of refs) (refsBy.get(r.equipmentId) ?? refsBy.set(r.equipmentId, []).get(r.equipmentId)!).push({ exerciseId: r.exerciseId, name: r.name });
   const usedBy = new Map<string, number>();
   const lastBy = new Map<string, string | null>();
-  for (const u of used) if (u.equipmentId) { usedBy.set(u.equipmentId, u.n); lastBy.set(u.equipmentId, u.lastUsed); }
+  const loadsBy = new Map<string, number[]>();
+  for (const u of used) if (u.equipmentId) {
+    usedBy.set(u.equipmentId, u.n);
+    lastBy.set(u.equipmentId, u.lastUsed);
+    loadsBy.set(u.equipmentId, parsePgNumArray(u.loads));
+  }
 
   return NextResponse.json(
     rows.map((m) => ({
@@ -41,10 +56,14 @@ export async function GET() {
       builtInWeight: m.builtInWeight,
       equipmentType: m.equipmentType,
       pulleyRatioKind: m.pulleyRatioKind ?? "unknown",
+      plateIncrement: m.plateIncrement,
+      addOnWeight: m.addOnWeight,
+      stackMax: m.stackMax,
       notes: m.notes,
       exercises: refsBy.get(m.id) ?? [],
       loggedCount: usedBy.get(m.id) ?? 0,
       lastUsed: lastBy.get(m.id) ?? null,
+      loggedLoads: loadsBy.get(m.id) ?? [],
     }))
   );
 }

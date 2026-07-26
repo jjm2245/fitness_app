@@ -22,6 +22,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     equipmentType?: string | null;
     notes?: string | null;
     pulleyRatioKind?: string;
+    plateIncrement?: string | null;
+    addOnWeight?: string | null;
+    stackMax?: string | null;
   } = {};
 
   const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -53,6 +56,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (body.builtInWeight === null || body.builtInWeight === "") updates.builtInWeight = null;
     else if (typeof body.builtInWeight === "number" && Number.isFinite(body.builtInWeight)) updates.builtInWeight = body.builtInWeight.toString();
     else return NextResponse.json({ error: "builtInWeight must be a number" }, { status: 400 });
+  }
+
+  // Stack geometry — nullable numerics; "" and null both clear. These describe
+  // what the machine can SELECT and never enter a stored load.
+  for (const k of ["plateIncrement", "addOnWeight", "stackMax"] as const) {
+    if (body?.[k] === undefined) continue;
+    const v = body[k];
+    if (v === null || v === "") updates[k] = null;
+    else if (typeof v === "number" && Number.isFinite(v)) updates[k] = v.toString();
+    else return NextResponse.json({ error: `${k} must be a number` }, { status: 400 });
   }
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

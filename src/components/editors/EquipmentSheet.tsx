@@ -148,10 +148,14 @@ export interface EquipmentUnit {
   builtInWeight: string | null;
   equipmentType: string | null;
   pulleyRatioKind: string;
+  plateIncrement: string | null;
+  addOnWeight: string | null;
+  stackMax: string | null;
   notes: string | null;
   exercises: Array<{ exerciseId: string; name: string }>;
   loggedCount: number;
   lastUsed?: string | null; // most recent session date this unit was logged on
+  loggedLoads?: number[]; // distinct loads on this unit — the increment hint
 }
 
 export { EQUIPMENT_UNIT_TYPES };
@@ -166,6 +170,9 @@ function toDraft(m?: EquipmentUnit): UnitDraft {
     builtInWeight: m?.builtInWeight != null ? String(Number(m.builtInWeight)) : "",
     equipmentType: m?.equipmentType ?? "",
     pulleyRatioKind: m?.pulleyRatioKind ?? "unknown",
+    plateIncrement: m?.plateIncrement != null ? String(Number(m.plateIncrement)) : "",
+    addOnWeight: m?.addOnWeight != null ? String(Number(m.addOnWeight)) : "",
+    stackMax: m?.stackMax != null ? String(Number(m.stackMax)) : "",
     notes: m?.notes ?? "",
   });
 }
@@ -187,6 +194,13 @@ export function EquipmentSheet({
   onClose: () => void;
 }) {
   const isNew = unit == null;
+  // Gyms already in use — the dropdown's options, so a typo can't mint a
+  // spelling variant of a gym that already exists.
+  const knownGyms = useMemo(
+    () => [...new Set(allUnits.map((u) => u.gym).filter((g): g is string => !!g && g.trim() !== ""))].sort(),
+    [allUnits]
+  );
+  const loggedLoads = unit?.loggedLoads ?? [];
   const [d, setD] = useState<UnitDraft>(toDraft(unit ?? undefined));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ message: string; existingId?: string } | null>(null);
@@ -204,6 +218,9 @@ export function EquipmentSheet({
     pulleyRatioKind: d.pulleyRatioKind,
     notes: d.notes,
     builtInWeight: d.builtInWeight.trim() === "" ? null : Number(d.builtInWeight),
+    plateIncrement: d.plateIncrement.trim() === "" ? null : Number(d.plateIncrement),
+    addOnWeight: d.addOnWeight.trim() === "" ? null : Number(d.addOnWeight),
+    stackMax: d.stackMax.trim() === "" ? null : Number(d.stackMax),
   };
 
   async function save() {
@@ -310,7 +327,14 @@ export function EquipmentSheet({
       subtitle={!isNew && unit!.loggedCount > 0 ? `${unit!.loggedCount} logged set${unit!.loggedCount === 1 ? "" : "s"} reference this unit` : undefined}
       onClose={onClose}
     >
-      <UnitFormFields draft={d} onChange={set} showType autoFocusLabel={isNew} />
+      <UnitFormFields
+        draft={d}
+        onChange={set}
+        showType
+        autoFocusLabel={isNew}
+        knownGyms={knownGyms}
+        loggedLoads={loggedLoads}
+      />
 
       {err && (
         <div className={styles.warnBox} style={{ marginTop: 10 }}>

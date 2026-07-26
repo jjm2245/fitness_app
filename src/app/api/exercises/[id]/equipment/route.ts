@@ -52,6 +52,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const equipmentId = typeof body?.id === "string" && body.id.trim() !== "" ? body.id.trim() : label;
   const notes = typeof body?.notes === "string" && body.notes.trim() !== "" ? body.notes.trim() : null;
   const str = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v.toString() : null);
 
   await db
     .insert(equipment)
@@ -65,6 +66,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       model: str(body?.model),
       builtInWeight: typeof body?.builtInWeight === "number" && Number.isFinite(body.builtInWeight) ? body.builtInWeight.toString() : null,
       pulleyRatioKind: ["1:1", "2:1", "other", "unknown"].includes(body?.pulleyRatioKind) ? body.pulleyRatioKind : "unknown",
+      plateIncrement: num(body?.plateIncrement),
+      addOnWeight: num(body?.addOnWeight),
+      stackMax: num(body?.stackMax),
     })
     .onConflictDoNothing();
   await db.insert(exerciseEquipment).values({ exerciseId: id, equipmentId }).onConflictDoNothing();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import styles from "./session.module.css";
 import { Sheet } from "./Sheet";
 import { EQUIPMENT_TYPE_BY_ID, type EquipmentTypeId } from "@/lib/equipment";
@@ -33,6 +33,13 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
   const [d, setD] = useState<UnitDraft>(() => emptyUnitDraft({ equipmentType: presetType }));
   const set = (patch: Partial<UnitDraft>) => setD((cur) => ({ ...cur, ...patch }));
   const label = d.label, gym = d.gym, brand = d.brand, offset = d.builtInWeight, ratio = d.pulleyRatioKind, notes = d.notes;
+  // Gym options come from the units this session already knows about — the same
+  // dropdown contract as the equipment sheet, so neither surface can mint a
+  // spelling variant of a gym that already exists.
+  const knownGyms = useMemo(
+    () => [...new Set(existingUnits.map((u) => u.gym).filter((g): g is string => !!g && g.trim() !== ""))].sort(),
+    [existingUnits]
+  );
   const [busy, setBusy] = useState(false);
   // Dedupe (2.12): a match on label + type + gym (case-insensitive label; gym
   // is part of identity — the same label at two gyms is two machines). We
@@ -68,6 +75,9 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
                 id, label: label.trim(), equipmentType: presetType, gym: gym.trim() || null, brand: brand.trim() || null,
                 model: d.model.trim() || null,
                 builtInWeight: offset.trim() !== "" ? Number(offset) : null, pulleyRatioKind: ratio, notes: notes.trim() || null,
+                plateIncrement: d.plateIncrement.trim() !== "" ? Number(d.plateIncrement) : null,
+                addOnWeight: d.addOnWeight.trim() !== "" ? Number(d.addOnWeight) : null,
+                stackMax: d.stackMax.trim() !== "" ? Number(d.stackMax) : null,
               }
         ),
       });
@@ -90,7 +100,13 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
 
   return (
     <Sheet title={`New ${typeDef?.label.toLowerCase()} unit`} onClose={onClose}>
-      <UnitFormFields draft={d} onChange={set} showType={false} autoFocusLabel />
+      <UnitFormFields
+        draft={d}
+        onChange={set}
+        showType={false}
+        autoFocusLabel
+        knownGyms={knownGyms}
+      />
 
       {dupe ? (
         <div className={styles.warnBox} style={{ marginTop: 4 }}>
