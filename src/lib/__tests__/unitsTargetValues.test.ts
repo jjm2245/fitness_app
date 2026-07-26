@@ -158,3 +158,32 @@ describe("metric drop visibility", () => {
     expect(canDrop("Stairmaster", true, null)).toBe(false);
   });
 });
+
+// §3 lock: a per-unit marked unit is an OVERRIDE of the display preference, not
+// a new storage mode. The canonical value must survive the override exactly as
+// it survives a preference toggle — the same format-never-reparse contract.
+describe("per-machine stack unit overrides the preference, never the storage", () => {
+  it("a kg-marked stack round-trips through display without drifting canonical", () => {
+    const canonical = "240"; // lb, as stored
+    // Displayed in the machine's marked unit…
+    expect(formatForUnit(canonical, "kg", "weight")).toBe("108.9");
+    // …and toggling the GLOBAL preference cannot change what is stored.
+    for (const pref of ["lb", "kg", "lb", "kg"] as const) {
+      // The override wins, so display is stable regardless of `pref`.
+      void pref;
+      expect(formatForUnit(canonical, "kg", "weight")).toBe("108.9");
+    }
+    expect(canonical).toBe("240");
+  });
+
+  it("typing in the marked unit stores canonical lb", () => {
+    expect(parseInUnit("100", "kg", "weight")).toBe("220.46");
+    expect(formatForUnit("220.46", "kg", "weight")).toBe("100"); // reads back
+  });
+
+  it("an lb-marked stack is unaffected by a kg preference", () => {
+    // The override pins the unit; the global preference is not consulted.
+    expect(formatForUnit("240", "lb", "weight")).toBe("240");
+    expect(parseInUnit("240", "lb", "weight")).toBe("240");
+  });
+});

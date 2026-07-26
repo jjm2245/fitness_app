@@ -25,6 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     plateIncrement?: string | null;
     addOnWeight?: string | null;
     stackMax?: string | null;
+    stackUnit?: string | null;
   } = {};
 
   const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -66,6 +67,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (v === null || v === "") updates[k] = null;
     else if (typeof v === "number" && Number.isFinite(v)) updates[k] = v.toString();
     else return NextResponse.json({ error: `${k} must be a number` }, { status: 400 });
+  }
+
+  // How the machine's stack is MARKED. NULL = lb (the canonical default).
+  if (body?.stackUnit !== undefined) {
+    if (body.stackUnit === null || body.stackUnit === "" || body.stackUnit === "lb") updates.stackUnit = null;
+    else if (body.stackUnit === "kg") updates.stackUnit = "kg";
+    else return NextResponse.json({ error: "stackUnit must be lb or kg" }, { status: 400 });
   }
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

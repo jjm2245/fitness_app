@@ -27,6 +27,7 @@ export interface UnitDraft {
   plateIncrement: string;
   addOnWeight: string;
   stackMax: string;
+  stackUnit: string; // 'lb' | 'kg' — how THIS machine's stack is marked
   pulleyRatioKind: string;
   gym: string;
   brand: string;
@@ -49,6 +50,7 @@ export function emptyUnitDraft(over: Partial<UnitDraft> = {}): UnitDraft {
     plateIncrement: "",
     addOnWeight: "",
     stackMax: "",
+    stackUnit: "lb",
     pulleyRatioKind: "unknown",
     gym: "",
     brand: "",
@@ -79,6 +81,10 @@ export function UnitFormFields({
   loggedLoads?: number[];
 }) {
   const [wUnit] = useWeightUnit();
+  // The stack's markings are a property of the MACHINE — the plates are stamped
+  // in one unit — so they override the global lb/kg preference for these three
+  // fields. Storage stays canonical lb either way; this is entry/display only.
+  const sUnit: "lb" | "kg" = draft.stackUnit === "kg" ? "kg" : "lb";
   // A gym not in the known list (or a brand-new unit with none) starts in
   // free-text mode so nothing is ever silently coerced to a wrong existing gym.
   const [gymFreeText, setGymFreeText] = useState(
@@ -114,7 +120,7 @@ export function UnitFormFields({
   const grid = hasWeightStack
     ? selectableLoads(num(draft.plateIncrement), num(draft.addOnWeight), num(draft.stackMax))
     : [];
-  const gridLine = formatSelectableLoads(grid, wUnit, (lb) => formatForUnit(String(lb), wUnit, "weight"));
+  const gridLine = formatSelectableLoads(grid, sUnit, (lb) => formatForUnit(String(lb), sUnit, "weight"));
 
   return (
     <>
@@ -163,13 +169,29 @@ export function UnitFormFields({
       {showStack && (
       <div className={styles.formGroup}>
         <span className={styles.fieldLabel}>{hasWeightStack ? "Stack" : "Plates"}</span>
-        <div className={styles.fieldRow}>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Marked in</span>
+          <select
+            className={styles.fieldInput}
+            value={sUnit}
+            onChange={(e) => onChange({ stackUnit: e.target.value })}
+          >
+            <option value="lb">lb</option>
+            <option value="kg">kg</option>
+          </select>
+          <span className={styles.fieldNote}>
+            How this machine&rsquo;s plates are stamped. A fact about the machine, so it overrides your display
+            preference for the fields below.
+          </span>
+        </label>
+        <div className={styles.fieldRow} style={{ marginTop: 8 }}>
           <label className={styles.fieldHalf}>
-            <span className={styles.fieldLabel}>Plate size {wUnit}</span>
+            <span className={styles.fieldLabel}>Plate size {sUnit}</span>
             <UnitNumberInput
               canonical={draft.plateIncrement}
               onCanonical={(v) => onChange({ plateIncrement: v })}
               dimension="weight"
+              unit={sUnit}
               className={styles.fieldInput}
               placeholder="—"
             />
@@ -177,21 +199,23 @@ export function UnitFormFields({
           {hasWeightStack && (
             <>
               <label className={styles.fieldHalf}>
-                <span className={styles.fieldLabel}>Add-on lever {wUnit}</span>
+                <span className={styles.fieldLabel}>Add-on lever {sUnit}</span>
                 <UnitNumberInput
                   canonical={draft.addOnWeight}
                   onCanonical={(v) => onChange({ addOnWeight: v })}
                   dimension="weight"
+                  unit={sUnit}
                   className={styles.fieldInput}
                   placeholder="—"
                 />
               </label>
               <label className={styles.fieldHalf}>
-                <span className={styles.fieldLabel}>Max load {wUnit}</span>
+                <span className={styles.fieldLabel}>Max load {sUnit}</span>
                 <UnitNumberInput
                   canonical={draft.stackMax}
                   onCanonical={(v) => onChange({ stackMax: v })}
                   dimension="weight"
+                  unit={sUnit}
                   className={styles.fieldInput}
                   placeholder="—"
                 />
@@ -210,7 +234,7 @@ export function UnitFormFields({
             {/* Stated in the ACTIVE unit — the value stored is canonical lb
                 either way, but a "10 lb" hint beside kg fields reads as a
                 contradiction. */}
-            Suggested from your logs: {formatForUnit(String(suggestion), wUnit, "weight")} {wUnit}
+            Suggested from your logs: {formatForUnit(String(suggestion), sUnit, "weight")} {sUnit}
           </button>
         )}
         {showPulley && (

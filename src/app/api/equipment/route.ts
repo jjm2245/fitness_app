@@ -59,6 +59,7 @@ export async function GET() {
       plateIncrement: m.plateIncrement,
       addOnWeight: m.addOnWeight,
       stackMax: m.stackMax,
+      stackUnit: m.stackUnit,
       notes: m.notes,
       exercises: refsBy.get(m.id) ?? [],
       loggedCount: usedBy.get(m.id) ?? 0,

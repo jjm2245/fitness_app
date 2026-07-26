@@ -1,12 +1,12 @@
 {
   "migrations": {
-    "count": 30,
-    "latest": "0029_drop_dead_equipment_columns",
-    "expected": 30
+    "count": 31,
+    "latest": "0030_equipment_stack_unit",
+    "expected": 31
   },
   "tests": {
     "files": 18,
-    "cases": 212
+    "cases": 222
   },
   "tables": 19,
   "routes": 36

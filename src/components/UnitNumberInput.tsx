@@ -20,6 +20,7 @@ export function UnitNumberInput({
   style,
   placeholder,
   autoFocus,
+  unit: unitOverride,
 }: {
   canonical: string;
   onCanonical: (canonical: string) => void;
@@ -28,10 +29,17 @@ export function UnitNumberInput({
   style?: React.CSSProperties;
   placeholder?: string;
   autoFocus?: boolean;
+  // Pin this input to a specific unit instead of the global preference — for
+  // values that state a FACT about a thing rather than a display choice (a
+  // machine's stack is stamped in one unit no matter how you like to read
+  // weights). The canonical-only contract below is unchanged: an override
+  // re-FORMATS exactly like a preference change, and never re-parses.
+  unit?: "lb" | "kg" | "mi" | "km";
 }) {
   const weight = useWeightUnit();
   const distance = useDistanceUnit();
-  const unit = dimension === "weight" ? weight[0] : distance[0];
+  const preferred = dimension === "weight" ? weight[0] : distance[0];
+  const unit = unitOverride ?? preferred;
 
   const [text, setText] = useState(() => formatForUnit(canonical, unit, dimension));
   // The canonical value our own typing last emitted — external canonical
