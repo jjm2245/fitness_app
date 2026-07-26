@@ -157,6 +157,32 @@ export function UnitFormFields({
         </div>
       )}
 
+      {/* ── The marking governs BOTH groups below, so it sits above both. A
+             control that decides the unit of two sections can't live inside
+             one of them — and it belongs beside Type, since both state facts
+             about the machine rather than preferences of the user. Compact
+             row, not a section header: it's one field. ── */}
+      {(showBuiltIn || showStack) && (
+        <label className={styles.field} style={{ marginTop: 10 }}>
+          <span className={styles.fieldLabel}>Weights marked in</span>
+          <select
+            className={styles.fieldInput}
+            value={marking ?? ""}
+            onChange={(e) => onChange({ stackUnit: e.target.value })}
+          >
+            <option value="">not recorded</option>
+            <option value="lb">lb</option>
+            <option value="kg">kg</option>
+          </select>
+          <span className={styles.fieldNote}>
+            How this machine&rsquo;s weights are marked — the carriage or starting resistance below, and its plates.
+            Recording it states a fact about the machine, so it governs every weight on this unit and pins the weight
+            box when you log here, matching the markings you&rsquo;re reading. Left unrecorded, your display preference
+            governs as usual.
+          </span>
+        </label>
+      )}
+
       {/* ── 2. Load — the only field here that enters a logged number ── */}
       {showBuiltIn && (
       <div className={styles.formGroup}>
@@ -188,23 +214,6 @@ export function UnitFormFields({
       {showStack && (
       <div className={styles.formGroup}>
         <span className={styles.fieldLabel}>{hasWeightStack ? "Stack" : "Plates"}</span>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Weights marked in</span>
-          <select
-            className={styles.fieldInput}
-            value={marking ?? ""}
-            onChange={(e) => onChange({ stackUnit: e.target.value })}
-          >
-            <option value="">not recorded</option>
-            <option value="lb">lb</option>
-            <option value="kg">kg</option>
-          </select>
-          <span className={styles.fieldNote}>
-            How this machine&rsquo;s weights are marked — its plates, and its carriage or starting resistance. Recording
-            it states a fact about the machine, so it governs every weight on this unit and pins the weight box when you
-            log here, matching the markings you&rsquo;re reading. Left unrecorded, your display preference governs as usual.
-          </span>
-        </label>
         <div className={styles.fieldRow} style={{ marginTop: 8 }}>
           <label className={styles.fieldHalf}>
             <span className={styles.fieldLabel}>Plate size {sUnit}</span>

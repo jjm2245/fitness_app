@@ -218,7 +218,13 @@ export default function EquipmentPage() {
         )}
       </div>
 
-      {open && <EquipmentSheet unit={open} allUnits={rows} onChanged={load} onClose={() => setOpenId(null)} />}
+      {/* Keyed by unit id: the sheet's draft is a useState INITIALIZER, so it
+          only reads `unit` on mount. Without a key, any path that swapped
+          openId A→B without unmounting would keep A's values under B's title.
+          The backdrop makes that unreachable by touch today — this makes it
+          unreachable by construction, so the guarantee doesn't depend on an
+          overlay's geometry. */}
+      {open && <EquipmentSheet key={open.id} unit={open} allUnits={rows} onChanged={load} onClose={() => setOpenId(null)} />}
       {adding && <EquipmentSheet unit={null} allUnits={rows} onChanged={load} onClose={() => setAdding(false)} />}
     </main>
   );

@@ -3983,3 +3983,49 @@ neighbours read lb; and its session card read `last 74.9 kg × 8`, `74.9 kg × 8
 still read `lb` / `added lb`. The equipment checksum was byte-identical across
 every sheet open, preference flip and save (`aa8a7a25…`) — no resolution path
 writes.
+
+---
+
+## The marking control sits above what it governs; sheets keyed by unit id
+
+### Layout
+
+"Weights marked in" governs BOTH the Load group (built-in) and the Stack group,
+but it was rendered inside Stack — below one of the two fields it controls. A
+control that decides the unit of two sections cannot live inside one of them.
+
+It now sits directly after **Type**, above both groups: both state facts about
+the machine rather than preferences of the user, and everything the setting
+affects is beneath it. Kept as a compact row rather than a section header — it
+is one field. Its hint names both scopes explicitly ("the carriage or starting
+resistance below, and its plates"). Groups themselves are unchanged.
+
+### The stale-sheet question: a harness artifact, fixed structurally anyway
+
+**Can a real user see a previous unit's values? No.** The sheet's backdrop is
+`position: fixed; inset: 0; z-index: 70`, portaled to `document.body`, with
+`onClick={onClose}`. Every real tap either lands on the panel (stopped) or on
+the backdrop (closes and UNMOUNTS). So `openId` cannot go A→B while mounted by
+pointer input, and the sheet always remounts with a fresh draft.
+
+Proven with three sequential opens and **zero reloads**: ZZ AAA (lb, 11/10),
+ZZ BBB (kg, 10/9.1), ZZ CCC (not recorded, 33/45) — each its own data,
+`sheetCount: 1` throughout, never stacked.
+
+**The earlier misreads were the test harness, and the mechanism is worth
+recording.** A synthetic `element.click()` dispatches straight to that node with
+no hit-testing, so it reaches a row painted *underneath* the backdrop — which a
+finger cannot. Reproduced deliberately: clicking row B's node while A was open
+produced the title "ZZ BBB" with A's values (11/10), and
+`document.elementFromPoint` at those coordinates returned the sheet panel, not
+the row.
+
+**Fixed structurally regardless.** The draft is a `useState` INITIALIZER, so it
+only reads `unit` on mount; the guarantee therefore rested entirely on an
+overlay's geometry. `<EquipmentSheet key={open.id} …>` makes a different unit a
+different component instance, so the leak is impossible by construction rather
+than by layout. After the key, the same pathological A→B→C sequence of direct
+clicks — no closes, no reloads — showed 11/10, then 10/9.1, then 33/45.
+
+Cheap insurance with no behavioural change on the normal path, and it removes a
+class of bug rather than one instance.
