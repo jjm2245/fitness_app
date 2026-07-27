@@ -4650,7 +4650,15 @@ question is closed: **there is one drop path, and it had one bug.**
 its unit — the parent is the row that recorded what was performed. Neither
 `equipment_id` changed. Asserted: exactly 2 rows, an md5 over *everything except
 equipment_type* unchanged, and an md5 over `equipment_type` on all other rows
-unchanged. All 215 sets now carry a type.
+unchanged.
+
+**Correction to an over-claim in the round report and the previous commit
+message:** this did NOT leave all 215 sets typed. It took typeless sets from 11
+to **9**. The remaining 9 are ids 7–18 on 2026-07-14 (Triceps Overhead Extension
+×3, Triceps Pushdown ×3, Dips ×3) — none in a drop group, all from the earliest
+logged session, i.e. genuine pre-model legacy rows that never recorded a type.
+They have no parent to inherit from, so NULL there is the honest value and they
+are left alone.
 
 ### `first_finished_source` now means what it says
 
