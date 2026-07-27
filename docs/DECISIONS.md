@@ -4679,3 +4679,85 @@ would rewrite history for cosmetics, so the semantics are documented instead —
 in the CSV route AND in a `readingNotes` block inside the JSON itself, alongside
 notes on absence, timestamps and the two finish columns. The reader most likely
 to be misled is the one that never sees this repo.
+
+---
+
+## 2026-07-27 (About you) — profile + dated weigh-ins; bodyweight is NOT load
+
+### Bodyweight is a body-composition metric, not a load input — CLOSED
+
+This closes a question open across three rounds. **Bodyweight will never feed
+`set_logs.load`.** It is tracked for body composition (weight trend, future
+stats, LLM context) and nothing else.
+
+The reasoning, in one line: **training load measures what you ADDED; bodyweight
+is a separate metric that happens to share a unit.** Pullups, Dips and Captain's
+Chair correctly record `load 0` — the weight added on those sets was zero.
+
+What that decision deletes outright: no `set_logs.bodyweight_lb` snapshot
+column; no `load = bodyweight + belt` arithmetic; no day-to-day bodyweight
+jitter leaking into stall detection and volume-load; no retroactive correction
+flow; and no decision needed about the 20 existing `load 0` rows — they stay 0,
+correctly. The proposal from the earlier round is withdrawn, not deferred.
+
+### Storage
+
+`profile` holds what changes on a scale of years (dob, sex, height_in,
+training_years); `body_metrics` holds dated weigh-ins. Bodyweight is NOT a
+profile column, because a single mutable field would be a lie the moment you
+weigh yourself again — and the time series is the point.
+
+**DOB, not age.** Age is DOB plus time, so storing it means every derived number
+rots silently and a stale 34 is indistinguishable from a correct one.
+
+**`training_years` numeric, not the `training_age` enum.** Novice/intermediate/
+advanced can't be self-reported consistently, and the argument for keeping the
+category rested on `volume.ts`, which has zero production importers — it isn't
+consuming anything today. The enum column is LEFT IN PLACE (additive change,
+nothing dropped) but is not surfaced; a category can be derived from years later
+if anything ever needs one.
+
+Only fields the owner will actually fill are on screen. `goal_mode`,
+`available_days`, `protein_target_g` and `activity_seed` stay off it — inert
+controls turn honest context into clutter.
+
+### Height follows the WEIGHT preference
+
+`height_in` is canonical inches, rendered ft/in when the weight preference is lb
+and cm when it's kg. A body measurement has no machine marking to respect, and
+nobody thinks in pounds and centimetres at once. `inToFtIn` rounds the total
+BEFORE splitting, so 71.6 in is 6′ 0″ and never 5′ 12″ (locked by test).
+
+Verified: toggling the preference flipped height 5′ 11″ → 180.3 cm and weight
+177.5 lb → 80.5 kg together, and an md5 over both tables was **identical before
+and after** — a toggle writes nothing.
+
+### Weigh-ins: append, back-date, one per day
+
+A new weigh-in appends; it never overwrites, because that history IS the trend.
+The single exception is same-date, enforced by a unique index: correcting this
+morning's number updates this morning's row rather than leaving two rows for one
+morning. Back-dating is a feature — weights known from before the app was used
+are as real as today's. Only future dates are refused.
+
+**A history view needs no rework.** `GET /api/body-metrics` already returns every
+row newest-first; a history screen is a component over that response, not a
+change to the route.
+
+### `set_index`-style reading notes extended
+
+`readingNotes` in the JSON export now covers `body_metrics` (a time series;
+latest row = current; back-dated rows expected; one row per date) and `profile`
+(singleton, NULLs mean not-recorded, `training_age` retained but unused), plus
+an explicit `bodyweight_is_not_load` note so the decision above survives contact
+with any future reader of the file.
+
+### What progression does for a load-0 exercise (reported, not changed)
+
+See the round report. Summary: rep-based signals WORK (`progressing` and
+`true_stall` both fire); `increase_load` fires on reps and suggests +5 lb, which
+reads as "add a belt" and is reasonable; but **regression detection is
+structurally dead** — `sessionVolumeLoad` is `Σ(0 × reps) = 0` for every
+session, so the "volume-load fell 2+ sessions" branch can never trigger. Also
+`topSet` degenerates to the FIRST working set when all loads tie, so
+comparisons are set-1-vs-set-1 rather than best-vs-best.

@@ -134,3 +134,40 @@ export function setEntryUnit(field: "weight" | "distance", unit: string): void {
   if (typeof window !== "undefined") window.localStorage.setItem(KEYS[field], unit);
   for (const cb of listeners) cb();
 }
+
+// --- Height -----------------------------------------------------------------
+//
+// Canonical storage is INCHES, like weight is canonical lb. Height has no
+// machine marking to respect — a body measurement isn't performed on equipment
+// — so the global weight preference governs it: ft/in alongside lb, cm
+// alongside kg. Nobody thinks in pounds and centimetres at once.
+
+export const CM_PER_IN = 2.54;
+
+export function inToCm(inches: number): number {
+  return Math.round(inches * CM_PER_IN * 10) / 10;
+}
+
+export function cmToIn(cm: number): number {
+  return Math.round((cm / CM_PER_IN) * 100) / 100;
+}
+
+/** Inches → whole feet + remaining inches, rounded to the nearest inch.
+ *  71.6 in → 6 ft 0 in (not 5 ft 12), because the rounding happens before the
+ *  split, not after. */
+export function inToFtIn(inches: number): { ft: number; inch: number } {
+  const total = Math.round(inches);
+  return { ft: Math.floor(total / 12), inch: total % 12 };
+}
+
+export function ftInToIn(ft: number, inch: number): number {
+  return ft * 12 + inch;
+}
+
+/** `5′ 11″` or `180.3 cm` — the read-only rendering of a stored height. */
+export function formatHeight(inches: number | null, unit: WeightUnit): string | null {
+  if (inches == null || !Number.isFinite(inches)) return null;
+  if (unit === "kg") return `${inToCm(inches)} cm`;
+  const { ft, inch } = inToFtIn(inches);
+  return `${ft}′ ${inch}″`;
+}

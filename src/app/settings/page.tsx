@@ -3,6 +3,7 @@
 import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { useDistanceUnit, useWeightUnit } from "@/lib/useUnit";
+import { AboutYou } from "./AboutYou";
 import { DataExport } from "./DataExport";
 import pkg from "../../../package.json";
 
@@ -86,7 +87,7 @@ export default function SettingsPage() {
         Display only — your data is always stored in pounds and miles. Switching never changes a logged number.
       </p>
 
-      {/* ABOUT YOU lands here once its storage is approved — see DECISIONS. */}
+      <AboutYou />
 
       <DataExport />
 

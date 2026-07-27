@@ -78,10 +78,24 @@ export const exerciseSourceEnum = pgEnum("exercise_source", ["curated", "library
 
 export const profile = pgTable("profile", {
   id: serial("id").primaryKey(),
-  dob: date("dob").notNull(),
-  sex: text("sex").notNull(),
-  heightIn: numeric("height_in").notNull(),
+  // NULLABLE, deliberately. These were NOT NULL with no defaults, which made a
+  // partially filled "About you" unsavable — the one table meant to hold the
+  // app's most optional data was the one violating the absence rule everything
+  // else runs on. NULL here means not recorded, as everywhere.
+  //
+  // DOB, not age: age is DOB plus time, so storing it means every derived
+  // number silently rots and a stale 34 is indistinguishable from a correct one.
+  dob: date("dob"),
+  sex: text("sex"),
+  // Canonical INCHES. Displayed as ft/in or cm depending on the global weight
+  // preference — a body measurement has no machine marking to respect.
+  heightIn: numeric("height_in"),
   goalMode: goalModeEnum("goal_mode").notNull().default("recomp"),
+  // Years of consistent training — objective and self-reportable, where
+  // novice/intermediate/advanced is neither. The enum below is left in place
+  // (additive change, nothing dropped) but is not surfaced; a category can be
+  // derived from years later if anything ever needs one.
+  trainingYears: numeric("training_years"),
   trainingAge: trainingAgeEnum("training_age").notNull().default("novice"),
   availableDays: integer("available_days").notNull().default(6),
   // Per-item toggles on top of the PF default kit (§8a), e.g. { half_rack: true, dumbbell_max_lb: 60 }
@@ -490,9 +504,18 @@ export const injuryFlags = pgTable("injury_flags", {
 // but nothing in this session reads or writes them. Nullable/unused for now.
 // ---------------------------------------------------------------------------
 
+// Dated weigh-ins — a TIME SERIES, not a current value. "Current bodyweight" is
+// the latest row; back-dated rows are expected and valid (entering weights you
+// already know builds a real trend instead of starting from today). One row per
+// date, enforced by a unique index, so editing today's weight updates it rather
+// than leaving three rows for one morning.
+//
+// Bodyweight lives here and NOT on `profile` because it changes: a single
+// mutable profile field would be a lie the moment you weigh yourself again.
 export const bodyMetrics = pgTable("body_metrics", {
   id: serial("id").primaryKey(),
-  date: date("date").notNull(),
+  date: date("date").notNull().unique(),
+  // Canonical POUNDS, like every other weight in this schema.
   weight: numeric("weight"),
   measurements: jsonb("measurements"),
 });

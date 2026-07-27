@@ -77,3 +77,40 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* "About you" — the value doubles as the edit affordance, so the row stays at
+   the same density as PREFERENCES instead of growing a control column. */
+.aboutValue {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: left;
+}
+.aboutValue:hover { color: var(--accent); }
+/* Absence reads as absence — muted, and never a placeholder zero. */
+.aboutUnset { color: var(--text-3); font-style: italic; }
+.aboutEdit { margin-top: 8px; }
+.aboutInput,
+.aboutInputSmall {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.aboutInputSmall { width: 72px; }
+/* Wraps rather than overflowing: ft + in + a date + a button will not fit on
+   one line at 375px. */
+.aboutFtIn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

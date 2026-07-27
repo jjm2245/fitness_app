@@ -230,6 +230,12 @@ async function jsonResponse() {
         "All instants are UTC ISO-8601. The app displays them in local time, so a value here will look shifted against what the screen shows.",
       finish_times:
         "workout_logs.finished_at re-stamps on every re-finish and is a last-modified marker. first_finished_at is the stable instant the session ended; the CSVs expose them as ended_at and last_updated_at.",
+      body_metrics:
+        "A TIME SERIES of dated weigh-ins, not a current value. The LATEST row by date is the current bodyweight. BACK-DATED rows are expected and valid — weights known from before the app was used are as real as today's — so rows do not arrive in insertion order and gaps between dates are normal, not missing data. One row per date (unique index): correcting a day's weight updates that day rather than adding a second row. Weight is canonical POUNDS.",
+      profile:
+        "A SINGLETON — at most one row, id = 1, enforced by a CHECK constraint. Its NULLs mean not-recorded like everywhere else, and a partially filled profile is a valid state rather than an error. height_in is canonical INCHES; dob is stored rather than age, so age is derived and never stale. training_years is years of consistent training; the older training_age enum column is retained but unused and should be ignored.",
+      bodyweight_is_not_load:
+        "Bodyweight is a body-composition metric and is NEVER added to set_logs.load. Bodyweight exercises (pullups, dips, captain's chair) correctly record load 0 when nothing was added — the load column measures what was ADDED to the body, not what was moved.",
     },
     tables,
   };
