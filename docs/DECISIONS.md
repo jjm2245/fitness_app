@@ -4272,3 +4272,88 @@ This is deliberate, not an oversight: giving cardio an equipment link is a
 schema change with real consequences (a lane model for metric entries, which the
 core does not read), and the payoff is one traveller's edge case. Recorded so
 the gap is a decision rather than a surprise.
+
+---
+
+## 2026-07-26 — Settings: "Your data" (export). "About you" gated on schema.
+
+### §1 "About you" — GATED. There *is* a profile table; it's dead schema.
+
+The mandatory "check first" found a `profile` table declared in `schema.ts`
+(singleton `id serial` PK) with `dob`, `sex`, `height_in`, `goal_mode`,
+`training_age`, `available_days`, `equipment_profile`, `activity_seed`,
+`protein_target_g`, `preferences`. It exists in prod. It has **0 rows**, and a
+grep across `src/` returns **no read and no write of it** anywhere in the
+application — every `profile` hit is an unrelated word (log-field profiles,
+muscle-emphasis profiles, `equipmentProfile`). It is inert schema left from the
+spec's original shape.
+
+Two things stop it holding an "About you" form as-is:
+
+1. **No bodyweight column.** `body_metrics` (`date`, `weight`, `measurements`)
+   exists for that and is likewise unused — 0 rows, 0 references.
+2. **`dob`, `sex`, `height_in` are NOT NULL with no defaults**, so a partially
+   filled form cannot be saved. The absence rule this schema runs on (NULL = not
+   recorded) is violated by the table meant to hold the most optional data in
+   the app.
+
+So §1 needs a migration and is **paused for the owner** rather than built.
+Nothing was written. Section order on Settings will be PREFERENCES → ABOUT YOU →
+YOUR DATA; a comment marks the insertion point in `settings/page.tsx`.
+
+### §2 Export — built
+
+`GET /api/export` (JSON) and `GET /api/export?format=csv` (`set_logs`,
+denormalized). Auth via the existing proxy matcher; a stale session gets 401,
+not a snapshot. Strictly SELECTs — no writes, no server-side storage of exports.
+
+**The full exercise library ships (877 rows), not just the 2 customs.**
+`set_logs.exercise_id` and `program_exercises.exercise_id` are foreign keys into
+`exercises`; an export holding only customs would need the seed re-run at
+exactly the right version to resolve the other 26 exercises in history, and any
+drift there orphans logged sets — the one thing this project never allows.
+~940 KB of prod JSON is a cheap price for a file that stands alone.
+
+**20 of 21 tables are included**, listed explicitly in `TABLES` rather than
+derived from the schema module — a new table should have to be consciously
+added, not silently swept in or silently missed. The five declared-but-unwritten
+tables (`injury_flags`, `recovery_metrics`, `nutrition_entries`,
+`progress_photos`, `form_checks`) are included empty: an export that quietly
+skipped tables would be lying about being complete.
+
+Only `login_attempts` is excluded (rate-limit telemetry containing IPs, not
+training data) plus drizzle's migration bookkeeping. **The exclusions ship
+inside the file** in an `excluded` key with reasons, so the omission is visible
+to whoever opens it.
+
+The file also carries `counts` (self-verification without re-querying), `units`
+(canonical lb/mi/min/s — a number in there is meaningless without them), and
+`app.migrationsApplied`, so a future restore knows which schema the rows came
+from.
+
+**`device`** is merged in client-side: the localStorage keys the server cannot
+see (`entry-unit-*`, `fitness-app:*`). Captured by PREFIX, not an enumerated
+list — which is how it picked up stale `fitness-app:last-machine:*` keys from a
+build that no longer writes them. A backup should record what is there, not what
+the code believes should be there.
+
+### Restore sufficiency — honest answer
+
+The JSON is sufficient to rebuild the database, with two known gaps, both
+inherent rather than fixable by adding a table:
+
+1. **Unsynced local sets.** The export reads the server. Anything still in the
+   IndexedDB outbox is not in it. Sync first, then export.
+2. **Serial sequences.** Row ids are exported; `setval` for each sequence is
+   not. A restore must reset sequences or the first insert collides.
+
+Everything else — history, program, equipment, the exercise graph, per-device
+preferences — round-trips.
+
+### CSV
+
+One table (`set_logs`), denormalized: ids resolved to exercise/machine names,
+ordered by session date. NULL is written as an **empty field**, never `0` or
+`"null"` — the absence semantics only survive the round trip if blank stays
+blank. RFC 4180 escaping with CRLF terminators; `csvField`/`toCsv` are pure and
+tested (12 tests).

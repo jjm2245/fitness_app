@@ -3,6 +3,7 @@
 import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { useDistanceUnit, useWeightUnit } from "@/lib/useUnit";
+import { DataExport } from "./DataExport";
 import pkg from "../../../package.json";
 
 // Settings — the home of GLOBAL preferences.
@@ -84,6 +85,10 @@ export default function SettingsPage() {
       <p className={styles.footnote}>
         Display only — your data is always stored in pounds and miles. Switching never changes a logged number.
       </p>
+
+      {/* ABOUT YOU lands here once its storage is approved — see DECISIONS. */}
+
+      <DataExport />
 
       <p className={styles.version}>Fitness Agent v{pkg.version}</p>
     </main>

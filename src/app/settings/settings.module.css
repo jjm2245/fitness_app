@@ -29,6 +29,42 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* Export triggers. Quiet outlined buttons, not primary gradients: an export is
+   infrastructure you reach for occasionally, not the screen's main act. */
+.dataBtn {
+  padding: 8px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dataBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dataBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The receipt: filename + the counts it contains, so the file can be trusted
+   without opening it. Mono because it's mostly numbers and a filename. */
+.dataStatus {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.dataError {
+  margin-top: 10px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--warning);
+}
 .footnote {
   margin-top: 18px;
   font-size: 0.75rem;
