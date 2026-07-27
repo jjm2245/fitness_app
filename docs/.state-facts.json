@@ -1,8 +1,8 @@
 {
   "migrations": {
-    "count": 31,
-    "latest": "0030_equipment_stack_unit",
-    "expected": 31
+    "count": 32,
+    "latest": "0031_session_exercise_program_day",
+    "expected": 32
   },
   "tests": {
     "files": 22,

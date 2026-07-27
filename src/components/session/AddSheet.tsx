@@ -90,8 +90,8 @@ export function AddSheet({
   sessionCount: number;
   nav: AddLoc[];
   onNav: (nav: AddLoc[]) => void;
-  onAdd: (ex: ProgramExerciseDetail, source: string) => void;
-  onAddMany: (items: ProgramExerciseDetail[], source: string) => Promise<string[]>;
+  onAdd: (ex: ProgramExerciseDetail, source: string, programDayId: number | null) => void;
+  onAddMany: (items: ProgramExerciseDetail[], source: string, programDayId: number | null) => Promise<string[]>;
   onUndo: (instanceIds: string[]) => void;
   onAddAdhoc: (r: ExerciseSearchResult) => void;
   onClose: () => void;
@@ -111,20 +111,22 @@ export function AddSheet({
   );
 
   // Resolve a dayId → its exercises + labels (a program day or a block).
-  function resolveDay(dayId: number): { items: ProgramExerciseDetail[]; label: string; source: string } | null {
+  function resolveDay(dayId: number): { items: ProgramExerciseDetail[]; label: string; source: string; programDayId: number } | null {
     for (const p of programs) for (const d of p.days) if (d.id === dayId) {
-      return { items: d.exercises, label: prettyDayName(d.name), source: prettyDayName(d.name) };
+      return { items: d.exercises, label: prettyDayName(d.name), source: prettyDayName(d.name), programDayId: d.id };
     }
-    for (const b of blocks) if (b.id === dayId) return { items: b.exercises, label: b.name, source: b.name };
+    // Blocks ARE program_days rows (of the hidden block library), so the same
+    // foreign key holds and a block-sourced occurrence is just as traceable.
+    for (const b of blocks) if (b.id === dayId) return { items: b.exercises, label: b.name, source: b.name, programDayId: b.id };
     return null;
   }
 
-  function handleAdd(ex: ProgramExerciseDetail, source: string) {
+  function handleAdd(ex: ProgramExerciseDetail, source: string, programDayId: number | null) {
     setLastBatch(null);
-    onAdd(ex, source);
+    onAdd(ex, source, programDayId);
   }
-  async function handleAddAll(items: ProgramExerciseDetail[], source: string) {
-    const ids = await onAddMany(items, source);
+  async function handleAddAll(items: ProgramExerciseDetail[], source: string, programDayId: number | null) {
+    const ids = await onAddMany(items, source, programDayId);
     setLastBatch(ids);
   }
   function handleUndo() {
@@ -153,12 +155,12 @@ export function AddSheet({
     </button>
   );
 
-  const ExerciseList = ({ items, label, source }: { items: ProgramExerciseDetail[]; label: string; source: string }) => (
+  const ExerciseList = ({ items, label, source, programDayId }: { items: ProgramExerciseDetail[]; label: string; source: string; programDayId: number | null }) => (
     <>
       <div className={styles.navBackRow}>
         <button type="button" className={styles.navBack} onClick={back}>‹ {label}</button>
         {items.length > 0 && (
-          <button type="button" className={styles.addAllBtn} onClick={() => handleAddAll(items, source)}>Add all · {items.length}</button>
+          <button type="button" className={styles.addAllBtn} onClick={() => handleAddAll(items, source, programDayId)}>Add all · {items.length}</button>
         )}
       </div>
       {items.map((ex) => {
@@ -171,7 +173,7 @@ export function AddSheet({
               {ref && <span className={styles.addExTarget}>{ref}</span>}
             </span>
             {n > 0 && <span className={styles.addExCount}>×{n}</span>}
-            <button type="button" className={styles.addExBtn} onClick={() => handleAdd(ex, source)} aria-label={`Add ${ex.exerciseName}`}>+</button>
+            <button type="button" className={styles.addExBtn} onClick={() => handleAdd(ex, source, programDayId)} aria-label={`Add ${ex.exerciseName}`}>+</button>
           </div>
         );
       })}
@@ -219,7 +221,7 @@ export function AddSheet({
     // current.screen === "day"
     const day = resolveDay(current.dayId);
     if (!day) return <SourcesFallback />;
-    return <ExerciseList items={day.items} label={day.label} source={day.source} />;
+    return <ExerciseList items={day.items} label={day.label} source={day.source} programDayId={day.programDayId} />;
   }
 
   // When a remembered container no longer exists, drop back to sources.

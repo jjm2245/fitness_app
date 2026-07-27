@@ -215,8 +215,8 @@ export default function LogSessionPage() {
     canonicalName: e.canonicalName ?? null,
   });
 
-  async function addFromPalette(e: ProgramExerciseDetail, source: string) {
-    await addOccurrence(sessionId, attachFrom(e), source);
+  async function addFromPalette(e: ProgramExerciseDetail, source: string, programDayId: number | null) {
+    await addOccurrence(sessionId, attachFrom(e), source, programDayId);
     await refreshSession();
   }
 
@@ -224,10 +224,10 @@ export default function LogSessionPage() {
   // (targets ride along in the occurrence; NEVER prefilled into the log inputs).
   // Appends ALL items in day order (duplicates allowed), refreshes once, and
   // returns the new occurrence instanceIds so the picker can offer a batch Undo.
-  async function addManyFromPalette(items: ProgramExerciseDetail[], source: string): Promise<string[]> {
+  async function addManyFromPalette(items: ProgramExerciseDetail[], source: string, programDayId: number | null): Promise<string[]> {
     const ids: string[] = [];
     for (const e of items) {
-      const occ = await addOccurrence(sessionId, attachFrom(e), source);
+      const occ = await addOccurrence(sessionId, attachFrom(e), source, programDayId);
       ids.push(occ.instanceId);
     }
     if (items.length) await refreshSession();

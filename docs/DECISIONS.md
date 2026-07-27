@@ -4428,3 +4428,112 @@ are parsed by node-postgres in the RUNNING PROCESS's timezone. Correct on Vercel
 (UTC), shifted when run locally. A global `setTypeParser(1114, …)` in
 `db/client.ts` would fix it everywhere but changes every query in the app —
 too broad to slip in unrequested.
+
+---
+
+## 2026-07-27 (later) — Occurrence → program day, with the cascade proved first
+
+### §0 The FK proof, and a correction to my own claim
+
+`session_exercises.program_day_id` is the first foreign key from logged history
+into plan rows, so `ON DELETE SET NULL` was proved before the migration shipped,
+on a throwaway inside a rolled-back transaction: a day with 3 occurrences and 12
+logged sets, then `DELETE FROM program_days`.
+
+**Result: day deleted, 3/3 occurrences survived with `program_day_id` NULL,
+12/12 sets survived, volume checksum 13500 unchanged.**
+
+The counterfactual — the same delete with CASCADE — **corrected a claim I had
+made**. I said the sets would follow their occurrences. They do not:
+`set_logs.session_exercise_id` is itself `ON DELETE SET NULL` and the sets keep
+`workout_log_id`, so the volume checksum held at 13500 there too. What CASCADE
+actually destroyed was all 3 occurrence rows — the session's ordered exercise
+list, its per-occurrence `completed` flags, and every set's link to the
+occurrence it belongs to.
+
+So the real cost of a stray CASCADE is a session gutted into a loose bag of
+sets, triggered by an ordinary tidy-up in the program editor. Still decisive for
+SET NULL; just not the mechanism I claimed. The reason is written into the
+migration SQL and `schema.ts` so nobody "tidies" it later.
+
+### The migration had to be split, against the request to bundle
+
+The `rom_note` drop could NOT ride along with the `program_day_id` add. Drizzle
+expands `db.select().from(setLogs)` into an explicit column list, so between
+`migrate` and `deploy` the LIVE build still names `rom_note` — dropping it first
+500s every set read. The add has the opposite constraint (the new build needs
+it). Expand and contract cannot share a migration; this is the same 0028/0029
+split as the equipment columns.
+
+**0031 (this round, expand):** add `program_day_id`. **0032 (queued, contract):**
+drop `rom_note`, to run only after this build is live. All `rom_note` code
+references are already removed, so the deploy is drop-ready.
+
+### §5 The finish-time editor is NOT broken — the premise didn't hold
+
+Traced end to end and checked against git history. `SessionHeader.save()` has
+computed `new Date(y, m - 1, d, hh, mm).toISOString()` — correct local wall clock
+→ UTC — since the editor was introduced (`dc690ea`), unchanged through the
+redesign (`b813e30`). Display is `toLocaleTimeString()`. The server PATCH parses
+an ISO-Z string. There is no point in the chain that treats an entered local
+time as UTC.
+
+Log 3 holds `2026-07-14T22:30:00.000Z`, which is **exactly what an entered
+6:30 PM produces** in America/New_York. An entered 10:30 PM would have stored
+`2026-07-15T02:30:00Z`. The `.000` milliseconds confirm a typed value rather
+than a system stamp. What looked like "22:30 stored as UTC" was a UTC instant in
+the export being read as a local wall clock.
+
+The value is still wrong — it precedes the session's own first set by 31 minutes
+— but the cause is a typo, not a conversion.
+
+**Secondary finding, genuinely misleading:** `first_finished_source = 'user'`
+does not prove the TIME was user-entered. The PATCH route stamps `'user'` when
+only the DATE is edited (`route.ts`: `if (updates.date !== undefined && …)`).
+Provenance on that column means "a user edited this row", not "a user set this
+instant".
+
+### Guards built instead
+
+An end before a start is impossible, so it is now rejected in both places:
+the editor (inline warning, sheet stays open on the value) and the PATCH route
+(400 with `startedAt`/`given`). The sessions CSV gains an `ends_before_starts`
+column so a negative `duration_min` cannot be scrolled past.
+
+Both guards read `created_at` through
+`at time zone current_setting('TimeZone')`. The first version compared against
+the raw column and was four hours looser on a non-UTC host — it accepted
+`2026-07-11T22:00Z` for a session that started `2026-07-12T00:01:50Z`. Verified
+fixed by re-testing that exact window.
+
+### §6 Export timezone fix, scoped to the route
+
+`utcSafeShape()` builds a select in which every tz-less timestamp column is
+rendered to strict ISO-8601 Z **by Postgres**, derived from drizzle's own column
+metadata (`columnType === "PgTimestamp" && withTimezone === false`) rather than
+a hand-listed set of columns.
+
+Verified locally, where host and database disagree: `workout_logs#18.created_at`
+is stored naive as `2026-07-11 20:01:50.125` under a America/New_York database,
+and the export now emits `2026-07-12T00:01:50.125Z` — the true instant, matching
+psql. It previously emitted `2026-07-11T20:01:50.125Z`.
+
+The global `setTypeParser(1114, …)` fix is deliberately NOT taken; see
+SPEC-DRIFT.
+
+### §5 set notes / rom_note
+
+Set-level `notes` are exposed in the set-edit sheet only — never mid-set. An
+empty or whitespace-only box stores NULL, not `""`, so "no note" stays one state
+rather than two. Verified round-trip through the PATCH route.
+
+### Backfill provenance (paused, previews generated read-only)
+
+Occurrence → program_day mapping is unambiguous: **zero occurrences match more
+than one day**, 64 of 65 map, the 1 remaining is genuinely "Ad-hoc" and stays
+NULL. (65, not the 66 previously reported — log 48's occurrence went with the
+husk sweep.)
+
+The 23 `logged_at` rows are ids 7–29 inclusive, all in log 3, receiving values
+between `2026-07-14T23:01:31.206Z` and `2026-07-14T23:58:40.667Z`. 192 rows must
+not move; volume checksum 236416 must not change.

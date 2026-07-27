@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, getTableColumns, sql } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import {
   profile,
@@ -25,6 +26,7 @@ import {
 } from "@/db/schema";
 import { appliedMigrationCount, EXPECTED_MIGRATIONS } from "@/lib/migrationStatus";
 import { toCsv } from "@/lib/exportCsv";
+import { prettyDayName } from "@/lib/labels";
 import pkg from "../../../../package.json";
 
 // GET /api/export — a complete, read-only snapshot of everything this app
@@ -111,6 +113,65 @@ const EXCLUDED = [
   },
 ] as const;
 
+/**
+ * A select shape in which every `timestamp WITHOUT time zone` column is
+ * rendered by POSTGRES as a strict ISO-8601 Z string, and every other column is
+ * passed through untouched.
+ *
+ * The bug this closes: node-postgres parses a tz-less timestamp in the RUNNING
+ * PROCESS's timezone. `created_at = '2026-07-14 23:01:31'` came back as
+ * `2026-07-15T03:01:31Z` when the export ran on a machine in America/New_York —
+ * correct on Vercel (UTC) and four hours wrong anywhere else. A file whose
+ * timestamps depend on where it was generated is not a backup.
+ *
+ * The value was WRITTEN by `now()` under the database's `TimeZone`, so it is
+ * re-interpreted under that same setting rather than a hardcoded 'UTC' — prod
+ * is GMT, the local dev database is America/New_York, and this is right for
+ * both.
+ *
+ * Deliberately scoped to this route. The global fix is a `setTypeParser(1114, …)`
+ * in `db/client.ts`, which changes the return type of every query in the app and
+ * needs its own round with real verification — not a rider on an export change.
+ */
+function utcSafeShape(table: PgTable) {
+  const cols = getTableColumns(table);
+  const shape: Record<string, unknown> = {};
+  for (const [key, col] of Object.entries(cols)) {
+    const c = col as unknown as { columnType: string; withTimezone?: boolean };
+    shape[key] =
+      c.columnType === "PgTimestamp" && c.withTimezone === false
+        ? sql`to_char((${col} at time zone current_setting('TimeZone')) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+        : col;
+  }
+  return shape as Record<string, never>;
+}
+
+/**
+ * Human-readable aliases ADDED BESIDE the raw columns — never replacing them.
+ *
+ * Two names in this schema mislead anything reading the export cold:
+ * `programs` has no `name` column at all (the display name lives in
+ * `split_type`), and `program_days.name` mixes a seeded snake_case convention
+ * (`chest_triceps`) with hand-renamed titles (`Legs + Shoulders`) inside one
+ * program.
+ *
+ * Aliasing is the whole fix. Renaming the column would be a migration for a
+ * label, and normalizing the stored day names would rewrite data that display
+ * already humanizes — the raw form only ever surfaces in this one table.
+ */
+function withDisplayAliases(name: string, rows: unknown[]): unknown[] {
+  if (name === "programs") {
+    return rows.map((r) => ({ ...(r as Record<string, unknown>), name: (r as { splitType?: string }).splitType ?? null }));
+  }
+  if (name === "program_days") {
+    return rows.map((r) => {
+      const raw = (r as { name?: string }).name;
+      return { ...(r as Record<string, unknown>), displayName: raw ? prettyDayName(raw) : null };
+    });
+  }
+  return rows;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const format = params.get("format");
@@ -134,8 +195,10 @@ async function jsonResponse() {
   // db/client.ts) and an export is a background chore, not a hot path. Doing
   // this in parallel would starve whatever else the owner is doing.
   for (const { name, table } of TABLES) {
-    const rows = await db.select().from(table);
-    tables[name] = rows;
+    // utcSafeShape, not a bare select(): tz-less timestamps must be rendered by
+    // Postgres, or the file's contents depend on where it was generated.
+    const rows = await db.select(utcSafeShape(table)).from(table);
+    tables[name] = withDisplayAliases(name, rows);
     counts[name] = rows.length;
   }
 
@@ -268,7 +331,6 @@ async function setsCsvResponse() {
       { key: "equipment_gym", get: (r) => r.equipmentGym },
       { key: "rest_seconds", get: (r) => r.set.restSeconds },
       { key: "rest_source", get: (r) => r.set.restSource },
-      { key: "rom_note", get: (r) => r.set.romNote },
       { key: "notes", get: (r) => r.set.notes },
       { key: "logged_at", get: (r) => r.set.loggedAt },
       { key: "created_at", get: (r) => r.set.createdAt },
@@ -327,6 +389,16 @@ async function sessionsCsvResponse() {
       // clamped the way History clamps it for display: an export that silently
       // dropped an implausible span would hide the corrupt stamp worth seeing.
       { key: "duration_min", get: (r) => durationMin(r.createdAt, endedAt(r)) },
+      // A session cannot end before it starts. When the stamps say otherwise
+      // the duration goes negative, and a negative number in a spreadsheet is
+      // easy to scroll past — so the contradiction gets its own column.
+      {
+        key: "ends_before_starts",
+        get: (r) => {
+          const d = durationMin(r.createdAt, endedAt(r));
+          return d == null ? "" : d < 0 ? "YES" : "no";
+        },
+      },
       { key: "finished", get: (r) => (r.finishedAt == null ? "no" : "yes") },
       { key: "occurrences", get: (r) => r.occurrences },
       { key: "sets", get: (r) => r.sets },

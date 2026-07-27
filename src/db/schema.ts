@@ -362,6 +362,20 @@ export const sessionExercises = pgTable("session_exercises", {
   clientInstanceId: text("client_instance_id").unique(),
   orderIndex: integer("order_index").notNull().default(0),
   source: text("source"), // where it was added from: program day / block / ad-hoc
+  // The program day (or block) this occurrence came from. NULL = ad-hoc, the
+  // same absence rule as everywhere else. `source` above is the human label and
+  // stays; this is the structured link, so "how did I do on PPL vs UL" is a
+  // join instead of an unparseable text concatenation.
+  //
+  // ON DELETE SET NULL — NEVER CASCADE. This is the FIRST foreign key from
+  // logged history into PLAN rows. Measured under CASCADE (proof in DECISIONS
+  // 2026-07-27): deleting one program day destroyed every occurrence pointing
+  // at it. The sets themselves survive — `session_exercise_id` is also SET NULL
+  // and they keep `workout_log_id` — so what's lost is the session's STRUCTURE:
+  // its ordered exercise list, its `completed` flags, and each set's link to
+  // the occurrence it belongs to. A session gutted into a loose bag of sets, by
+  // an ordinary tidy-up in the program editor. Do not "tidy" this to cascade.
+  programDayId: integer("program_day_id").references(() => programDays.id, { onDelete: "set null" }),
   // The user's "done" checkmark for this performed occurrence. Persisted here
   // (not just the local `completed` store) so a finished session's checked state
   // survives a PWA reinstall / IndexedDB wipe — it re-hydrates from the server.
@@ -397,7 +411,6 @@ export const setLogs = pgTable("set_logs", {
   // present, else derives one from `effort`.
   effort: effortEnum("effort"),
   rir: numeric("rir"),
-  romNote: text("rom_note"),
   notes: text("notes"),
   // Client-stamped instant the set was logged (created_at is server insert time,
   // which lies for offline sets that sync late). Drives rest derivation. Nullable

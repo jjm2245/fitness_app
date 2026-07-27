@@ -25,6 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     equipmentId?: string | null;
     loadEntered?: string | null;
     builtinOffset?: string | null;
+    notes?: string | null;
   } = {};
   if (typeof body?.load === "number") updates.load = body.load.toString();
   if (typeof body?.reps === "number") updates.reps = body.reps;
@@ -51,6 +52,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   else if (typeof body?.loadEntered === "number") updates.loadEntered = body.loadEntered.toString();
   if (body?.builtinOffset === null) updates.builtinOffset = null;
   else if (typeof body?.builtinOffset === "number") updates.builtinOffset = body.builtinOffset.toString();
+  // A note cleared to empty stores NULL, not "" — a blank box means "nothing
+  // recorded", and the two must not be different states in the data.
+  if (body?.notes === null) updates.notes = null;
+  else if (typeof body?.notes === "string") updates.notes = body.notes.trim() || null;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

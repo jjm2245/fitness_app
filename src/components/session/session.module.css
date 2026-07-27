@@ -1311,3 +1311,26 @@
   color: var(--text-3);
   margin-top: 2px;
 }
+
+/* Inline validation for the session date/time editor. Warning, not danger: the
+   entry is rejected but nothing is lost — the sheet stays open on the value. */
+.metaError {
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--warning);
+}
+
+/* Set note: full-width under the numbers, so the edit row's trio never has to
+   share horizontal space with prose on a 375px screen. */
+.setNoteInput {
+  flex-basis: 100%;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+/* On the read-only row a note is context, not data — muted, and clipped rather
+   than allowed to push the load and reps out of view. */
+.setNote {
+  color: var(--text-3);
+  font-style: italic;
+}

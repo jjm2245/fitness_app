@@ -17,6 +17,8 @@ interface Payload {
     exerciseId: string;
     orderIndex: number;
     source?: string | null;
+    // The structured form of `source` — a program_days id, or null for ad-hoc.
+    programDayId?: number | null;
     completed?: boolean;
   }>;
 }
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
       if (existing) {
         await tx
           .update(sessionExercises)
-          .set({ orderIndex: e.orderIndex, source: e.source ?? null, exerciseId: e.exerciseId, workoutLogId: workoutLog.id, completed: e.completed ?? false })
+          .set({ orderIndex: e.orderIndex, source: e.source ?? null, programDayId: e.programDayId ?? null, exerciseId: e.exerciseId, workoutLogId: workoutLog.id, completed: e.completed ?? false })
           .where(eq(sessionExercises.id, existing.id));
       } else {
         await tx.insert(sessionExercises).values({
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
           clientInstanceId: e.clientInstanceId,
           orderIndex: e.orderIndex,
           source: e.source ?? null,
+          programDayId: e.programDayId ?? null,
           completed: e.completed ?? false,
         });
       }

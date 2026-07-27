@@ -218,6 +218,13 @@
       "when": 1785037694315,
       "tag": "0030_equipment_stack_unit",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785180543614,
+      "tag": "0031_session_exercise_program_day",
+      "breakpoints": true
     }
   ]
 }

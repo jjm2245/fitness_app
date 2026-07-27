@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { workoutLogs, setLogs, cardioLogs, exercises, sessionExercises } from "@/db/schema";
 
@@ -29,6 +29,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       effort: setLogs.effort,
       rir: setLogs.rir,
       loggedAt: setLogs.loggedAt,
+      notes: setLogs.notes,
       restSeconds: setLogs.restSeconds,
       restSource: setLogs.restSource,
       dropSetGroup: setLogs.dropSetGroup,
@@ -173,6 +174,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     else {
       const t = new Date(body.firstFinishedAt);
       if (Number.isNaN(t.getTime())) return NextResponse.json({ error: "firstFinishedAt must be an ISO instant or null" }, { status: 400 });
+      // Same impossible-state rule the editor enforces, restated at the sync
+      // boundary — a stale client, a replayed request, or a future caller must
+      // not be able to write an end that precedes the session's start.
+      // `created_at` is `timestamp WITHOUT time zone`, and this driver parses
+      // such a column in the RUNNING PROCESS's timezone — so comparing against
+      // it raw would make this guard four hours looser on a non-UTC host. Ask
+      // Postgres for the true instant instead: the value was written by `now()`
+      // under the database's TimeZone, so that is what re-interprets it.
+      const [row] = await db
+        .select({
+          startedAt: sql<string | null>`to_char(
+            (${workoutLogs.createdAt} at time zone current_setting('TimeZone')) at time zone 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+          )`,
+        })
+        .from(workoutLogs)
+        .where(eq(workoutLogs.clientSessionId, id));
+      const startedMs = row?.startedAt ? Date.parse(row.startedAt) : NaN;
+      if (Number.isFinite(startedMs) && t.getTime() < startedMs) {
+        return NextResponse.json(
+          { error: "firstFinishedAt precedes the session's start", startedAt: row!.startedAt, given: t.toISOString() },
+          { status: 400 }
+        );
+      }
       updates.firstFinishedAt = t;
     }
     updates.firstFinishedSource = "user";

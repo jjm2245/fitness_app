@@ -19,7 +19,6 @@ interface SetLogPayload {
   reps: number;
   effort?: "more_in_me" | "near_failure" | "to_failure" | null;
   rir?: number | null;
-  romNote?: string | null;
   notes?: string | null;
   // Logging depth (all optional; absent = legacy client):
   loggedAt?: string | null; // client-stamped ISO instant
@@ -101,7 +100,6 @@ export async function POST(request: NextRequest) {
         reps: body.reps,
         effort: body.effort ?? null,
         rir: body.rir != null ? body.rir.toString() : null,
-        romNote: body.romNote ?? null,
         notes: body.notes ?? null,
         loggedAt: body.loggedAt ? new Date(body.loggedAt) : null,
         restSeconds: body.restSeconds ?? null,

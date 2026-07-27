@@ -70,6 +70,9 @@ export interface SessionSet {
   syncState: SetSyncState;
   // Logging depth (all optional — legacy rows simply lack them):
   loggedAt?: string; // ISO instant the set was logged (client-stamped)
+  // Free text about THIS set ("felt heavy, cut short"). Empty input stores
+  // NULL, never "" — absence stays absence, as everywhere else.
+  notes?: string | null;
   restSeconds?: number | null; // null/undefined = unknown, never fabricated
   restSource?: RestSource | null;
   dropGroupId?: string | null; // parent + drops share one group id
@@ -107,6 +110,10 @@ export interface Occurrence {
   portable: boolean;
   conditioningOnly: boolean;
   source: string; // where added from: "Legs + shoulders" | "block:Abs" | "Ad-hoc"
+  // The program day (or block) this came from — the STRUCTURED form of `source`,
+  // which is only a human label. Null = ad-hoc. Optional so occurrences stored
+  // by an older build hydrate without a migration.
+  programDayId?: number | null;
   provenance: string; // curated | library | custom
   untagged: boolean;
   unilateral?: boolean; // side selector shows only for unilateral exercises
@@ -569,6 +576,7 @@ export interface ServerSession {
     effort: EffortTag | null;
     rir: string | null;
     loggedAt?: string | null;
+    notes?: string | null;
     restSeconds?: number | null;
     restSource?: RestSource | null;
     dropSetGroup?: string | null;
@@ -686,6 +694,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
       side: s.side ?? null,
       loadEntered: s.loadEntered != null ? Number(s.loadEntered) : null,
       builtinOffset: s.builtinOffset != null ? Number(s.builtinOffset) : null,
+      notes: s.notes ?? null,
       serverId: s.id,
       syncState: "synced",
     });
@@ -857,7 +866,7 @@ export async function editSet(
     load?: number; reps?: number; rir?: number | null; effort?: EffortTag | null; setType?: "warmup" | "working";
     restSeconds?: number | null; restSource?: RestSource | null; dropGroupId?: string | null;
     side?: SetSide | null; loadEntered?: number | null; builtinOffset?: number | null;
-    equipmentId?: string | null; equipmentLabel?: string | null;
+    equipmentId?: string | null; equipmentLabel?: string | null; notes?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -918,7 +927,12 @@ export interface AttachExercise {
 
 /** Append one performed occurrence to the session (repeats allowed). Returns it.
  * Recomputes the session's aggregated name from its occurrence sources. */
-export async function addOccurrence(sessionId: string, item: AttachExercise, source: string): Promise<Occurrence> {
+export async function addOccurrence(
+  sessionId: string,
+  item: AttachExercise,
+  source: string,
+  programDayId: number | null = null
+): Promise<Occurrence> {
   const db = await getDb();
   const existing = await db.getAllFromIndex("occurrences", "by-session", sessionId);
   const orderIndex = existing.reduce((m, o) => Math.max(m, o.orderIndex + 1), 0);
@@ -926,6 +940,7 @@ export async function addOccurrence(sessionId: string, item: AttachExercise, sou
     instanceId: newId(),
     sessionId,
     source,
+    programDayId,
     orderIndex,
     exerciseId: item.exerciseId,
     exerciseName: item.exerciseName,
@@ -1221,7 +1236,7 @@ async function runSync(): Promise<SyncResult> {
         programDay: s.origin,
         exercises: [...occs]
           .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source, completed: o.completed ?? false })),
+          .map((o) => ({ clientInstanceId: o.instanceId, exerciseId: o.exerciseId, orderIndex: o.orderIndex, source: o.source, programDayId: o.programDayId ?? null, completed: o.completed ?? false })),
       }),
     });
     const body = (await res.json().catch(() => ({}))) as { keptWithHistory?: string[] };
@@ -1280,6 +1295,7 @@ async function runSync(): Promise<SyncResult> {
             side: row.side ?? null,
             loadEntered: row.loadEntered ?? null,
             builtinOffset: row.builtinOffset ?? null,
+            notes: row.notes ?? null,
           }),
         });
         const created = await res.json();
@@ -1298,6 +1314,7 @@ async function runSync(): Promise<SyncResult> {
             // it; the update path does not.
             equipmentId: row.equipmentId ?? null,
             loadEntered: row.loadEntered ?? null, builtinOffset: row.builtinOffset ?? null,
+            notes: row.notes ?? null,
           }),
         });
         await db.put("sets", { ...row, syncState: "synced" });

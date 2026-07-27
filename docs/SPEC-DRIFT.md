@@ -64,3 +64,34 @@ migration, four insert sites, the sync payloads, the IndexedDB shape and the
 
 Recorded here so the next spec revision can name the lifecycle it actually has:
 a session ends once and can be amended many times.
+
+## Instants are stored in `timestamp WITHOUT time zone`
+
+Most timestamp columns in this schema (`created_at`, `updated_at` on every
+table) are `timestamp` with no zone. They hold a wall clock written by `now()`
+under whatever the database's `TimeZone` happens to be — GMT in prod,
+America/New_York on the local dev database. Nothing in the value records which.
+
+This is why the same class of bug keeps reappearing, three times now:
+
+1. `login_attempts.created_at` compared against a JS `Date` was ~4h off, and was
+   fixed by making that one column `timestamptz` (DECISIONS, earlier).
+2. The JSON export shifted every `created_at` by the exporting host's UTC
+   offset, because node-postgres parses a tz-less column in the running
+   process's timezone.
+3. The `first_finished_at` guard compared against a raw `created_at` and was
+   four hours looser than intended on a non-UTC host.
+
+Each was fixed narrowly and correctly, and each fix has to be remembered
+independently. The spec never says instants are zone-less — it says a session
+has a start and an end, which are moments in time.
+
+**A proper fix** is `ALTER TABLE … ALTER COLUMN created_at TYPE timestamptz
+USING created_at AT TIME ZONE current_setting('TimeZone')` across every affected
+column: mechanical, one-way, and correct because the `USING` clause reads the
+value under the same setting that wrote it. It touches ~12 columns on 20 tables
+and changes the type every query returns, so it needs its own round with real
+verification — not a rider on a feature change.
+
+Recorded here rather than done: the drift is that the schema models wall clocks
+where the domain means instants.

@@ -45,11 +45,14 @@ export function SetRow({
   const [reps, setReps] = useState(set.reps);
   const [effort, setEffort] = useState<EffortTag | null>(set.effort);
   const [side, setSide] = useState<SetSide | null>(set.side ?? null);
+  const [notes, setNotes] = useState(set.notes ?? "");
   const pending = set.syncState !== "synced";
 
   async function save() {
     if (reps < 1 || load < 0) return;
-    await editSet(set.localId!, { load, reps, effort, ...(side != null ? { side } : {}) });
+    // Notes ride the same save as the numbers — an empty box clears to NULL
+    // rather than storing "", so "no note" stays one state, not two.
+    await editSet(set.localId!, { load, reps, effort, notes: notes.trim() || null, ...(side != null ? { side } : {}) });
     setEditing(false);
     onChanged();
   }
@@ -84,6 +87,16 @@ export function SetRow({
           )}
           <button type="button" onClick={save} className={styles.smallBtn}>Save</button>
           <button type="button" onClick={() => setEditing(false)} className={styles.smallBtn}>Cancel</button>
+          {/* Deliberately here and nowhere else: writing prose mid-set is
+              friction, but a set worth annotating is worth reopening for. */}
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="note (optional)"
+            aria-label="Note about this set"
+            className={styles.setNoteInput}
+          />
         </div>
       </li>
     );
@@ -117,13 +130,14 @@ export function SetRow({
             {sideTag}
             {hasOffset && <span className={styles.setSuffix}> · {w(set.loadEntered!)} + {w(set.builtinOffset!)} built-in</span>}
             {noUnit && <span className={styles.setSuffix} title="No specific machine recorded for this set — it sits in the unspecified lane"> · no unit</span>}
+            {set.notes && <span className={styles.setNote} title={set.notes}> · {set.notes}</span>}
           </span>
           {set.effort && <span className={styles.setEffort}>{EFFORT_LABEL[set.effort]}</span>}
           <span className={styles.setChevron} aria-hidden="true">›</span>
         </button>
         {revealed && (
           <div className={styles.setActions}>
-            <button type="button" onClick={() => { setLoad(set.load); setReps(set.reps); setEffort(set.effort); setSide(set.side ?? null); setEditing(true); }}>
+            <button type="button" onClick={() => { setLoad(set.load); setReps(set.reps); setEffort(set.effort); setSide(set.side ?? null); setNotes(set.notes ?? ""); setEditing(true); }}>
               Edit
             </button>
             <button type="button" onClick={remove}>Delete</button>

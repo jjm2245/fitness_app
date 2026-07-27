@@ -26,6 +26,7 @@ export function SessionHeader({
   onReconcile: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [dateVal, setDateVal] = useState(session.date);
   const [timeVal, setTimeVal] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
@@ -46,7 +47,19 @@ export function SessionHeader({
       const [y, m, d] = dateVal.split("-").map(Number);
       const [hh, mm] = timeVal.split(":").map(Number);
       firstFinishedAt = new Date(y, m - 1, d, hh, mm).toISOString(); // local wall clock → UTC storage
+      // A session cannot end before it began. This is the guard that would have
+      // caught log 3, whose recorded end sat half an hour before its first set.
+      // Refuse rather than warn: there is no reading under which it's correct,
+      // and the field is two taps to fix while the sheet is still open.
+      const started = Date.parse(session.createdAt);
+      if (Number.isFinite(started) && Date.parse(firstFinishedAt) < started) {
+        setError(
+          `That's before the session started (${new Date(started).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}).`
+        );
+        return;
+      }
     }
+    setError(null);
     await editSessionMeta(session.id, { date: dateVal, firstFinishedAt });
     setEditing(false);
     onChanged();
@@ -77,8 +90,9 @@ export function SessionHeader({
             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} />
             <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} title="Optional — leave blank for no time" />
             <button type="button" onClick={save} className={styles.smallBtn}>Save</button>
-            <button type="button" onClick={() => setEditing(false)} className={styles.smallBtn}>Cancel</button>
+            <button type="button" onClick={() => { setError(null); setEditing(false); }} className={styles.smallBtn}>Cancel</button>
             {session.firstFinishedSource === "user" && <span className={styles.chip}>set by you</span>}
+            {error && <span className={styles.metaError} role="alert">{error}</span>}
           </span>
         ) : (
           <button
