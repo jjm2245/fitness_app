@@ -202,7 +202,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     updates.firstFinishedSource = "user";
   }
-  if (updates.date !== undefined && updates.firstFinishedSource === undefined) updates.firstFinishedSource = "user";
+  // A DATE-only edit deliberately does NOT stamp firstFinishedSource. The column
+  // means "this INSTANT was set by hand", matching the restSource: 'user'
+  // convention it was modelled on — not "a user edited this row". Stamping it
+  // here made the provenance unreadable: a row could claim a hand-set finish
+  // time that the finish flow had actually stamped itself.
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   const [row] = await db

@@ -4610,3 +4610,64 @@ sets across all three dates are attributed. Nothing to correct.
 
 The real unattributed population is **30 cable sets in 8 exercise/date groups**,
 none of them Butterfly — listed in the round report.
+
+---
+
+## 2026-07-27 (close-out) — drop-type backfill, provenance fix, set_index note
+
+### The set-56 question, answered
+
+**There is exactly one strength drop-creation path** (`addDrop` in StrengthCard),
+and `git log -S` confirms it **never** carried `equipmentType` until this
+session. The metric card's `+ Drop` writes `cardio_logs`, which has no equipment
+columns at all — structurally incapable of this bug. So set 56's type did not
+come from a second creation path.
+
+Nor from a later edit: `equipment_type` is only ever written by `logSet` /
+`POST /api/set-logs`. `editSet` deliberately excludes it and the PATCH route
+ignores it (both documented in place). An edit **cannot** set it.
+
+What the data shows:
+
+| set | unit | unit's own type | set's type |
+|---|---|---|---|
+| 55 / 56 | VSL18 | selectorized | both `selectorized` |
+| 60 / 61 | *none* | — | parent only |
+| 109 / 110 | VSL03 | selectorized | parent only |
+
+55/56 and 60/61 were logged **11 minutes apart in the same session on the same
+build**, so no version difference explains it. The remaining consistent
+explanation is an **earlier round's hand-repair** — the one that wrote
+`equipment_type` onto unit-attributed sets by deriving it from the unit. It
+would have caught 56 (has a unit, logged 01:12) and not 110 (logged 21 hours
+later, after that repair ran), and could never have caught 61 (no unit to derive
+from). That fits every observation, and it is a repair, not a code path — so the
+question is closed: **there is one drop path, and it had one bug.**
+
+### The 2-row backfill
+
+61 → `cable`, 110 → `selectorized`; taken from each segment's PARENT, never from
+its unit — the parent is the row that recorded what was performed. Neither
+`equipment_id` changed. Asserted: exactly 2 rows, an md5 over *everything except
+equipment_type* unchanged, and an md5 over `equipment_type` on all other rows
+unchanged. All 215 sets now carry a type.
+
+### `first_finished_source` now means what it says
+
+Removed the line stamping `'user'` on a DATE-only edit. The column marks a
+hand-set INSTANT, matching the `restSource: 'user'` convention it was modelled
+on. Verified in all three directions: a date-only edit leaves it NULL; setting
+the instant stamps `'user'`; explicitly CLEARING the instant also stamps, since
+that is equally a deliberate act.
+
+Forward-only — log 3's `'user'` is now accurate, because backfill C set that
+instant by hand.
+
+### `set_index` gaps are documented, not renumbered
+
+Gaps mean a set was deleted; duplicates mean a drop segment shares its parent's
+index. Both look like data loss to a cold reader and neither is. Renumbering
+would rewrite history for cosmetics, so the semantics are documented instead —
+in the CSV route AND in a `readingNotes` block inside the JSON itself, alongside
+notes on absence, timestamps and the two finish columns. The reader most likely
+to be misled is the one that never sees this repo.

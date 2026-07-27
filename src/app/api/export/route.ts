@@ -219,6 +219,18 @@ async function jsonResponse() {
     // without them, and the display preference is a per-device reading choice
     // that never touched storage.
     units: { weight: "lb", distance: "mi", duration: "min", rest: "s" },
+    // Shipped INSIDE the file, because the reader most likely to be misled is
+    // one that never sees this repo.
+    readingNotes: {
+      set_index:
+        "Not a count, and neither dense nor unique. A GAP means a set was deleted — indices are assigned at log time and never renumbered, because renumbering would rewrite history for cosmetics. A DUPLICATE is by design: a drop segment shares its parent's set_index, since they are one set performed in two stages. Pair duplicates via drop_set_group; the lowest set id in a group is the parent. To count sets, count rows; to order them, use logged_at.",
+      absence:
+        "NULL means NOT RECORDED, never a default and never zero. This holds for target_sets, log_fields, built_in_weight, stack_unit, rest_seconds, equipment_type and equipment_id. A recorded 0 is a real zero and is distinct from absence.",
+      timestamps:
+        "All instants are UTC ISO-8601. The app displays them in local time, so a value here will look shifted against what the screen shows.",
+      finish_times:
+        "workout_logs.finished_at re-stamps on every re-finish and is a last-modified marker. first_finished_at is the stable instant the session ended; the CSVs expose them as ended_at and last_updated_at.",
+    },
     tables,
   };
 
@@ -281,6 +293,23 @@ function childCount(table: "set_logs" | "cardio_logs" | "session_exercises", exp
   return sql<number>`(select ${sql.raw(expr)} from ${sql.raw(table)} c where c.workout_log_id = workout_logs.id)`.mapWith(Number);
 }
 
+/**
+ * How to read `set_index` — it is NOT a count, and it is neither dense nor
+ * unique. Documented here because this is where a reader (including an LLM)
+ * meets it cold, and both surprises look like data loss when they aren't:
+ *
+ *   GAPS mean a set was DELETED, not that a row is missing. Indices are
+ *   assigned at log time and never renumbered, because renumbering would
+ *   rewrite history for cosmetics. Real examples: 7/23 shoulder press runs
+ *   1, 3, 4; 7/25 machine bench press runs 2, 3, 4.
+ *
+ *   DUPLICATES are by design. A drop segment shares its parent's `set_index` —
+ *   they are one set performed in two stages, not two sets. Pair the duplicate
+ *   with `drop_set_group`: rows sharing that id are one drop group, and the
+ *   lowest `set_log_id` in it is the parent.
+ *
+ * To count sets, count rows. To order them, use `logged_at`.
+ */
 /** The denormalized `set_logs` view: ids resolved to names, one row per set. */
 async function setsCsvResponse() {
   const rows = await db
