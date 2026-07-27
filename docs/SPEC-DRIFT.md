@@ -42,3 +42,25 @@ this?". Do **not** edit the spec to match. When the owner cuts the next spec
 revision, they fold these in and this file returns to the clean-slate state above.
 
 _(Nothing to fold in as of v0.6. Add new drift below.)_
+
+## `workout_logs.finished_at` is named for a fact it stopped carrying
+
+The spec's session lifecycle (§7a) treats finishing as a single event, so one
+`finished_at` was enough. The built system allows **re-finishing** — reopening a
+finished session, logging more, finishing again — and each re-finish re-stamps
+the column. `first_finished_at` was added as the stable anchor once that started
+jumping edited sessions to "today" in History.
+
+The result is a column whose NAME says "when this session finished" and whose
+VALUE means "when this session was last touched". Four of eight prod sessions
+have the two diverged; the worst is eleven days apart.
+
+Nothing is broken — every reader now uses `first_finished_at`, and the export
+labels the two separately (`session_ended_at` / `session_last_updated_at`). But
+the schema still reads as if a session finishes once. A rename to
+`last_finished_at` (or `updated_at`) was proposed and declined: pure-rename
+migration, four insert sites, the sync payloads, the IndexedDB shape and the
+`ServerSession` interface, for zero behaviour change.
+
+Recorded here so the next spec revision can name the lifecycle it actually has:
+a session ends once and can be amended many times.

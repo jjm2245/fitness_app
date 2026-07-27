@@ -53,7 +53,11 @@ export function toCsv<T>(
  * Local date, not UTC: the file is named after the day the owner pressed the
  * button, which after 7pm EDT is not the UTC day.
  */
-export function exportFilename(kind: "export" | "sets", ext: "json" | "csv", now: Date = new Date()): string {
+export function exportFilename(
+  kind: "export" | "sets" | "sessions",
+  ext: "json" | "csv",
+  now: Date = new Date()
+): string {
   const p = (n: number) => String(n).padStart(2, "0");
   const date = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
   return `fitness-agent-${kind}-${date}.${ext}`;

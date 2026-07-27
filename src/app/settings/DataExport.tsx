@@ -80,17 +80,18 @@ export function DataExport() {
     }
   }
 
-  async function exportCsv() {
+  async function exportCsv(table: "sets" | "sessions") {
     setStatus({ kind: "working", what: "Building spreadsheet…" });
     try {
-      const res = await fetch("/api/export?format=csv", { cache: "no-store" });
+      const res = await fetch(`/api/export?format=csv&table=${table}`, { cache: "no-store" });
       if (!res.ok) return setStatus({ kind: "error", text: await fail(res) });
       const text = await res.text();
-      const name = exportFilename("sets", "csv");
+      const name = exportFilename(table, "csv");
       saveFile(text, name, "text/csv;charset=utf-8");
-      // Header row doesn't count as a set.
+      // Header row isn't a record. Counting CRLFs is safe even with quoted
+      // newlines inside a notes field, because those are LF-only.
       const rows = Math.max(0, text.trimEnd().split("\r\n").length - 1);
-      setStatus({ kind: "done", text: `${name} — ${rows} sets` });
+      setStatus({ kind: "done", text: `${name} — ${rows} ${table === "sets" ? "sets" : "sessions"}` });
     } catch {
       setStatus({ kind: "error", text: "Couldn't reach the server. An export needs a connection — it reads the database, not this device." });
     }
@@ -116,12 +117,25 @@ export function DataExport() {
 
       <div className={styles.row}>
         <div className={styles.rowMain}>
+          <span className={editors.fieldLabel}>Sessions spreadsheet</span>
+          <span className={editors.fieldNote}>
+            One row per session — true end time, duration, and how much was actually logged. Shows sessions the
+            sets file can&apos;t: the ones with nothing in them.
+          </span>
+        </div>
+        <button type="button" className={`${styles.dataBtn} ${styles.rowControl}`} onClick={() => exportCsv("sessions")} disabled={busy}>
+          Export CSV
+        </button>
+      </div>
+
+      <div className={styles.row}>
+        <div className={styles.rowMain}>
           <span className={editors.fieldLabel}>Sets spreadsheet</span>
           <span className={editors.fieldNote}>
             Every logged set, one row each, with exercise and machine names spelled out — as CSV.
           </span>
         </div>
-        <button type="button" className={`${styles.dataBtn} ${styles.rowControl}`} onClick={exportCsv} disabled={busy}>
+        <button type="button" className={`${styles.dataBtn} ${styles.rowControl}`} onClick={() => exportCsv("sets")} disabled={busy}>
           Export CSV
         </button>
       </div>

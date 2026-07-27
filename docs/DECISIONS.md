@@ -4357,3 +4357,74 @@ ordered by session date. NULL is written as an **empty field**, never `0` or
 `"null"` — the absence semantics only survive the round trip if blank stays
 blank. RFC 4180 escaping with CRLF terminators; `csvField`/`toCsv` are pure and
 tested (12 tests).
+
+---
+
+## 2026-07-27 — Export corrections: true finish time, sessions CSV, husk predicate
+
+### Progression IS consuming effort (answering the §5 question first)
+
+`set_logs.rir` being 0/215 is expected and correct, not a gap. The adapter
+derives RIR from the `effort` enum — [`coreAdapters.ts`](../src/lib/coreAdapters.ts)
+calls `normalizedRir(r.effort, r.rir)`, which prefers an explicit `rir` and
+otherwise maps the tag (`to_failure` → 0, `near_failure` → 1, `more_in_me` → 3).
+`rir` is the escape hatch for an exact number the UI never asks for.
+
+What IS partial: **52 of 215 sets carry an effort tag** (27 near_failure,
+14 to_failure, 11 more_in_me); the other 163 reach the core as `rir: null`.
+So progression receives effort on about a quarter of sets — the plumbing works,
+the input is sparse. That's a logging-habit question, not a code defect.
+
+### §1 `finished_at` is a last-modified stamp, not a finish time
+
+Four of seven finished sessions had `finished_at` diverged from
+`first_finished_at`; log 3 read 2026-07-25T07:54 for a session that ended
+2026-07-14T22:30 — eleven days late.
+
+The CSV now exports `session_ended_at` (coalesce of `first_finished_at`,
+`finished_at`) and keeps the re-stampable value as `session_last_updated_at`,
+labelled for what it is. History and Home already read `firstFinishedAt`;
+`FinishSheet`'s "Previously finished at …" was the single remaining surface
+showing the rewritten value and now shows the stable one.
+
+**Rename proposal (NOT taken):** `finished_at` → `last_finished_at` would be a
+pure-rename migration touching four insert sites, the sync payloads, the local
+IndexedDB shape and the `ServerSession` interface — for zero behaviour change.
+The column is now labelled honestly at every read; that is enough. Recorded in
+SPEC-DRIFT instead.
+
+### §3 Content means LOGGED, not planned
+
+Predicate changed from `sets + cardio + occurrences > 0` to `sets + cardio > 0`
+in all three places that must agree: the server list filter, the server sweep
+([`api/sessions/route.ts`](../src/app/api/sessions/route.ts)) and the local
+`discardSessionIfEmpty`. Adding an exercise states an intention; only a logged
+set states a fact. Log 48 survived five hours on one occurrence and zero sets.
+
+**The accepted cost:** staging a session and navigating away now discards it.
+An unlogged plan is cheap to rebuild; an invisible husk is not, because the
+list is the only place a session can be deleted.
+
+Both directions are locked by tests: an occurrence-only session is now a husk,
+and a session with sets and NO occurrences (the pre-occurrence-model shape)
+still counts as content and is never swept.
+
+### Two bugs found while building the sessions CSV — worth remembering
+
+1. **Interpolating drizzle columns into a raw `sql` subquery drops the
+   qualification.** `${setLogs.workoutLogId} = ${workoutLogs.id}` renders as
+   `"workout_log_id" = "id"`; both bind to the INNER table, and every count
+   comes back **0 with no error**. Spell correlations out literally
+   (`c.workout_log_id = workout_logs.id`). Caught only by diffing against psql.
+2. **`created_at` is `timestamp WITHOUT time zone`.** It was written by `now()`
+   under the database's `TimeZone`, so it must be read back under
+   `current_setting('TimeZone')` — prod is GMT, the local dev DB is
+   America/New_York. Hardcoding `'UTC'` was wrong by four hours locally.
+   A raw `sql` expression also carries no column decoder, so timestamps must be
+   formatted to strict ISO in SQL rather than handed back as values.
+
+**Known, unfixed, and reported:** the JSON export's tz-less `created_at` columns
+are parsed by node-postgres in the RUNNING PROCESS's timezone. Correct on Vercel
+(UTC), shifted when run locally. A global `setTypeParser(1114, …)` in
+`db/client.ts` would fix it everywhere but changes every query in the app —
+too broad to slip in unrequested.

@@ -12,14 +12,20 @@ const HUSK_AGE_MS = 5 * 60_000;
 
 // GET /api/sessions — the sessions that live on the server, newest first.
 //
-// Returns FINISHED sessions plus UNFINISHED ones that carry content
-// (sets + cardio + occurrences > 0). Unfinished sessions used to be filtered
-// out entirely, which made them invisible in the list — and since the list is
-// also the only place a session can be deleted, invisible meant undeletable:
-// seven of them accumulated silently. Content is counted across all three
-// children, never occurrences alone: one real session held 6 sets and 0
-// occurrences (pre-occurrence-model), and an occurrence-only predicate would
-// have hidden exactly the row most worth reaching.
+// Returns FINISHED sessions plus UNFINISHED ones that carry LOGGED content
+// (sets + cardio > 0). Unfinished sessions used to be filtered out entirely,
+// which made them invisible in the list — and since the list is also the only
+// place a session can be deleted, invisible meant undeletable: seven of them
+// accumulated silently.
+//
+// CONTENT MEANS LOGGED, NOT PLANNED. Occurrences are excluded on purpose:
+// adding an exercise states an intention, not a fact. Counting them let a
+// session survive five hours in prod on one occurrence and zero sets — Start
+// tapped, one exercise added, nothing logged.
+//
+// Both directions still matter, and this predicate keeps both: a session with
+// sets and NO occurrences (the pre-occurrence-model shape) is content and stays
+// visible, because `set_logs` is checked independently of `session_exercises`.
 //
 // This is the *synced* half of the sessions list; the client merges it with its
 // local durable store (offline + in-flight), keyed by clientSessionId, so the
@@ -28,18 +34,21 @@ const HUSK_AGE_MS = 5 * 60_000;
 // so the client doesn't have to re-fetch every set to label a session.
 export async function GET() {
   // (b) Husk sweep, best-effort and non-fatal: drop UNFINISHED sessions with no
-  // sets, no cardio, no occurrences, older than the age guard. Same predicate
-  // and same 5-minute threshold as the local sweep, so the two can't drift.
-  // Recoverable by construction — a device that still holds such a session
-  // locally re-creates the row on its next sync.
+  // sets and no cardio, older than the age guard. Same predicate and same
+  // 5-minute threshold as the local sweep (`discardSessionIfEmpty`), so the two
+  // cannot drift. Recoverable by construction — a device that still holds such
+  // a session locally re-creates the row on its next sync.
+  //
+  // The occurrence cascade is what makes this safe to widen: deleting the log
+  // takes its `session_exercises` with it (ON DELETE CASCADE), and there are no
+  // sets to orphan, because "no sets" is the precondition.
   try {
     await db.execute(sql`
       delete from ${workoutLogs}
       where ${workoutLogs.finishedAt} is null
         and ${workoutLogs.createdAt} < ${new Date(Date.now() - HUSK_AGE_MS)}
         and not exists (select 1 from ${setLogs} where ${setLogs.workoutLogId} = ${workoutLogs.id})
-        and not exists (select 1 from ${cardioLogs} where ${cardioLogs.workoutLogId} = ${workoutLogs.id})
-        and not exists (select 1 from ${sessionExercises} where ${sessionExercises.workoutLogId} = ${workoutLogs.id})`);
+        and not exists (select 1 from ${cardioLogs} where ${cardioLogs.workoutLogId} = ${workoutLogs.id})`);
   } catch {
     /* sweeping is housekeeping — never fail the list because of it */
   }
@@ -56,14 +65,14 @@ export async function GET() {
       firstFinishedAt: workoutLogs.firstFinishedAt,
     })
     .from(workoutLogs)
-    // (a) Finished, OR unfinished-with-content. Content = sets + cardio +
-    // occurrences, never occurrences alone.
+    // (a) Finished, OR unfinished-with-LOGGED-content. Must stay identical to
+    // the sweep predicate above and to `discardSessionIfEmpty` — a row this
+    // filter hides but the sweep spares is exactly the undeletable husk.
     .where(
       sql`(
         ${workoutLogs.finishedAt} is not null
         or exists (select 1 from ${setLogs} where ${setLogs.workoutLogId} = ${workoutLogs.id})
         or exists (select 1 from ${cardioLogs} where ${cardioLogs.workoutLogId} = ${workoutLogs.id})
-        or exists (select 1 from ${sessionExercises} where ${sessionExercises.workoutLogId} = ${workoutLogs.id})
       )`
     )
     .orderBy(desc(workoutLogs.date), desc(workoutLogs.firstFinishedAt));

@@ -1228,9 +1228,34 @@ describe("empty-session discard — husks die, content is sacred", () => {
     expect(await getSession(id)).toBeTruthy();
   });
 
-  it("an attached occurrence alone (no sets) protects the session", async () => {
+  it("an attached occurrence alone (no sets) is a HUSK — planning isn't content", async () => {
+    // Inverted deliberately. This used to protect the session, and that is how
+    // a prod session survived five hours on one occurrence and zero sets:
+    // Start tapped, one exercise added, nothing logged. Adding an exercise
+    // states an intention; only a logged set states a fact.
     const { id } = await newSession();
+    expect(await discardSessionIfEmpty(id)).toBe(true);
+    expect(await getSession(id)).toBeNull();
+  });
+
+  it("sets with NO occurrences still count as content (the legacy shape)", async () => {
+    // The other direction, and the one an occurrence-only predicate would get
+    // wrong: a pre-occurrence-model session is sets with no occurrence rows.
+    // It must stay visible and un-sweepable.
+    mockOffline();
+    const { id, inst } = await newSession();
+    await logSet({ ...baseInput, sessionId: id, instanceId: inst, date: "x" as never });
+
+    // Strip the occurrence row, leaving the logged set — the legacy shape.
+    // Test-only surgery, same technique the sweep age test uses.
+    const db = await (await import("idb")).openDB("fitness-app-session", 4);
+    for (const o of await db.getAllFromIndex("occurrences", "by-session", id)) await db.delete("occurrences", o.instanceId);
+    expect(await db.getAllFromIndex("occurrences", "by-session", id)).toHaveLength(0);
+    db.close();
+
+    expect(await getSessionSets(id)).toHaveLength(1);
     expect(await discardSessionIfEmpty(id)).toBe(false);
+    expect(await sweepEmptySessions(0)).toBe(0);
     expect(await getSession(id)).toBeTruthy();
   });
 

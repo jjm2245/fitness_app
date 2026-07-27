@@ -53,7 +53,10 @@ export function FinishSheet({
     <Sheet
       title={`Finish ${session.origin}`}
       onClose={onClose}
-      footer={session.finishedAt ? `Previously finished at ${new Date(session.finishedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — finishing again re-stamps it.` : undefined}
+      // The STABLE first-finish instant, never the re-stampable finishedAt: on
+      // a session re-finished days later the latter reads as an absurd hour and
+      // calls it "finished at". What's re-stamped is said explicitly instead.
+      footer={session.finishedAt ? `Finished at ${new Date(session.firstFinishedAt ?? session.finishedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — finishing again updates the session, not that time.` : undefined}
     >
       <div className={styles.statCells}>
         <div className={styles.statCell}>

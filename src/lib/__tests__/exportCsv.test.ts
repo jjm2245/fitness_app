@@ -78,6 +78,7 @@ describe("exportFilename", () => {
     const d = new Date(2026, 6, 26, 21, 30);
     expect(exportFilename("export", "json", d)).toBe("fitness-agent-export-2026-07-26.json");
     expect(exportFilename("sets", "csv", d)).toBe("fitness-agent-sets-2026-07-26.csv");
+    expect(exportFilename("sessions", "csv", d)).toBe("fitness-agent-sessions-2026-07-26.csv");
   });
 
   it("zero-pads month and day", () => {

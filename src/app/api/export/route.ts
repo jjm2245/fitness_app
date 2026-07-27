@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   profile,
@@ -112,8 +112,14 @@ const EXCLUDED = [
 ] as const;
 
 export async function GET(request: NextRequest) {
-  const format = request.nextUrl.searchParams.get("format");
-  if (format === "csv") return csvResponse();
+  const params = request.nextUrl.searchParams;
+  const format = params.get("format");
+  if (format === "csv") {
+    const table = params.get("table") ?? "sets";
+    if (table === "sets") return setsCsvResponse();
+    if (table === "sessions") return sessionsCsvResponse();
+    return NextResponse.json({ error: "unsupported table", supported: ["sets", "sessions"] }, { status: 400 });
+  }
   if (format != null && format !== "json") {
     return NextResponse.json({ error: "unsupported format", supported: ["json", "csv"] }, { status: 400 });
   }
@@ -158,13 +164,68 @@ async function jsonResponse() {
   });
 }
 
+/**
+ * When a session ENDED.
+ *
+ * `finished_at` re-stamps on every re-finish, so it drifts: four of the owner's
+ * seven finished sessions had diverged, one by eleven days. `first_finished_at`
+ * is stamped once and never rewritten (a user correction sets it directly), so
+ * it is the only column that answers "when did this session end". Anything
+ * presenting `finished_at` as the end time is presenting a last-modified stamp.
+ *
+ * Legacy rows predate `first_finished_at`; for those `finished_at` is all there
+ * is, and it hasn't been re-stamped either, so the coalesce is honest.
+ *
+ * Done in JS rather than a SQL `coalesce` on purpose: a raw `sql` expression
+ * bypasses drizzle's column decoder and the timestamptz arrives as a Postgres
+ * literal (`2026-07-11 20:01:50.016-04`) instead of an ISO instant. Reading the
+ * two real columns keeps the decoder in the loop.
+ */
+function endedAt(r: { firstFinishedAt: Date | null; finishedAt: Date | null }): Date | null {
+  return r.firstFinishedAt ?? r.finishedAt;
+}
+
+/**
+ * `created_at` is `timestamp WITHOUT time zone`, so it carries a wall clock with
+ * no offset. It was WRITTEN by `now()` under the database's `TimeZone` setting,
+ * so re-interpreting it under that same setting recovers the true instant —
+ * which is right for prod (GMT) and for the local dev database (America/
+ * New_York) without hardcoding either.
+ *
+ * Hardcoding 'UTC' here was wrong by four hours locally; this is the version
+ * that doesn't depend on where it runs.
+ *
+ * Formatted to a strict ISO-8601 Z string in SQL rather than handed back as a
+ * value: a raw `sql` expression carries no column decoder, so drizzle would
+ * return a Postgres literal that `new Date()` parses only by luck.
+ */
+const createdAtInstant = sql<string>`to_char(
+  (${workoutLogs.createdAt} at time zone current_setting('TimeZone')) at time zone 'UTC',
+  'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+)`;
+
+/**
+ * A correlated child count.
+ *
+ * BOTH sides are spelled out literally, and that is load-bearing. Interpolating
+ * a drizzle column into a raw subquery renders it UNQUALIFIED — `${setLogs.
+ * workoutLogId} = ${workoutLogs.id}` becomes `"workout_log_id" = "id"`, so both
+ * names bind to the INNER table and every count silently comes back 0. No
+ * error, just wrong numbers: the worst kind of bug, and one this export shipped
+ * for exactly one iteration before the counts were checked against psql.
+ */
+function childCount(table: "set_logs" | "cardio_logs" | "session_exercises", expr = "count(*)") {
+  return sql<number>`(select ${sql.raw(expr)} from ${sql.raw(table)} c where c.workout_log_id = workout_logs.id)`.mapWith(Number);
+}
+
 /** The denormalized `set_logs` view: ids resolved to names, one row per set. */
-async function csvResponse() {
+async function setsCsvResponse() {
   const rows = await db
     .select({
       set: setLogs,
       sessionDate: workoutLogs.date,
-      sessionFinishedAt: workoutLogs.finishedAt,
+      firstFinishedAt: workoutLogs.firstFinishedAt,
+      finishedAt: workoutLogs.finishedAt,
       exerciseName: exercises.name,
       equipmentLabel: equipment.label,
       equipmentGym: equipment.gym,
@@ -181,7 +242,9 @@ async function csvResponse() {
   const csv = toCsv<Row>(
     [
       { key: "session_date", get: (r) => r.sessionDate },
-      { key: "session_finished_at", get: (r) => r.sessionFinishedAt },
+      // The true end time, then the re-stampable one — labelled for what it is.
+      { key: "session_ended_at", get: (r) => endedAt(r) },
+      { key: "session_last_updated_at", get: (r) => r.finishedAt },
       { key: "workout_log_id", get: (r) => r.set.workoutLogId },
       { key: "session_exercise_id", get: (r) => r.set.sessionExerciseId },
       { key: "set_log_id", get: (r) => r.set.id },
@@ -213,6 +276,78 @@ async function csvResponse() {
     rows
   );
 
+  return csv200(csv);
+}
+
+/**
+ * One row per session.
+ *
+ * This exists because the set-level CSV structurally cannot show a session that
+ * logged nothing — which is exactly how an empty session stayed invisible for
+ * five hours. A sessions view surfaces `sets = 0` on sight.
+ *
+ * Counts are correlated subqueries rather than joins: three LEFT JOINs against
+ * one parent multiply each other's rows, and the resulting set count would be
+ * `sets × cardio × occurrences`. Slower, correct.
+ */
+async function sessionsCsvResponse() {
+  const rows = await db
+    .select({
+      id: workoutLogs.id,
+      date: workoutLogs.date,
+      clientSessionId: workoutLogs.clientSessionId,
+      programId: workoutLogs.programId,
+      programDay: workoutLogs.programDay,
+      createdAt: createdAtInstant,
+      firstFinishedAt: workoutLogs.firstFinishedAt,
+      finishedAt: workoutLogs.finishedAt,
+      endedSource: workoutLogs.firstFinishedSource,
+      notes: workoutLogs.notes,
+      occurrences: childCount("session_exercises"),
+      sets: childCount("set_logs"),
+      cardioEntries: childCount("cardio_logs"),
+      distinctExercises: childCount("set_logs", "count(distinct c.exercise_id)"),
+    })
+    .from(workoutLogs)
+    .orderBy(asc(workoutLogs.date), asc(workoutLogs.id));
+
+  type Row = (typeof rows)[number];
+  const csv = toCsv<Row>(
+    [
+      { key: "session_date", get: (r) => r.date },
+      { key: "workout_log_id", get: (r) => r.id },
+      { key: "client_session_id", get: (r) => r.clientSessionId },
+      { key: "program_id", get: (r) => r.programId },
+      { key: "program_day", get: (r) => r.programDay },
+      { key: "started_at", get: (r) => r.createdAt },
+      { key: "ended_at", get: (r) => endedAt(r) },
+      { key: "ended_at_source", get: (r) => r.endedSource },
+      { key: "last_updated_at", get: (r) => r.finishedAt },
+      // Start → true end, in minutes. Null when unfinished. Deliberately NOT
+      // clamped the way History clamps it for display: an export that silently
+      // dropped an implausible span would hide the corrupt stamp worth seeing.
+      { key: "duration_min", get: (r) => durationMin(r.createdAt, endedAt(r)) },
+      { key: "finished", get: (r) => (r.finishedAt == null ? "no" : "yes") },
+      { key: "occurrences", get: (r) => r.occurrences },
+      { key: "sets", get: (r) => r.sets },
+      { key: "cardio_entries", get: (r) => r.cardioEntries },
+      { key: "distinct_exercises", get: (r) => r.distinctExercises },
+      { key: "notes", get: (r) => r.notes },
+    ],
+    rows
+  );
+
+  return csv200(csv);
+}
+
+function durationMin(startIso: string | null, end: Date | null): number | null {
+  if (startIso == null || end == null) return null;
+  const start = Date.parse(startIso);
+  if (!Number.isFinite(start)) return null;
+  return Math.round((end.getTime() - start) / 60_000);
+}
+
+function csv200(csv: string) {
   return new NextResponse(csv, {
     headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" },
   });

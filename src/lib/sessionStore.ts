@@ -495,7 +495,13 @@ export async function discardSessionIfEmpty(id: string): Promise<boolean> {
   const s = await db.get("sessions", id);
   if (!s) return false;
   if (s.finishedAt || s.metaDirty || s.occurrenceConflict) return false;
-  if ((await db.getAllFromIndex("occurrences", "by-session", id)).length > 0) return false;
+  // Occurrences deliberately do NOT count as content. Adding an exercise is
+  // stating an intention, not recording a fact: a session with occurrences and
+  // nothing logged is precisely the husk this rule exists to collect (one
+  // survived five hours in prod because tapping "add exercise" qualified).
+  // The cost is real and accepted — staging a session and navigating away
+  // discards it — but an unlogged plan is cheap to rebuild and an invisible
+  // husk is not, because the list is also the only place a session is deletable.
   if ((await db.getAllFromIndex("sets", "by-session", id)).length > 0) return false;
   if ((await db.getAllFromIndex("cardio", "by-session", id)).length > 0) return false;
   await deleteSession(id);
