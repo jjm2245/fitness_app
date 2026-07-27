@@ -4537,3 +4537,76 @@ husk sweep.)
 The 23 `logged_at` rows are ids 7–29 inclusive, all in log 3, receiving values
 between `2026-07-14T23:01:31.206Z` and `2026-07-14T23:58:40.667Z`. 192 rows must
 not move; volume checksum 236416 must not change.
+
+---
+
+## 2026-07-27 (final) — Backfills run, 0032, drop-set snapshot, derived program
+
+### The three backfills — committed to prod
+
+Run as a two-pass script: the whole sequence executed once inside a transaction
+that was rolled back regardless of outcome, asserted, and only then repeated for
+real. Any failed assertion aborts before the real pass is attempted.
+
+| | wrote | proof |
+|---|---|---|
+| A · occurrence → `program_day_id` | 64 | 1 ad-hoc stays NULL |
+| B · `logged_at = created_at` | 23 | ids **7–29 inclusive**, all in log 3 |
+| C · log 3 `first_finished_at` | 1 | `2026-07-14T23:58:41Z`, pinned to its last set |
+
+**Provenance for B (the whole point of recording it):** set_logs ids
+7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+27, 28, 29. Their `logged_at` is derived from `created_at`, not client-stamped.
+Everything outside that range was client-stamped at log time.
+
+Unchanged across the write, by checksum: 215 sets, 65 occurrences, 7 sessions,
+volume 236416, and an md5 over every set's load/reps/effort/equipment. The 192
+untouched `logged_at` values hashed identical.
+
+Log 3 now reads `started 23:01:31Z → ended 23:58:41Z`, duration **57 min**,
+`ends_before_starts` false.
+
+**A guard caught my own bad assertion**, which is worth recording as the reason
+the rehearsal pass exists. The first run failed on "the 192 logged_at values are
+byte-identical" — because I hashed `where logged_at is not null`, which selects
+192 rows before the write and 215 after. The data was fine; the check compared
+different row sets. Re-pinned to the fixed id range (`id not between 7 and 29`).
+A rehearsal that can only ever pass is not a rehearsal.
+
+### §2 Drop segments lost their equipment snapshot
+
+`addDrop` in StrengthCard copied `equipmentId`, `equipmentLabel`, `setType` and
+`side` from the parent but **never `equipmentType`**, so every drop segment came
+out typeless. Now inherits `equipmentType` and `equipmentBuiltInWeight` too.
+
+This mattered beyond cosmetics: the `· no unit` marker requires a context-bound
+`equipment_type` to fire, and so does the "unattributed sets" audit — so a
+typeless drop segment was **invisible to the very query that would have found
+it**. Verified through the real UI: parent and segment both `selectorized`.
+
+**3 drop groups exist in prod, 2 are affected** (segments 61 and 110). Group
+55/56 is intact, so something once carried the type — origin not established.
+Backfill proposed, not run: both would gain their parent's `equipment_type`
+(`cable`, `selectorized`); neither changes `equipment_id`.
+
+### §3 The sessions CSV's program is derived, not stored
+
+`workout_logs.program_id` is never written, so emitting it produced a
+permanently blank column. Replaced with `programs` / `program_ids` /
+`program_count` derived through `session_exercises.program_day_id`, plus
+`block_occurrences` and `adhoc_occurrences`.
+
+Multi-program sessions list every program rather than picking one; a session
+with no program-linked occurrence reads `(ad-hoc)`. Blocks are excluded from the
+program columns and counted separately — they are `program_days` of the hidden
+block library, and counting them as a program would have put
+`__block_library__` in the name list of almost every session.
+
+### §5 Butterfly — the report did not reproduce
+
+Checked the cited ids directly: **250, 251, 252 all carry
+`equipment_id = 7d40d4f1…`**, the same unit as 7/14 and 7/18. All 9 Butterfly
+sets across all three dates are attributed. Nothing to correct.
+
+The real unattributed population is **30 cable sets in 8 exercise/date groups**,
+none of them Butterfly — listed in the round report.

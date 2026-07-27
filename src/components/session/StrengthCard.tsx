@@ -570,6 +570,15 @@ export function StrengthCard({
       exerciseName: dropFor.exerciseName,
       equipmentId: dropFor.equipmentId,
       equipmentLabel: dropFor.equipmentLabel ?? null,
+      // The full equipment snapshot, not just the unit. `equipmentType` was
+      // missing here, so a drop segment came out less self-describing than its
+      // parent — same machine, same set, but typeless. That also made it
+      // invisible to every audit that keys on equipment_type, including the
+      // "· no unit" marker (which needs a context-bound type to fire) and the
+      // unattributed-sets query. A drop is the same set on the same machine at
+      // a lighter load; it inherits the whole snapshot.
+      equipmentType: dropFor.equipmentType ?? null,
+      equipmentBuiltInWeight: dropFor.equipmentBuiltInWeight ?? null,
       setType: dropFor.setType,
       load: l,
       reps: dropReps,

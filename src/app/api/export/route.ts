@@ -358,8 +358,41 @@ async function sessionsCsvResponse() {
       id: workoutLogs.id,
       date: workoutLogs.date,
       clientSessionId: workoutLogs.clientSessionId,
-      programId: workoutLogs.programId,
       programDay: workoutLogs.programDay,
+      // Derived through the occurrence link, never `workout_logs.program_id` —
+      // that column is deliberately never written (see DECISIONS), so emitting
+      // it here would be a permanently blank column, which is worse than none.
+      programNames: sql<string | null>`(
+        select string_agg(distinct p.split_type, ' + ')
+        from session_exercises se
+        join program_days pd on pd.id = se.program_day_id
+        join programs p on p.id = pd.program_id
+        where se.workout_log_id = workout_logs.id and p.is_block_library = false)`,
+      programIds: sql<string | null>`(
+        select string_agg(distinct p.id::text, ' + ')
+        from session_exercises se
+        join program_days pd on pd.id = se.program_day_id
+        join programs p on p.id = pd.program_id
+        where se.workout_log_id = workout_logs.id and p.is_block_library = false)`,
+      programCount: sql<number>`(
+        select count(distinct p.id)
+        from session_exercises se
+        join program_days pd on pd.id = se.program_day_id
+        join programs p on p.id = pd.program_id
+        where se.workout_log_id = workout_logs.id and p.is_block_library = false)`.mapWith(Number),
+      // Blocks are program_days of the hidden block-library "program". Counting
+      // them as a program would put `__block_library__` in the name list of
+      // almost every session; ignoring them entirely would lose where those
+      // occurrences came from. They get their own count.
+      blockOccurrences: sql<number>`(
+        select count(*)
+        from session_exercises se
+        join program_days pd on pd.id = se.program_day_id
+        join programs p on p.id = pd.program_id
+        where se.workout_log_id = workout_logs.id and p.is_block_library = true)`.mapWith(Number),
+      adhocOccurrences: sql<number>`(
+        select count(*) from session_exercises se
+        where se.workout_log_id = workout_logs.id and se.program_day_id is null)`.mapWith(Number),
       createdAt: createdAtInstant,
       firstFinishedAt: workoutLogs.firstFinishedAt,
       finishedAt: workoutLogs.finishedAt,
@@ -379,8 +412,15 @@ async function sessionsCsvResponse() {
       { key: "session_date", get: (r) => r.date },
       { key: "workout_log_id", get: (r) => r.id },
       { key: "client_session_id", get: (r) => r.clientSessionId },
-      { key: "program_id", get: (r) => r.programId },
       { key: "program_day", get: (r) => r.programDay },
+      // A session can draw from two programs, or from none. Rather than picking
+      // a winner, the names are listed, the count is stated, and a session with
+      // no program-linked occurrence says so outright.
+      { key: "programs", get: (r) => (r.programCount === 0 ? "(ad-hoc)" : r.programNames) },
+      { key: "program_ids", get: (r) => r.programIds },
+      { key: "program_count", get: (r) => r.programCount },
+      { key: "block_occurrences", get: (r) => r.blockOccurrences },
+      { key: "adhoc_occurrences", get: (r) => r.adhocOccurrences },
       { key: "started_at", get: (r) => r.createdAt },
       { key: "ended_at", get: (r) => endedAt(r) },
       { key: "ended_at_source", get: (r) => r.endedSource },
