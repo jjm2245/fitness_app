@@ -6,6 +6,7 @@ import { ProvenanceBadge } from "@/components/ExerciseSearch";
 import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEquipmentType, type EquipmentTypeId } from "@/lib/equipment";
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { parseStackMarking, resolveWeightUnit, formatDualWeight } from "@/lib/stack";
+import { nextSelectableLoad, checkLoadSanity, type GridSpec } from "@/lib/nextLoad";
 import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
 import { EntryUnitLabel } from "./EntryUnitLabel";
 import { publishRestTimer } from "@/lib/restTimerBus";
@@ -70,6 +71,14 @@ interface SessionUnit {
   builtInWeight: string | null;
   // How this machine's stack is marked ('lb' | 'kg' | null = not recorded).
   stackUnit?: string | null;
+  // Stack geometry + this unit's logged loads. All already returned by
+  // GET /api/equipment; the type simply didn't admit them. plate_increment and
+  // stack_max are NULL on every unit today, which is exactly why the increment
+  // falls back to deriving from loggedLoads.
+  plateIncrement?: string | null;
+  addOnWeight?: string | null;
+  stackMax?: string | null;
+  loggedLoads?: number[];
   notes: string | null;
   exercises: { exerciseId: string }[];
 }
@@ -255,6 +264,17 @@ export function StrengthCard({
   // Input-boundary only: derived from the already-resolved unit, feeding the
   // load box's label and its one conversion. No lane, offset, timer or drop
   // state is involved.
+  // This machine's selectable grid. Presentation-layer only: it snaps what the
+  // core suggested onto what the machine can actually select, and never feeds
+  // anything back into core. `loggedLoads` is this unit's own history, so the
+  // derived increment is per-lane rather than global.
+  const num = (v: unknown) => { const n = Number(v); return v == null || v === "" || !Number.isFinite(n) ? null : n; };
+  const grid: GridSpec = {
+    storedIncrement: num(selectedUnit?.plateIncrement),
+    loggedLoads: selectedUnit?.loggedLoads ?? [],
+    addOn: num(selectedUnit?.addOnWeight),
+    max: num(selectedUnit?.stackMax),
+  };
   const stackMarking = parseStackMarking(selectedUnit?.stackUnit ?? null);
   const entryUnit = resolveWeightUnit(stackMarking, wUnit);
   const unitPinned = stackMarking != null;
@@ -271,6 +291,11 @@ export function StrengthCard({
   // Elsewhere it fires only on the slip's exact shape — the raw number matching
   // history while the converted one doesn't. Advisory only; never blocks a log.
   const [slipDismissed, setSlipDismissed] = useState(false);
+  // Load sanity. Advisory, like the slip guard: it asks, it never blocks, and
+  // it is silent on every plausible entry. Dismissal is keyed to the value, so
+  // correcting the number re-arms it and confirming one absurd load doesn't
+  // silence the next.
+  const [sanityOk, setSanityOk] = useState<number | null>(null);
   const slip = unitPinned
     ? null
     : detectUnitSlip({
@@ -385,6 +410,10 @@ export function StrengthCard({
   // unit" all fall back to the global preference, exactly as before.
   const canonicalLoad = entryUnit === "kg" ? kgToLb(load) : load;
   const totalLoad = canonicalLoad + effOffset;
+  // Checked on the TOTAL (entered + built-in), because that is the number that
+  // lands in the lane's history and feeds every later suggestion. stack_max is
+  // NULL on all 18 units today, so in practice only the absolute ceiling fires.
+  const sanityWarn = checkLoadSanity(totalLoad, grid.max);
   function confirmOffset(value: number) {
     localStorage.setItem(offsetOkKey(activeExercise.id, equipType), String(value));
     setOffsetConfirmed(true);
@@ -398,6 +427,18 @@ export function StrengthCard({
   }
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
+  // Anchored to the heaviest WORKING set on this occurrence — the same set the
+  // core treats as the top set, so the suggestion steps up from what was
+  // actually lifted rather than from the last row entered.
+  const topLoggedLoad = loggedSets
+    .filter((x) => x.setType === "working")
+    .reduce((best, x) => Math.max(best, Number(x.load) || 0), 0);
+  const concreteNext = (() => {
+    if (progression?.status === "new_machine_baseline") return null;
+    if (progression?.signal.type !== "increase_load" || topLoggedLoad <= 0) return null;
+    const r = nextSelectableLoad(topLoggedLoad, grid);
+    return r.kind === "unknown" ? null : r;
+  })();
 
   // Load the whole unit list (all exercises) so any existing machine is
   // reusable here — the field is always on.
@@ -997,6 +1038,19 @@ export function StrengthCard({
                     {"reason" in progression.signal ? `: ${progression.signal.reason}` : ""}
                     {progression.signal.type === "increase_load" && progression.signal.suggestedLoad != null ? ` (try ${w(progression.signal.suggestedLoad)} ${entryUnit})` : ""}
                   </span>
+                  {/* The concrete step, snapped to what this machine can select.
+                      Rendered BESIDE the core's wording, never replacing it —
+                      core keeps saying what it decided, this says what to pin.
+                      Absent whenever no increment resolves, which is every
+                      bodyweight lane and any lane with under three distinct
+                      loads. */}
+                  {concreteNext && (
+                    <div className={styles.progConcrete}>
+                      {concreteNext.kind === "at_max"
+                        ? `${selectedUnit?.label ?? "This stack"} is topped out at ${w(concreteNext.max)} ${entryUnit} — add reps, a pause, or a harder variation instead.`
+                        : `Try ${w(concreteNext.load)} ${entryUnit} — the next selectable load on ${selectedUnit?.label ?? "this stack"}${concreteNext.source === "history" ? ` (${w(concreteNext.increment)} ${entryUnit} steps, from your logs)` : ""}.`}
+                    </div>
+                  )}
                   {progression.intervention && <div>Stall-buster: {progression.intervention.message}</div>}
                 </>
               )}
@@ -1053,6 +1107,27 @@ export function StrengthCard({
                     {s === "left" ? "L" : s === "right" ? "R" : "Alternating"}
                   </button>
                 ))}
+              </div>
+            )}
+            {sanityWarn && sanityOk !== totalLoad && (
+              <div className={styles.slipWarn}>
+                <span>
+                  {sanityWarn.kind === "above_stack" ? (
+                    <>
+                      <strong>{w(totalLoad)} {entryUnit}</strong> is above {selectedUnit?.label ?? "this machine"}&rsquo;s{" "}
+                      {w(sanityWarn.stackMax)} {entryUnit} stack. Sure?
+                    </>
+                  ) : (
+                    <>
+                      <strong>{w(totalLoad)} {entryUnit}</strong> is far beyond any real lift — a slipped digit? Sure?
+                    </>
+                  )}
+                </span>
+                <span className={styles.slipWarnActions}>
+                  <button type="button" className={styles.unitConfirmNo} onClick={() => setSanityOk(totalLoad)}>
+                    Yes, log it
+                  </button>
+                </span>
               </div>
             )}
             {slip && !slipDismissed && (

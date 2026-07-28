@@ -139,6 +139,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     date: log.date,
     programDay: log.programDay,
     finishedAt: log.finishedAt,
+    notes: log.notes,
     firstFinishedAt: log.firstFinishedAt,
     firstFinishedSource: log.firstFinishedSource,
     exercises: exercisesOut,
@@ -162,7 +163,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const body = await request.json().catch(() => null);
 
-  const updates: { date?: string; firstFinishedAt?: Date | null; firstFinishedSource?: string } = {};
+  const updates: { date?: string; firstFinishedAt?: Date | null; firstFinishedSource?: string; notes?: string | null } = {};
+  // Empty or whitespace-only clears to NULL — "no note" is one state, not two.
+  if (body?.notes !== undefined) {
+    updates.notes = typeof body.notes === "string" && body.notes.trim() !== "" ? body.notes.trim() : null;
+  }
   if (body?.date !== undefined) {
     if (typeof body.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
       return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });

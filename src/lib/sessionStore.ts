@@ -35,7 +35,11 @@ export interface LocalSession {
   // traceable input (like restSource 'user'); finish stamping never overwrites
   // a user-set (or user-cleared) value. Null/undefined = system-stamped.
   firstFinishedSource?: "user" | null;
-  // The session's date/time have an un-pushed user edit (same dirty-flag
+  // Free text about the whole session — an injury, bad sleep, a crowded gym, a
+  // deload. Optional and quiet; empty stores NULL, never "". Rides the SAME
+  // metaDirty path as the date/time edit rather than inventing a second one.
+  notes?: string | null;
+  // The session's date/time/notes have an un-pushed user edit (same dirty-flag
   // pattern as occurrencesDirty). Cleared when the meta PATCH lands.
   metaDirty?: boolean;
   finishSynced: boolean;
@@ -432,7 +436,7 @@ export function isDeviceBehind(args: {
 // after the log row exists. Never touches finishedAt/finishSynced.
 export async function editSessionMeta(
   id: string,
-  patch: { date?: string; firstFinishedAt?: string | null }
+  patch: { date?: string; firstFinishedAt?: string | null; notes?: string | null }
 ): Promise<LocalSession | null> {
   const db = await getDb();
   const s = await db.get("sessions", id);
@@ -441,6 +445,7 @@ export async function editSessionMeta(
     ...s,
     ...(patch.date !== undefined ? { date: patch.date } : {}),
     ...(patch.firstFinishedAt !== undefined ? { firstFinishedAt: patch.firstFinishedAt } : {}),
+    ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
     firstFinishedSource: "user",
     metaDirty: true,
   };
@@ -540,6 +545,7 @@ export interface ServerSession {
   clientSessionId: string | null;
   date: string;
   programDay: string | null;
+  notes?: string | null;
   finishedAt: string | null;
   firstFinishedAt?: string | null;
   firstFinishedSource?: "user" | null;
@@ -620,6 +626,7 @@ export async function hydrateFromServer(server: ServerSession): Promise<LocalSes
     id: server.id,
     date: server.date,
     origin: server.programDay?.trim() || "Ad-hoc",
+    notes: server.notes ?? null,
     programId: null,
     createdAt: server.finishedAt ?? new Date().toISOString(),
     finishedAt: server.finishedAt,
@@ -1436,7 +1443,7 @@ async function runSync(): Promise<SyncResult> {
       const res = await send(`/api/sessions/${encodeURIComponent(s.id)}`, {
         method: "PATCH",
         headers: jsonHeaders,
-        body: JSON.stringify({ date: s.date, firstFinishedAt: s.firstFinishedAt ?? null }),
+        body: JSON.stringify({ date: s.date, firstFinishedAt: s.firstFinishedAt ?? null, notes: s.notes ?? null }),
       }, true);
       if (res.status !== 404) {
         await db.put("sessions", { ...s, metaDirty: false });

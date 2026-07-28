@@ -27,11 +27,13 @@ export function SessionHeader({
 }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noteVal, setNoteVal] = useState("");
   const [dateVal, setDateVal] = useState(session.date);
   const [timeVal, setTimeVal] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
 
   function open() {
+    setNoteVal(session.notes ?? "");
     setDateVal(session.date);
     if (session.firstFinishedAt) {
       const t = new Date(session.firstFinishedAt);
@@ -60,7 +62,8 @@ export function SessionHeader({
       }
     }
     setError(null);
-    await editSessionMeta(session.id, { date: dateVal, firstFinishedAt });
+    // Empty or whitespace-only clears to NULL — "no note" is one state.
+    await editSessionMeta(session.id, { date: dateVal, firstFinishedAt, notes: noteVal.trim() || null });
     setEditing(false);
     onChanged();
   }
@@ -89,6 +92,18 @@ export function SessionHeader({
           <span className={styles.headerEdit}>
             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} />
             <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} title="Optional — leave blank for no time" />
+            {/* Session note — deliberately HERE, behind the ✎, and not a field
+                sitting between sets. It is for the things that explain a
+                session later (an injury, bad sleep, a crowded gym, a deload),
+                not something to fill in mid-set. */}
+            <textarea
+              className={styles.noteInput}
+              value={noteVal}
+              onChange={(e) => setNoteVal(e.target.value)}
+              placeholder="note about this session (optional)"
+              aria-label="Session note"
+              rows={2}
+            />
             <button type="button" onClick={save} className={styles.smallBtn}>Save</button>
             <button type="button" onClick={() => { setError(null); setEditing(false); }} className={styles.smallBtn}>Cancel</button>
             {session.firstFinishedSource === "user" && <span className={styles.chip}>set by you</span>}
@@ -103,7 +118,9 @@ export function SessionHeader({
           >
             <span className={styles.headerName}>{session.origin}</span>
             <span className={styles.headerWhen}>
-              {dateLabel}{timeLabel} <span aria-hidden="true">✎</span>
+              {dateLabel}{timeLabel}
+              {session.notes ? <span className={styles.noteDot} title={session.notes}> · note</span> : null}{" "}
+              <span aria-hidden="true">✎</span>
             </span>
           </button>
         )}

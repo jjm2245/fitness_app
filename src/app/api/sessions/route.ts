@@ -72,6 +72,7 @@ export async function GET() {
       clientSessionId: workoutLogs.clientSessionId,
       date: workoutLogs.date,
       programDay: workoutLogs.programDay,
+      notes: workoutLogs.notes,
       finishedAt: workoutLogs.finishedAt,
       // The stable first-finish instant — display/sort anchor. finished_at
       // re-stamps on every re-finish and must never place a session in history.
@@ -136,6 +137,7 @@ export async function GET() {
       finishedAt: l.finishedAt,
       firstFinishedAt: l.firstFinishedAt,
       programDay: l.programDay,
+      notes: l.notes,
       exerciseCount,
       description: describeSession(l.programDay, exerciseCount),
       synced: true,

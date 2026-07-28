@@ -4915,3 +4915,76 @@ What actually broke login_attempts was the WRITE side: app-supplied values in
 the process's zone mixed with `now()` values in the DB's zone. That hazard is
 real, applies to `updated_at`, and is recorded in SPEC-DRIFT rather than patched
 four times.
+
+---
+
+## 2026-07-27 (session surface) — concrete progression, load bounds, session notes
+
+### §1 Concrete progression — and a correction to the brief's example
+
+The core still decides *whether* to add load; `src/lib/nextLoad.ts` decides
+*which number*, at the presentation layer. `src/core/*` gains no equipment
+knowledge — verified by grep. The snapping was doable outside core, so it was.
+
+The increment resolves stored → derived → nothing. The derived step reuses
+`suggestPlateIncrement` (the equipment form's "Suggested from your logs"), not a
+second GCD, and its result is a LOWER bound — it may propose a smaller step than
+the machine offers, never an unreachable one.
+
+**Measured against real prod data, 9 of 19 lanes produce a concrete number
+today; the other 10 fall back to generic wording** because `suggestPlateIncrement`
+needs three distinct loads and they have two. That ratio improves on its own as
+history accumulates — no data entry required.
+
+**Two corrections to the verification brief:**
+
+- `VSL16` is **Seated Leg Curl** with loads 140/150 — two distinct, so it
+  correctly falls back to generic. The example intended was **VSL09**, which is
+  Leg Extensions with 140/150/160 → yields 10 exactly as described.
+- `VSL10` is **Calf Press on the Leg Press Machine** (300/320/340 → 20), not
+  the exercise implied.
+
+The behaviour described is real; the unit labels were transposed.
+
+### §2 Load sanity — the ceiling, and why that number
+
+`ABSURD_LOAD_LB = 2000`. Justification: the heaviest raw squat on record is
+~1100 lb and a fully loaded leg press tops out near 1500 lb, so 2000 clears
+every legitimate entry — while still catching the errors that actually happen
+(9999, 12345, a decimal slip turning 1500 into 15000). Locked by a test that
+asserts silence at 45/120/185/315/405/500/700/1100.
+
+Deliberately NOT derived from history: the "2× your usual" bound was rejected in
+the slip-guard round because a genuine PR trips it, and it is not being
+reintroduced under another name.
+
+The `stack_max` check is precise but silent — NULL on all 18 units — so the
+ceiling is the path that actually fires. Both are advisory: one tap to proceed,
+never blocking, dismissal keyed to the value so correcting the number re-arms it.
+
+### §3 Session notes
+
+`workout_logs.notes` existed and had never been surfaced. Now behind the ✎ in
+the session header (not a field between sets) and editable afterwards from the
+History row's expanded detail — which is the more useful moment, since what's
+worth recording about a session is usually clearer in hindsight.
+
+Rides the EXISTING `metaDirty` path rather than a second queue, so a note
+written offline drains with the date/time edits. Empty or whitespace-only stores
+NULL. A session carrying a note shows `· note` on its History row and beside the
+date in the session header.
+
+### Verification coverage, stated honestly
+
+Unit-tested: increment resolution, the add-on grid (120 + 10-plate/5-lever =
+125), the stack-max cap, and every sanity bound — 14 new cases.
+
+Driven through the app: the note round trip (save → list → clear to NULL), the
+History indicator, and the History editor prefilling the right row's text.
+
+**Not driven end to end:** the concrete-suggestion line rendering on a card.
+That needs a lane with three distinct loads AND a progression run returning
+`increase_load`, i.e. three staged sessions on one unit — and the standing rule
+forbids fixturing card behaviour via SQL. The resolver is unit-tested and the
+grid inputs are confirmed reaching the client from `GET /api/equipment`; the
+render itself is verified by construction.

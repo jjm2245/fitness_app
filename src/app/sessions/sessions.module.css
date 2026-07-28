@@ -225,3 +225,30 @@
 .secondaryBtn {
   background: var(--raised);
 }
+
+/* Session note in the expanded row. Full-width textarea + a save button that
+   stays disabled until the text actually differs from what's stored. */
+.noteRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.noteBox {
+  flex: 1;
+  min-width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+/* Quiet, but present — the point is findability, not decoration. */
+.noteMark {
+  color: var(--accent);
+  font-weight: 400;
+}

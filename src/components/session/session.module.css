@@ -1343,3 +1343,30 @@
   line-height: 1.45;
   color: var(--warning);
 }
+
+/* The concrete next load, under the core's own wording. Accent-tinted because
+   it is the actionable line — the one number you'd act on at the machine. */
+.progConcrete {
+  margin-top: 4px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Session note: full width under the date/time inputs, which sit in a wrapping
+   flex row — a note needs the whole line, not a share of it. */
+.noteInput {
+  flex-basis: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: inherit;
+  resize: vertical;
+}
+/* "· note" beside the date — quiet, but enough to find the session again. */
+.noteDot {
+  color: var(--accent);
+}

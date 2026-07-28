@@ -12,6 +12,7 @@ import {
   rehydrateLocalFromServer,
   isDeviceBehind,
   sweepEmptySessions,
+  editSessionMeta,
   sync,
   pendingCount,
   type LocalSessionSummary,
@@ -31,6 +32,7 @@ interface ServerSession {
   finishedAt: string | null;
   firstFinishedAt: string | null;
   programDay: string | null;
+  notes: string | null;
   exerciseCount: number;
   description: string;
   synced: true;
@@ -43,6 +45,10 @@ interface Row {
   // Stable first-finish instant — display/sort anchor (never re-stamped).
   firstFinishedAt: string | null;
   label: string;
+  // Session note (workout_logs.notes). Shown as a quiet indicator on the row
+  // and editable in the row's expanded detail, so a session can be annotated
+  // long after it was logged.
+  notes: string | null;
   exerciseCount: number;
   createdAt: string | null; // local store only — drives the duration readout
   inProgress: boolean;
@@ -159,6 +165,7 @@ export default function SessionsPage() {
         finishedAt: s.finishedAt,
         firstFinishedAt: s.firstFinishedAt ?? null,
         label: s.programDay ?? "Ad-hoc",
+        notes: s.notes ?? null,
         exerciseCount: s.exerciseCount,
         createdAt: null,
         inProgress: !s.finishedAt,
@@ -213,6 +220,7 @@ export default function SessionsPage() {
       byId.set(s.id, {
         id: s.id,
         date: s.date,
+        notes: s.notes ?? prev?.notes ?? null,
         finishedAt: s.finishedAt,
         firstFinishedAt: s.firstFinishedAt ?? prev?.firstFinishedAt ?? null,
         label: s.origin,
@@ -340,7 +348,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>In progress</div>
               <ul className={styles.list}>
                 {inProgress.map((r) => (
-                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} />
+                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} onNoteSaved={refresh} />
                 ))}
               </ul>
             </>
@@ -350,7 +358,7 @@ export default function SessionsPage() {
               <div className={styles.sectionLabel}>{m.label}</div>
               <ul className={styles.list}>
                 {m.rows.map((r) => (
-                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} />
+                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} onNoteSaved={refresh} />
                 ))}
               </ul>
             </div>
@@ -386,6 +394,7 @@ function SessionRow({
   reconciling,
   detailOpen,
   syncError,
+  onNoteSaved,
 }: {
   row: Row;
   onOpen: (id: string) => void;
@@ -393,6 +402,7 @@ function SessionRow({
   onReconcile: (id: string) => void;
   onPull: (id: string) => void;
   onToggleDetail: (id: string) => void;
+  onNoteSaved: () => void;
   reconciling: boolean;
   detailOpen: boolean;
   syncError: "auth" | "network" | "server" | null;
@@ -427,7 +437,12 @@ function SessionRow({
       <div className={styles.rowLine}>
         <button className={styles.row} onClick={() => onOpen(row.id)}>
           <div className={styles.rowTop}>
-            <span className={styles.rowTitle}>{row.label.trim() || "Ad-hoc"}</span>
+            <span className={styles.rowTitle}>
+              {row.label.trim() || "Ad-hoc"}
+              {/* Findable later: a session carrying a note says so on the row
+                  itself, so you don't have to open every one to locate it. */}
+              {row.notes ? <span className={styles.noteMark} title={row.notes}> · note</span> : null}
+            </span>
             {row.inProgress && <span className={styles.badgeProgress}>resume</span>}
           </div>
           <div className={styles.rowSub}>
@@ -458,6 +473,10 @@ function SessionRow({
 
       {detailOpen && (
         <div className={styles.syncDetail}>
+          {/* Editing a note AFTER the fact is the point — most of what you'd
+              want to record about a session (it aggravated a shoulder, you
+              slept badly) is clearer in hindsight than mid-workout. */}
+          <NoteEditor id={row.id} initial={row.notes} onSaved={onNoteSaved} />
           <span>
             {needsAction
               ? row.pendingReason
@@ -482,5 +501,43 @@ function SessionRow({
         </div>
       )}
     </li>
+  );
+}
+
+
+// A session note, editable from History. Writes through the SAME local-store
+// path the session screen uses (`editSessionMeta` → metaDirty → the meta
+// PATCH), so an edit made offline drains with everything else rather than
+// needing its own queue.
+function NoteEditor({ id, initial, onSaved }: { id: string; initial: string | null; onSaved: () => void }) {
+  const [val, setVal] = useState(initial ?? "");
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  return (
+    <div className={styles.noteRow}>
+      <textarea
+        className={styles.noteBox}
+        value={val}
+        onChange={(e) => { setVal(e.target.value); setDone(false); }}
+        placeholder="note about this session (optional)"
+        aria-label="Session note"
+        rows={2}
+      />
+      <button
+        type="button"
+        disabled={saving || (val.trim() || null) === (initial ?? null)}
+        onClick={async () => {
+          setSaving(true);
+          // Empty clears to NULL — "no note" stays one state, not two.
+          await editSessionMeta(id, { notes: val.trim() || null });
+          await sync().catch(() => {});
+          setSaving(false);
+          setDone(true);
+          onSaved();
+        }}
+      >
+        {saving ? "Saving…" : done ? "Saved" : "Save note"}
+      </button>
+    </div>
   );
 }
