@@ -196,9 +196,16 @@ export function StrengthCard({
   const toggleCollapsed = () => setManual({ done: completed, collapsed: !collapsed });
   // Which logged set has its action row revealed (one at a time).
   const [revealedSetId, setRevealedSetId] = useState<number | null>(null);
-  const [hintDismissed, setHintDismissed] = useState<boolean>(() =>
-    typeof window !== "undefined" && localStorage.getItem(TAP_HINT_KEY) != null
-  );
+  // SSR default first, stored value adopted after mount — the useWeightUnit
+  // lesson. Seeding from localStorage during render makes the client's first
+  // render disagree with the server's, and React does not patch attribute
+  // mismatches: the DOM keeps the server's value while state holds the client's.
+  // Unreachable today only because nothing server-renders a card, which is
+  // incidental protection, not protection.
+  const [hintDismissed, setHintDismissed] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem(TAP_HINT_KEY) != null) setHintDismissed(true);
+  }, []);
   function toggleReveal(localId: number) {
     if (!hintDismissed) {
       localStorage.setItem(TAP_HINT_KEY, "1");
@@ -212,20 +219,30 @@ export function StrengthCard({
   // collapsing the zero-set auto-expanded row.
   const [equipOpen, setEquipOpen] = useState<boolean | null>(null);
 
-  const [equipType, setEquipType] = useState<EquipmentTypeId>(() => {
-    if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) return occStoredType; // server truth wins
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(lastTypeKey(ex.exerciseId));
-      if (stored && EQUIPMENT_TYPE_BY_ID.has(stored as EquipmentTypeId)) return stored as EquipmentTypeId;
-    }
-    return suggestEquipmentType(ex.loadType, ex.exerciseName);
-  });
+  // NO localStorage in this initializer. Reading it during render made the
+  // client's first render disagree with the server's, and React does not patch
+  // attribute mismatches — the <select> would have kept the server's type while
+  // state held the stored one. That is the phantom-unit failure exactly: a
+  // selector showing one type while a different one gets written to the set.
+  // The stored value is adopted in the effect below instead.
+  const [equipType, setEquipType] = useState<EquipmentTypeId>(
+    () => (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType) ? occStoredType : suggestEquipmentType(ex.loadType, ex.exerciseName))
+  );
   // The sets may load AFTER mount — restore type/unit once they arrive, unless
   // the user has since picked something (never clobber an in-progress choice).
+  // Also the adoption point for the remembered type: same precedence as before
+  // (server truth > last used > suggestion), just resolved after hydration
+  // rather than during render. `equipTouched` already guards a user pick, so
+  // this needs no new state and no change to the card's state machine.
   useEffect(() => {
     (async () => {
       if (equipTouched) return;
-      if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) setEquipType(occStoredType);
+      if (occStoredType && EQUIPMENT_TYPE_BY_ID.has(occStoredType)) {
+        setEquipType(occStoredType);
+      } else {
+        const stored = localStorage.getItem(lastTypeKey(ex.exerciseId));
+        if (stored && EQUIPMENT_TYPE_BY_ID.has(stored as EquipmentTypeId)) setEquipType(stored as EquipmentTypeId);
+      }
       if (occStoredUnit) setEquipmentId(occStoredUnit);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,9 +354,10 @@ export function StrengthCard({
     : typeDef.defaultOffset;
   const [offsetInput, setOffsetInput] = useState<string>(defaultOffset != null ? String(defaultOffset) : "");
   const [offsetTouched, setOffsetTouched] = useState(false);
-  const [offsetConfirmed, setOffsetConfirmed] = useState<boolean>(() =>
-    typeof window !== "undefined" && localStorage.getItem(offsetOkKey(ex.exerciseId, equipType)) != null
-  );
+  // Same rule. The effect below already re-derives this whenever type/unit
+  // change, so mount is simply its first run — no new state machine, just a
+  // start value that both renders agree on.
+  const [offsetConfirmed, setOffsetConfirmed] = useState(false);
   useEffect(() => {
     // Re-derive the pre-fill when the type/unit changes OR the stored offset
     // arrives (async set-load) — but never clobber a value you're mid-edit.
@@ -527,12 +545,25 @@ export function StrengthCard({
       });
     }
     if (selectedUnit) {
+      // /api/equipment/[id] — NOT /api/machines/[id], which the Machines →
+      // Equipment rename killed on 2026-07-16. This PATCH 404'd silently for
+      // eleven days: the response was never read, so the promise above ("for a
+      // named unit it also becomes that unit's stored default") was quietly
+      // false the whole time. It caused no divergence only because the offsets
+      // that exist were set through the equipment editor instead — luck, not
+      // safety. Hence the res.ok check.
       try {
-        await fetch(`/api/machines/${encodeURIComponent(selectedUnit.id)}`, {
+        const res = await fetch(`/api/equipment/${encodeURIComponent(selectedUnit.id)}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ builtInWeight: off }),
         });
-      } catch { /* offline — each set still carries the offset */ }
+        if (!res.ok) {
+          setError(`Sets updated, but ${selectedUnit.label} didn't save this as its default (${res.status}).`);
+        }
+      } catch {
+        /* Offline. Each set still carries the offset, so nothing is lost —
+           only the unit's default didn't update. Silent by design here. */
+      }
     }
     confirmOffset(off);
     onSessionChanged();

@@ -1334,3 +1334,12 @@
   color: var(--text-3);
   font-style: italic;
 }
+
+/* A server rejection in the new-unit sheet. Warning, not danger: the form is
+   intact and every field is still there to retry with. */
+.unitError {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--warning);
+}

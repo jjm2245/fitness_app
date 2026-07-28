@@ -942,3 +942,15 @@
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* A server write that failed on the program/blocks editor. Warning, not danger:
+   the server is unchanged and the screen has been put back in step with it. */
+.writeError {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--warning);
+}

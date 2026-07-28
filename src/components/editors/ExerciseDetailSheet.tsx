@@ -75,6 +75,7 @@ export function ExerciseDetailSheet({
   const [pattern, setPattern] = useState(ex.movementPattern ?? suggestMovementPattern(ex.name) ?? "");
   const [section, setSection] = useState<null | "collapse" | "remove">(null);
   const [removeErr, setRemoveErr] = useState<string | null>(null);
+  const [writeErr, setWriteErr] = useState<string | null>(null);
 
   // ── Logs & targets (Phase 2: the PROFILE picker) ── six named field sets,
   // no Custom option. NULL (inherit) stays NULL; picking a non-default profile
@@ -139,11 +140,17 @@ export function ExerciseDetailSheet({
   const fieldsLine = (fields: LogField[]) =>
     fields.map((f) => (FIELD_UNITS[f] ? `${f} ${FIELD_UNITS[f]}` : f)).join(" · ");
 
+  // `api()` throws on a non-ok response, and the old try/finally caught nothing
+  // — so a rejected rename, retag or field change became an unhandled rejection
+  // with the sheet still showing the new value. The edit looked applied.
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
+    setWriteErr(null);
     try {
       await api(`/api/exercises/${encodeURIComponent(ex.id)}`, { method: "PATCH", body: JSON.stringify(body) });
       await onChanged();
+    } catch (e) {
+      setWriteErr(`Couldn't save that change — ${e instanceof Error ? e.message : "the server refused it"}.`);
     } finally {
       setBusy(false);
     }
@@ -177,7 +184,14 @@ export function ExerciseDetailSheet({
       if (res.ok) {
         await onChanged();
         onClose();
+      } else {
+        // Previously a silent no-op: the sheet simply stayed open, which reads
+        // as "nothing happened" rather than "the server said no".
+        const body = await res.json().catch(() => null);
+        setWriteErr(body?.error ?? body?.message ?? `Couldn't merge this exercise (${res.status}).`);
       }
+    } catch (e) {
+      setWriteErr(`Couldn't merge this exercise — ${e instanceof Error ? e.message : "the server refused it"}.`);
     } finally {
       setBusy(false);
     }
@@ -199,6 +213,10 @@ export function ExerciseDetailSheet({
 
   return (
     <Sheet title={ex.name} subtitle={<span className={styles.sheetRowMuted}>{kindLine}</span>} onClose={onClose}>
+      {/* At the top of the sheet: a rejected write must be visible without
+          scrolling to whichever field caused it. */}
+      {writeErr && <p className={styles.writeError} role="alert">{writeErr}</p>}
+
       {/* ── Name (variant-specific) ── */}
       {ex.kind === "library_name" && !renaming ? (
         <div className={styles.field}>

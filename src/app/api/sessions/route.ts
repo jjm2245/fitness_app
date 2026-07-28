@@ -42,6 +42,19 @@ export async function GET() {
   // The occurrence cascade is what makes this safe to widen: deleting the log
   // takes its `session_exercises` with it (ON DELETE CASCADE), and there are no
   // sets to orphan, because "no sets" is the precondition.
+  //
+  // THE AGE COMPARISON BELOW IS CORRECT AS WRITTEN — do not "fix" it.
+  // `created_at` is `timestamp WITHOUT time zone` and it is compared against a
+  // bound JS Date, which looks like the login_attempts bug and is not. When
+  // Postgres compares a timestamp to a timestamptz it casts the timestamp using
+  // the session `TimeZone`, which is exactly the zone `defaultNow()` wrote it
+  // in — nothing else ever writes this column. Verified empirically on the
+  // local America/New_York database: the bare comparison and an explicit
+  // `at time zone current_setting('TimeZone')` agree on every row.
+  //
+  // What DID break login_attempts was the write side: values arriving from the
+  // app in the PROCESS's zone mixed with `now()` values in the DB's zone. That
+  // hazard is real and is recorded in SPEC-DRIFT; it does not apply here.
   try {
     await db.execute(sql`
       delete from ${workoutLogs}

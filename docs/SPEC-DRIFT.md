@@ -95,3 +95,24 @@ verification — not a rider on a feature change.
 
 Recorded here rather than done: the drift is that the schema models wall clocks
 where the domain means instants.
+
+### Addendum: `updated_at` mixes two clocks in one column
+
+Same root cause as the entry above, recorded alongside it rather than patched
+separately. The `updated_at` columns on `exercises`, `programs` and `profile`
+are `timestamp WITHOUT time zone`, and they get written two different ways:
+
+- `defaultNow()` on insert — the DATABASE's clock, under the database's
+  `TimeZone` (GMT in prod).
+- `updatedAt: new Date()` from the API routes (`exercises/[id]`,
+  `exercises/custom`, `profile`, `programs`) — a JS Date, serialized in the
+  RUNNING PROCESS's zone.
+
+On Vercel both are UTC and agree. Anywhere else they don't, so a single column
+ends up holding values from two clocks with nothing recording which is which.
+
+**Deliberately not patched.** Converting each write site would be four one-off
+fixes that leave the column still zone-less; the real fix is the `timestamptz`
+migration described above, which resolves this and the other three instances of
+this bug together. These columns are informational — nothing compares or
+displays them — so the cost of waiting is zero.

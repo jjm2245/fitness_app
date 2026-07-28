@@ -45,6 +45,7 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
   // is part of identity — the same label at two gyms is two machines). We
   // OFFER the existing one, never silently redirect.
   const [dupe, setDupe] = useState<ExistingUnit | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   function findExisting(): ExistingUnit | null {
     const l = label.trim().toLowerCase();
@@ -64,8 +65,9 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
     const unit: EquipmentOption = existing
       ? { id: existing.id, label: existing.label, builtInWeight: existing.builtInWeight, notes: existing.notes }
       : { id, label: label.trim(), builtInWeight: offset.trim() !== "" ? offset.trim() : null, notes: notes.trim() || null };
+    let res: Response | null = null;
     try {
-      await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
+      res = await fetch(`/api/exercises/${encodeURIComponent(exerciseId)}/equipment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -82,8 +84,28 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
         ),
       });
     } catch {
-      /* offline — the next set's sync auto-registers id+label+type+offset */
+      /* Network failure. This is the SAFE case: the next set's sync
+         auto-registers the unit, so proceeding optimistically is correct. */
     }
+
+    // A SERVER REJECTION IS NOT THE OFFLINE CASE, and conflating them was the
+    // bug. The offline fallback re-creates the unit from the set payload, which
+    // carries only id + label + type + offset — so on a 4xx/5xx the gym, brand,
+    // model, plate increment, add-on weight, stack max, pulley ratio and notes
+    // would all be silently discarded while the screen showed a fully specified
+    // unit. Offline still falls through quietly; a rejection stops here with
+    // every field still in the form.
+    if (res && !res.ok) {
+      const detail = await res.json().catch(() => null);
+      setBusy(false);
+      setErr(
+        detail?.error
+          ? `Couldn't save this unit: ${detail.error}`
+          : `Couldn't save this unit (${res.status}). Nothing was lost — fix and try again.`
+      );
+      return;
+    }
+
     setBusy(false);
     onCreated(unit); // optimistic: selected immediately, offline included
   }
@@ -107,6 +129,8 @@ export function AddUnitModal({ exerciseId, presetType, existingUnits = [], onClo
         autoFocusLabel
         knownGyms={knownGyms}
       />
+
+      {err && <p className={styles.unitError} role="alert">{err}</p>}
 
       {dupe ? (
         <div className={styles.warnBox} style={{ marginTop: 4 }}>

@@ -285,12 +285,23 @@ function CreateCustomSheet({
     if (!created) return;
     if (pattern) {
       setBusy(true);
+      setErr(null);
       try {
-        await fetch(`/api/exercises/${encodeURIComponent(created.id)}`, {
+        const res = await fetch(`/api/exercises/${encodeURIComponent(created.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ movementPattern: pattern }),
         });
+        // The exercise itself already exists; only the tag failed. Say so and
+        // stay put rather than closing — an untagged exercise is excluded from
+        // substitution and volume math, so silently dropping this is expensive.
+        if (!res.ok) {
+          setErr(`Created, but the movement tag didn't save (${res.status}). Tap Done again to retry.`);
+          return;
+        }
+      } catch {
+        setErr("Created, but the movement tag didn't save — you're offline. Tag it later from the exercise.");
+        return;
       } finally {
         setBusy(false);
       }

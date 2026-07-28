@@ -97,6 +97,13 @@ export function DayEditorView({
   // / sort, re-synced whenever the server order (props) changes.
   const serverExIds = selected ? selected.exercises.map((e) => e.id).join(",") : "";
   const [exOrder, setExOrder] = useState<number[]>([]);
+  // Every write on this screen used to go through `api()` — which THROWS on a
+  // non-ok response — with no try/catch anywhere in the file. A failed write
+  // became an unhandled rejection: no error shown, and for the reorder, a
+  // screen that disagreed with the server until the next refetch.
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const failed = (what: string) => (e: unknown) =>
+    setWriteError(`Couldn't ${what} — ${e instanceof Error ? e.message : "the server refused it"}. Nothing on the server changed.`);
   useEffect(() => {
     setExOrder(selected ? selected.exercises.map((e) => e.id) : []);
   }, [selected?.id, serverExIds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,17 +130,33 @@ export function DayEditorView({
 
   async function commitExOrder(ids: number[]) {
     if (!selected) return;
-    setExOrder(ids); // optimistic
-    await api(`/api/program-days/${selected.id}/exercises/reorder`, { method: "POST", body: JSON.stringify({ orderedIds: ids }) });
-    await onChanged();
+    const previous = exOrder; // captured BEFORE the optimistic write
+    setExOrder(ids);
+    setWriteError(null);
+    try {
+      await api(`/api/program-days/${selected.id}/exercises/reorder`, { method: "POST", body: JSON.stringify({ orderedIds: ids }) });
+      await onChanged();
+    } catch (e) {
+      // REVERT, don't just report. A drag that failed must not leave the list
+      // showing an order the server never accepted — silently disagreeing with
+      // the server is the exact failure this screen had.
+      setExOrder(previous);
+      failed("save that order")(e);
+    }
   }
 
   async function deleteDay() {
     if (!selected) return;
-    await api(`/api/program-days/${selected.id}`, { method: "DELETE" });
-    setConfirmDelete(false);
-    setSelectedId(null);
-    await onChanged();
+    setWriteError(null);
+    try {
+      await api(`/api/program-days/${selected.id}`, { method: "DELETE" });
+      setConfirmDelete(false);
+      setSelectedId(null);
+      await onChanged();
+    } catch (e) {
+      // The sheet stays open on failure — closing it would read as success.
+      failed(`delete this ${noun}`)(e);
+    }
   }
 
   // The tappable row body (name + chip + chevron), shared by the draggable Custom
@@ -155,6 +178,13 @@ export function DayEditorView({
 
   return (
     <>
+      {/* Above the tabs, not inside a sheet: a failed reorder or delete happens
+          on this screen, and the message has to survive the sheet closing. */}
+      {writeError && (
+        <p className={styles.writeError} role="alert">
+          {writeError}
+        </p>
+      )}
       <div className={styles.tabsWrap}>
         <div className={styles.tabsRow}>
           {days.map((d) => (
@@ -244,12 +274,17 @@ export function DayEditorView({
           submitLabel="Create"
           onClose={() => setCreating(false)}
           onSubmit={async (name) => {
-            if (noun === "block") {
-              await api("/api/blocks", { method: "POST", body: JSON.stringify({ name }) });
-            } else if (programId != null) {
-              await api(`/api/programs/${programId}/days`, { method: "POST", body: JSON.stringify({ name }) });
+            setWriteError(null);
+            try {
+              if (noun === "block") {
+                await api("/api/blocks", { method: "POST", body: JSON.stringify({ name }) });
+              } else if (programId != null) {
+                await api(`/api/programs/${programId}/days`, { method: "POST", body: JSON.stringify({ name }) });
+              }
+              await onChanged();
+            } catch (e) {
+              failed(`create that ${noun}`)(e);
             }
-            await onChanged();
           }}
         />
       )}
@@ -261,8 +296,13 @@ export function DayEditorView({
           submitLabel="Rename"
           onClose={() => setRenaming(false)}
           onSubmit={async (name) => {
-            await api(`/api/program-days/${selected.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
-            await onChanged();
+            setWriteError(null);
+            try {
+              await api(`/api/program-days/${selected.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+              await onChanged();
+            } catch (e) {
+              failed(`rename this ${noun}`)(e);
+            }
           }}
         />
       )}

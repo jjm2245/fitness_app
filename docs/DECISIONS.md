@@ -4810,3 +4810,93 @@ Worth recording because the failure mode is nasty — **the control lied about i
 own state**, and every value on the page was right, so nothing looked broken
 enough to investigate. It was only visible by comparing the toggle against the
 numbers beside it.
+
+---
+
+## 2026-07-27 (audit fixes) — "a server write nobody reads", and a correction
+
+Items #1–#3 and #5 of the divergence audit were one missing discipline, not four
+bugs. The newest surfaces (`profile`, `body-metrics`, `EquipmentSheet`) already
+read their responses; the older ones never learned to.
+
+### #1 — the dead route
+
+`StrengthCard.applyOffsetToOccurrence` PATCHed `/api/machines/[id]`, a route the
+Machines → Equipment rename deleted on **2026-07-16**. The response was never
+read, so it 404'd silently for eleven days while the code comment promised the
+offset "also becomes that unit's stored default". Now points at
+`/api/equipment/[id]` and checks `res.ok`. Verified: new route 200 + value
+stored; old route 404.
+
+It caused no divergence only because the three units carrying offsets were set
+through the equipment editor instead. Luck, not safety.
+
+### #2 — AddUnitModal conflated offline with rejection
+
+The offline fallback (set-sync auto-registration) carries only id + label +
+type + offset, so on a 4xx/5xx the gym, brand, model, plate increment, add-on
+weight, stack max, pulley ratio and notes were silently discarded while the
+screen showed a fully specified unit.
+
+Now: a thrown fetch still falls through quietly (correct — the unit re-registers
+on the next set sync); a non-ok response stops with an inline error and the form
+untouched. **Verified both, and they differ:**
+
+- simulated 500 → sheet stays open, "Couldn't save this unit: simulated server
+  failure", and every input value byte-identical to before the submit.
+- simulated true offline → sheet closes, no error, unit selected.
+
+A first attempt at the offline test failed only the POST while letting the list
+GET succeed — an impossible combination that made the unit look unselected. Ran
+it again with every request failing before reporting anything.
+
+### #3 — program-day writes threw into the void
+
+`DayEditorView` made five writes through `api()` (which throws on non-ok) with
+zero try/catch in the file. Each now catches and surfaces. **Reorder reverts**
+as well as reporting: `commitExOrder` captures the previous order before the
+optimistic `setExOrder` and restores it on failure, so a failed drag can't leave
+the list showing an order the server never accepted.
+
+### #5 — exercise writes detected failure and dropped it
+
+`ExerciseDetailSheet.patch()` (rename / retag / field config) had a try/finally
+that caught nothing, so a rejection escaped unhandled with the sheet showing the
+new value. `collapse()` checked `res.ok` and did nothing when false. Both now
+report. Also `exercises/page.tsx` `tagAndFinish` silently ignored a failed
+movement-pattern PATCH — an untagged exercise is excluded from substitution and
+volume math, so that one was expensive to drop.
+
+### #6 — the three StrengthCard localStorage seeds
+
+`hintDismissed`, `equipType` and `offsetConfirmed` all seeded `useState` from
+localStorage during render. `equipType` is the one that mattered: a stored type
+differing from `suggestEquipmentType()` would leave the `<select>` showing the
+server's value while state held the stored one — the phantom-unit shape.
+
+All three now take the SSR default and adopt after mount. **No state-machine
+change was needed:** `equipType`'s adoption went into the EXISTING restore
+effect, which already carried the `equipTouched` guard, so precedence is
+unchanged (server truth > last used > suggestion) and no new state was added.
+`offsetConfirmed` is already re-derived by its own effect, whose first run is
+mount.
+
+### #4 — I WAS WRONG, and reverted my own "fix"
+
+I reported that the husk sweep's `created_at < <JS Date>` comparison was wrong
+by the database's UTC offset, citing the login_attempts precedent. **That was
+wrong about the mechanism.** When Postgres compares a `timestamp` to a
+`timestamptz` it casts the timestamp using the session `TimeZone` — which is
+exactly the zone `defaultNow()` wrote it in, and nothing else writes that
+column. Proven on the local America/New_York database: the bare comparison and
+an explicit `at time zone current_setting('TimeZone')` agree on every row.
+
+I had already applied the conversion. I reverted it rather than ship a no-op
+presented as a fix, and replaced it with a comment explaining why the code is
+correct as written — including a do-not-"fix"-this note, since it looks like the
+login_attempts bug and isn't.
+
+What actually broke login_attempts was the WRITE side: app-supplied values in
+the process's zone mixed with `now()` values in the DB's zone. That hazard is
+real, applies to `updated_at`, and is recorded in SPEC-DRIFT rather than patched
+four times.
