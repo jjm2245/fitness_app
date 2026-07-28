@@ -5297,3 +5297,126 @@ Verified: `border-radius 999px`, border and text in `--danger` for injury,
 `display: inline-flex` at 291px rather than full width, `closest('.rowWrap')`
 null (genuinely outside any session card), topmost at its own coordinates, and
 the sheet still opens with no layout shift.
+
+---
+
+## 2026-07-28 (equipment specs reach the suggestion) — verification, no code change
+
+The owner filled `plate_increment`, `add_on_weight` and `stack_max` on the twelve
+VSL units from resolved Precor DSL model specs. Prompt 45's concrete-suggestion
+work was built when all three were NULL everywhere, so this is the first time the
+`stored` arm of `resolveIncrement` has ever been taken in production. Verified
+read-only by running the SHIPPED functions (`resolveIncrement`,
+`nextSelectableLoad`, `selectableLoads`, `checkLoadSanity`) against real prod
+rows rather than re-deriving the arithmetic.
+
+**It landed.** 12 of 19 units now resolve `stored`, 2 still resolve `history`,
+5 remain generic. Three things the fill actually bought:
+
+1. **Five units were rescued from generic** — VSL02, VSL06, VSL11, VSL14, VSL16
+   each have fewer than 3 distinct logged loads, so the GCD returned null and the
+   card fell back to wording with no number. They now step concretely.
+2. **VSL10's inferred increment was wrong and is now corrected.** Its logs
+   (300/320/340) give a GCD of 20; the machine is really a 10 with a 5 lb add-on.
+   This is the documented GCD-as-lower-bound failure showing up in real data, and
+   it is exactly why the stored value takes precedence rather than being averaged
+   with or validated against the derived one.
+3. **The `at_max` arm became reachable.** With `stack_max` NULL, `selectableLoads`
+   returned `[]` and the only max test was `spec.max != null` — never true, so the
+   topped-out branch was dead code. Twelve units now enumerate a grid; asking from
+   each ceiling returns `at_max`.
+
+The add-on is doing its job: with increment 10 and add-on 5 the grid is
+10, 15, 20, 25 … so the next load above 120 is **125**, not 130 — confirmed on
+VSL14, whose real top logged load *is* 120.
+
+No data-entry errors found. No logged load exceeds its unit's `stack_max`, and
+all 33 distinct (unit, exercise, load) combinations land on a selectable point of
+the grid their own specs describe — a wrong increment or add-on would have
+produced off-grid history immediately.
+
+**Still unfilled, recorded not corrected:** the seven non-VSL units. Four have
+real weight stacks and want all three fields (`Monroe Gen Cable Tower` — the
+most-used unit at 37 sets, `LifeFitnessShoulder`, `Pulldown304`, `longpull 302`);
+three are plate-loaded or smith (`24res`, `HackSquatMonroePF`, `VPL-SMBP`) where
+`stack_max` is meaningless but `plate_increment` still is not. These are the
+owner's to fill; nothing was written.
+
+### A note on scope
+
+`loggedLoads` in `GridSpec` is **per unit**, not per core lane — it comes from
+`/api/equipment`'s `array_agg(distinct load)` grouped by `equipment_id`, so a unit
+carrying two exercises (VSL13: Butterfly and Reverse Machine Flyes) pools both
+into one GCD. That is correct for inferring a machine's plate size and wrong as a
+statement about either lane's history; it only ever feeds the grid, never core.
+The live suggestion anchors on the top working set of **today's** occurrence
+(`StrengthCard`'s `topLoggedLoad`), not the historical maximum.
+
+---
+
+## 2026-07-28 (deferred to the LLM phase) — five progression findings
+
+Recorded now while the reasoning is fresh. **None of these are being fixed this
+round**; `src/core/*` is untouched. Three come from diagnosis of the current
+engine, two are requirements for the phase that follows.
+
+**Frame the whole list honestly: the LLM phase is for interpretation, not for
+recovering missing inputs.** It receives the same 24% effort coverage the rules
+engine has. Load, reps, sets and time remain the primary signals — which is fine,
+because those are what actually drive hypertrophy.
+
+### 1 · `regression` is dead for bodyweight exercises
+
+`sessionVolumeLoad` is `Σ(load × reps)` (`progression.ts:51`), which is
+identically 0 when load is 0. The regression test is
+`lastThree[0] > lastThree[1] > lastThree[2]`, and `0 > 0 > 0` never fires. The
+fatigue/deload signal is therefore permanently blind on Pullups, Dips and
+Captain's Chair — not weak, structurally unreachable.
+
+**Resolution reached:** a static bodyweight and a rep-only trend are the *same
+computation*. Multiplying every set by a constant cannot change the direction of
+a comparison, so a constant multiplier makes the trend purely rep-driven. It is
+one change, and it needs no stored bodyweight — which matters, because storing
+one would make every historical set's volume depend on a weight measured today.
+
+### 2 · `topSet` degenerates when loads tie
+
+`session.workingSets.reduce((best, s) => (s.load > best.load ? s : best))`
+(`progression.ts:57`) uses a strict `>`, so at a constant load — every bodyweight
+lane, and any session where the top load repeats — it never advances past the
+seed and returns **set 1**, not the best set.
+
+**Concrete consequence, worth keeping:** 7/6/6 followed by 5/8/8 reads as
+*regression* by set 1 (7 → 5) and *progress* by best set (7 → 8). Same data,
+opposite conclusion, decided entirely by an implementation detail of a reduce.
+
+### 3 · Untagged sets are assumed to be at target effort
+
+`(s.rir ?? context.targetRir) <= context.targetRir` appears at
+`progression.ts:83` and `:118` and `stallBuster.ts:33`. The `??` means *no effort
+recorded* is treated as *exactly at target*, which passes the test. With effort on
+52 of 215 sets, **~76% of the data is assumed at-target**, biasing both
+`true_stall` and `increase_load` toward firing.
+
+**Record the dead end plainly: effort cannot be inferred from these logs.**
+Within-session rep decay was considered as a proxy and **rejected** — the owner
+logs to a rep target, not to failure, so 10/10/10 is the expected shape of an
+easy session and a hard one alike and carries no effort information. The options
+are to keep assuming (biased toward action) or to stop assuming (mostly silent).
+Neither is fixable by rules; both are judgement calls about what a missing value
+should mean, which is why this goes to the LLM phase rather than getting a
+threshold.
+
+### 4 · Exercise-specific progression norms *(requirement)*
+
+Some movements warrant holding a load for several sessions to consolidate form;
+others tolerate frequent jumps. A single rule applied to every exercise is wrong
+in both directions — too eager on the technical lifts, too conservative on the
+machines. The engine has no representation for this and no way to derive one.
+
+### 5 · Plateau interpretation *(requirement)*
+
+When load stops moving, the engine cannot tell whether that is expected for the
+movement, a cue to hold the load and add reps, or a signal to swap to a harder
+progressable exercise. `true_stall` detects the *pattern*; deciding what it means
+is judgement, not pattern-matching.
