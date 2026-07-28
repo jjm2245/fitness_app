@@ -4761,3 +4761,52 @@ structurally dead** — `sessionVolumeLoad` is `Σ(0 × reps) = 0` for every
 session, so the "volume-load fell 2+ sessions" branch can never trigger. Also
 `topSet` degenerates to the FIRST working set when all loads tie, so
 comparisons are set-1-vs-set-1 rather than best-vs-best.
+
+---
+
+## 2026-07-27 (weigh-in history) — view / edit / delete, and a hydration bug
+
+### The history sheet
+
+`body_metrics` rows were write-only from the UI: Settings showed the latest and
+nothing else, so a mistyped or throwaway entry was permanent. Tapping the
+Bodyweight row now opens a sheet listing every weigh-in newest-first, each
+editable in BOTH dimensions (a weigh-in can be wrong in its number or its day)
+and deletable behind a two-tap confirm. Adding lives here too, so weigh-ins have
+one home; the Settings row is a summary.
+
+No schema. New routes: `PATCH`/`DELETE /api/body-metrics/[id]`.
+
+The summary is recomputed from the server after every write, so deleting the
+newest entry falls back to the next one rather than showing a stale number, and
+reads `not set` — in the same muted style as the other unset fields — once none
+remain.
+
+### Date collisions: refuse, don't replace
+
+`body_metrics_date_uniq` allows one row per date, and the two ways of reaching
+an occupied date are NOT the same act:
+
+- **Editing** an entry's date onto an occupied one is **refused** (409
+  `date_taken`), and the message names the day and the weight already there. An
+  upsert would silently destroy a real measurement with no trace.
+- **Adding** on an existing date still updates that day's row. That is a
+  correction to that day, which is what the add flow should mean.
+
+### A hydration bug found while verifying, and fixed
+
+The unit toggle showed `lb` highlighted while every value on the page rendered
+in `kg`. Not a new bug and not in this round's code: `useWeightUnit` seeded
+`useState` from `localStorage` during render, so the client's first render
+disagreed with the SSR HTML (which can only produce the default). React's
+response to that mismatch is *"this won't be patched up"* — leaving the
+control's own highlight permanently wrong whenever the stored preference wasn't
+the default.
+
+Fixed in `useUnit.ts`: initial state is the SSR default, and the stored value is
+adopted in an effect. One extra render with the default is the price.
+
+Worth recording because the failure mode is nasty — **the control lied about its
+own state**, and every value on the page was right, so nothing looked broken
+enough to investigate. It was only visible by comparing the toggle against the
+numbers beside it.

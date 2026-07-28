@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { useWeightUnit } from "@/lib/useUnit";
+import { WeighInHistory } from "./WeighInHistory";
 import {
   cmToIn,
   ftInToIn,
@@ -70,6 +71,7 @@ export function AboutYou() {
   const [latest, setLatest] = useState<Latest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -181,14 +183,14 @@ export function AboutYou() {
         />
       </Row>
 
-      <BodyweightRow
-        latest={latest}
-        unit={wUnit}
-        open={editing === "weight"}
-        onOpen={() => setEditing(editing === "weight" ? null : "weight")}
-        onSaved={load}
-        onError={setError}
-      />
+      <BodyweightRow latest={latest} unit={wUnit} onOpen={() => setHistoryOpen(true)} />
+
+      {historyOpen && (
+        // `load` refetches the profile payload, whose latestWeight drives the
+        // summary above — so any add/edit/delete in the sheet is reflected the
+        // moment it lands.
+        <WeighInHistory unit={wUnit} onClose={() => setHistoryOpen(false)} onChanged={load} />
+      )}
 
       {error && <p className={styles.dataError} role="alert">{error}</p>}
 
@@ -296,76 +298,30 @@ function HeightRow({
 function BodyweightRow({
   latest,
   unit,
-  open,
   onOpen,
-  onSaved,
-  onError,
 }: {
   latest: Latest | null;
   unit: "lb" | "kg";
-  open: boolean;
   onOpen: () => void;
-  onSaved: () => void;
-  onError: (e: string | null) => void;
 }) {
-  const [date, setDate] = useState(todayIso());
-  const [weight, setWeight] = useState("");
-
-  async function add() {
-    if (weight.trim() === "") return;
-    // Entry is in the DISPLAY unit; storage is always lb. Converting here, at
-    // the boundary, is what keeps a preference toggle from ever touching data.
-    const entered = Number(weight);
-    if (!Number.isFinite(entered) || entered <= 0) return onError("Enter a weight.");
-    const weightLb = unit === "kg" ? kgToLb(entered) : entered;
-    const res = await fetch("/api/body-metrics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, weightLb }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      return onError(j.error ?? "Couldn't save that weigh-in.");
-    }
-    setWeight("");
-    setDate(todayIso());
-    onError(null);
-    onSaved();
-  }
-
-  const shown = latest == null ? null : `${unit === "kg" ? lbToKg(latest.weightLb) : displayLb(latest.weightLb)} ${unit} · ${shortDate(latest.date)}`;
+  // A SUMMARY of the latest entry — the history sheet is where weigh-ins are
+  // managed. `latest` is recomputed from the server after every write, so
+  // deleting the newest entry falls back to the next one rather than showing a
+  // stale number, and reads "not set" once none remain.
+  const shown =
+    latest == null
+      ? null
+      : `${unit === "kg" ? lbToKg(latest.weightLb) : displayLb(latest.weightLb)} ${unit} · ${shortDate(latest.date)}`;
 
   return (
     <Row
       label="Bodyweight"
       value={shown}
-      hint="Each entry is kept — back-date one to fill in weights you already know."
-      open={open}
+      hint="Every entry is kept — tap to see, correct or back-date past weigh-ins."
+      open={false}
       onOpen={onOpen}
     >
-      <span className={styles.aboutFtIn}>
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          placeholder={unit}
-          aria-label={`Weight in ${unit}`}
-          className={styles.aboutInputSmall}
-        />
-        <input
-          type="date"
-          value={date}
-          max={todayIso()}
-          onChange={(e) => setDate(e.target.value)}
-          aria-label="Date of this weigh-in"
-          className={styles.aboutInput}
-        />
-        <button type="button" className={styles.dataBtn} onClick={add}>
-          Add
-        </button>
-      </span>
+      {null}
     </Row>
   );
 }

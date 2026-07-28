@@ -114,3 +114,68 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Weigh-in history — a list, not a table: two facts per row (weight, date) and
+   a chevron, at the same density as the rest of Settings. */
+.weighList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.weighItem + .weighItem {
+  border-top: 1px solid var(--hairline);
+}
+.weighRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+/* The number leads — it's what you came to read. */
+.weighWeight {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.weighDate {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+.weighEdit,
+.weighConfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+.weighConfirm {
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+/* Destructive, and it looks it — but only reachable behind a confirm. */
+.weighDanger {
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.weighDanger:hover {
+  border-color: var(--danger);
+}
+.weighChev {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
