@@ -1,5 +1,44 @@
 import { describe, it, expect } from "vitest";
-import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit, formatDualWeight } from "../stack";
+import { suggestPlateIncrement, findIncrementDisagreement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit, formatDualWeight } from "../stack";
+
+describe("increment disagreement — the record vs the rows", () => {
+  it("fires on the real VSL10 case: logs step 20, the unit says 10", () => {
+    expect(findIncrementDisagreement(10, [300, 320, 340])).toEqual({ stored: 10, logged: 20 });
+  });
+
+  it("is SILENT when the add-on explains a finer GCD", () => {
+    // A 10 plate with a 5 lever selects 10, 15, 20, 25… so these loads are all
+    // legitimate and their GCD of 5 says nothing about the plate. Firing here
+    // would make the hint constant noise on every unit with a lever.
+    expect(findIncrementDisagreement(10, [15, 25, 35])).toBeNull();
+  });
+
+  it("is silent when they agree", () => {
+    expect(findIncrementDisagreement(10, [140, 150, 160])).toBeNull();
+  });
+
+  it("is silent with nothing stored — there is nothing to disagree WITH", () => {
+    expect(findIncrementDisagreement(null, [300, 320, 340])).toBeNull();
+    expect(findIncrementDisagreement(0, [300, 320, 340])).toBeNull();
+  });
+
+  it("is silent on too little history — under 3 distinct loads claims nothing", () => {
+    expect(findIncrementDisagreement(10, [300, 340])).toBeNull();
+    expect(findIncrementDisagreement(10, [])).toBeNull();
+    expect(findIncrementDisagreement(10, [200, 200, 200])).toBeNull();
+  });
+
+  it("is silent when the derived step is unrelated rather than coarser", () => {
+    // GCD 15 against a stored 20: not a multiple, so the logs aren't simply
+    // skipping the finer notches — something else is going on, and a hint that
+    // says "your logs all step 15" would be asserting more than it knows.
+    expect(findIncrementDisagreement(20, [30, 45, 60])).toBeNull();
+  });
+
+  it("stops firing the moment the stored value is corrected", () => {
+    expect(findIncrementDisagreement(20, [300, 320, 340])).toBeNull();
+  });
+});
 
 // The suggestion is a LOWER BOUND on the plate size, not a measurement — which
 // is exactly why the form offers it rather than applying it.

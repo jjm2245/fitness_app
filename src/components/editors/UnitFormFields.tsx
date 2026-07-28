@@ -5,7 +5,7 @@ import styles from "./editors.module.css";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { useWeightUnit } from "@/lib/useUnit";
 import { formatForUnit } from "@/lib/units";
-import { suggestPlateIncrement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit } from "@/lib/stack";
+import { suggestPlateIncrement, findIncrementDisagreement, selectableLoads, formatSelectableLoads, parseStackMarking, resolveWeightUnit } from "@/lib/stack";
 
 // THE unit form — one component for both places a unit is created or edited:
 // the Equipment section (generic add/edit, Type is a picker) and the session's
@@ -132,6 +132,18 @@ export function UnitFormFields({
     ? selectableLoads(num(draft.plateIncrement), num(draft.addOnWeight), num(draft.stackMax))
     : [];
   const gridLine = formatSelectableLoads(grid, sUnit, (lb) => formatForUnit(String(lb), sUnit, "weight"));
+  // The record vs the rows. Informational only — it never touches resolution
+  // order, and the suggestion button above is its mutually-exclusive twin (that
+  // one appears when the field is EMPTY, this one when it's filled and wrong).
+  const disagreement = findIncrementDisagreement(num(draft.plateIncrement), loggedLoads);
+  // Which of the two grid inputs is still blank. Named rather than counted,
+  // because "no grid yet" is only useful if it says what would fix it.
+  const gridMissing = hasWeightStack
+    ? ([
+        num(draft.plateIncrement) == null ? "a plate size" : null,
+        num(draft.stackMax) == null ? "a max load" : null,
+      ].filter(Boolean) as string[])
+    : [];
 
   return (
     <>
@@ -273,6 +285,15 @@ export function UnitFormFields({
             Suggested from your logs: {formatForUnit(String(suggestion), sUnit, "weight")} {sUnit}
           </button>
         )}
+        {/* The unit's record and its rows disagreeing. Same treatment as the
+            built-in disagreement — quiet warnBox, states both numbers, offers
+            no fix. Nothing here changes what the card suggests. */}
+        {disagreement && (
+          <div className={styles.warnBox} style={{ marginTop: 6 }}>
+            Your logs here all step {formatForUnit(String(disagreement.logged), sUnit, "weight")} {sUnit};
+            this unit is set to {formatForUnit(String(disagreement.stored), sUnit, "weight")} {sUnit}. Check the machine?
+          </div>
+        )}
         {showPulley && (
           <label className={styles.field} style={{ marginTop: 8 }}>
             <span className={styles.fieldLabel}>Pulley</span>
@@ -299,6 +320,21 @@ export function UnitFormFields({
         {gridLine && (
           <span className={styles.fieldNote} style={{ marginTop: 4 }}>
             Selectable: {gridLine}
+          </span>
+        )}
+        {/* The counterpart to "Selectable:" — same slot, opposite state. Blank
+            fields already show themselves; what they DON'T show is the
+            consequence, which is that this unit has no ceiling to be at. A
+            missing max is not a machine without a top, it's a machine that was
+            never told one. Weight stacks only: on plate-loaded and Smith there
+            is no stack to run out of, so there is no grid to be missing. */}
+        {hasWeightStack && !gridLine && gridMissing.length > 0 && (
+          <span className={styles.fieldNote} style={{ marginTop: 4 }}>
+            {/* The space after the expression is explicit: JSX drops a trailing
+                one when the line wraps, which silently produced "max loadand". */}
+            No selectable grid yet — add {gridMissing.join(" and ")}{" "}
+            and this unit can name your next load and tell you when you&rsquo;ve topped out.
+            Blank means not recorded, not &ldquo;no ceiling&rdquo;.
           </span>
         )}
       </div>

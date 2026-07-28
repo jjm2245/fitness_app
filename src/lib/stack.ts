@@ -27,6 +27,47 @@ export function suggestPlateIncrement(loads: number[]): number | null {
   return g > 1 ? g : null;
 }
 
+export interface IncrementDisagreement {
+  /** What the unit's record says one plate weighs. */
+  stored: number;
+  /** The step every logged load on this unit actually uses. */
+  logged: number;
+}
+
+/**
+ * The unit's record and the unit's rows saying different things about the plate
+ * size — the same shape as the built-in disagreement, and surfaced the same way.
+ *
+ * Stored still wins in `resolveIncrement`; this changes nothing about what gets
+ * suggested. It only makes the disagreement VISIBLE, because a stored value
+ * silently overrides the one piece of evidence capable of contradicting it.
+ *
+ * ONLY a coarser log pattern counts — `logged` must be a strict multiple of
+ * `stored`, i.e. the logs never once used the finer step the unit claims. The
+ * restriction is not fussiness, it is what keeps the add-on lever from firing
+ * this constantly: with a 10 plate and a 5 lever the grid is 10, 15, 20, 25…,
+ * so loads of 15/25/35 have a GCD of 5 against a stored 10 and are completely
+ * correct. 5 is not a multiple of 10, so that case stays silent; VSL10's
+ * 300/320/340 against a stored 10 gives 20, which is, so that one speaks.
+ *
+ * Deliberately NOT a claim that the stored value is wrong — a machine can have
+ * a 10 lb plate you have simply never used an odd number of. Hence "check the
+ * machine", not "fix this".
+ */
+export function findIncrementDisagreement(
+  storedIncrement: number | null,
+  loggedLoads: number[]
+): IncrementDisagreement | null {
+  if (storedIncrement == null || !Number.isFinite(storedIncrement) || storedIncrement <= 0) return null;
+  // Reuses the SAME derivation as the suggestion button, so the two can never
+  // disagree about what the logs imply.
+  const derived = suggestPlateIncrement(loggedLoads);
+  if (derived == null) return null; // < 3 distinct loads — too little history to claim anything
+  if (derived === storedIncrement) return null; // they agree
+  if (derived % storedIncrement !== 0) return null; // finer, or unrelated — see above
+  return { stored: storedIncrement, logged: derived };
+}
+
 /**
  * The loads a stack can actually select, given its geometry.
  *

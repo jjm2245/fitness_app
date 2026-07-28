@@ -5420,3 +5420,60 @@ When load stops moving, the engine cannot tell whether that is expected for the
 movement, a cue to hold the load and add reps, or a signal to swap to a harder
 progressable exercise. `true_stall` detects the *pattern*; deciding what it means
 is judgement, not pattern-matching.
+
+---
+
+## 2026-07-28 (increment disagreement) — the record vs the rows, made visible
+
+A stored `plate_increment` wins over the GCD in `resolveIncrement`, which is
+correct — but it means the stored value silently overrides the one piece of
+evidence capable of contradicting it. VSL10 is the live case: every load logged
+there is a multiple of 20 (300/320/340), the unit is set to 10, and the visible
+consequence was the card offering 345 on a stack that may not select it.
+
+Same shape as the built-in disagreement, so it gets the same treatment:
+`findIncrementDisagreement` in `src/lib/stack.ts`, rendered in the Stack section
+of `UnitFormFields` as the existing `warnBox` — quiet, informational, no fix
+offered. **Resolution order is unchanged**; `nextLoad.ts` has a zero diff. This
+only makes the disagreement sayable.
+
+### The predicate is narrower than "they differ", and that's the whole design
+
+Firing on any inequality would make this constant noise, because **the add-on
+lever legitimately produces a finer GCD than the plate size.** A 10 plate with a
+5 lever selects 10, 15, 20, 25…, so loads of 15/25/35 give a GCD of 5 against a
+stored 10 — completely correct data, and a hint there would be wrong every time.
+
+So the derived step must be a **strict multiple** of the stored one: the logs
+never once used the finer notch the unit claims to have. 5 is not a multiple of
+10, so the lever case stays silent; 20 is, so VSL10 speaks. Deliberately not a
+claim the stored value is wrong — you can own a 10 lb plate you have simply
+never used an odd number of. Hence "Check the machine?", not "Fix this".
+
+Confirmed against prod rather than assumed: **1 of 19 units fires** (VSL10), and
+every other unit is silent for a distinct, correct reason — 6 store nothing,
+5 have fewer than 3 distinct loads, 6 agree exactly. Driven through the real UI
+on a staged local unit: the hint renders, `Selectable: 10, 15, 20 … 400 lb` is
+unaffected beside it, and correcting the plate size to 20 removes it live.
+
+### "No grid yet" — the counterpart to "Selectable:"
+
+Four stack units still have no `plate_increment` / `add_on_weight` / `stack_max`
+(Monroe Gen Cable Tower at 37 sets, LifeFitnessShoulder, Pulldown304,
+longpull 302). Blank fields already show themselves; what they don't show is the
+consequence — that the unit has no ceiling to be at, and no topped-out answer to
+give. The hint names what's missing and says the absence is unrecorded rather
+than "no ceiling", which is the actual distinction.
+
+Scoped to weight stacks by the existing `hasWeightStack`, so plate-loaded and
+Smith units — where `stack_max` is a category error, not a gap — show nothing.
+Verified live by switching a unit's type to `plate_loaded` and watching the hint
+disappear along with the add-on and max fields.
+
+### One bug caught in the browser, not by a test
+
+`add {gridMissing.join(" and ")} and this unit…` rendered as **"a max loadand
+this unit"** — JSX drops the trailing space on an expression when the line wraps.
+Three sibling text nodes, the third beginning `"and this unit"` with no leading
+space. Fixed with an explicit `{" "}`. A unit test on the predicate would never
+have found it; only reading the rendered string did.
