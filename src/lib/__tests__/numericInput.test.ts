@@ -27,7 +27,11 @@ describe("integer-digit cap — the point of the whole change", () => {
 
   it("leading zeros don't burn the allowance", () => {
     expect(type("0.5")).toBe("0.5");
-    expect(type("0000.5")).toBe("0000.5");
+    // Was "0000.5" before the replace-a-default fix. The property this test
+    // exists for is unchanged — the value still enters, and the zeros still
+    // don't count against the 4-digit cap — but redundant leading zeros now
+    // collapse as they're typed instead of piling up.
+    expect(type("0000.5")).toBe("0.5");
   });
 
   it("keeps only the first decimal point", () => {
@@ -108,5 +112,61 @@ describe("per-field caps behave as agreed", () => {
     for (const v of ["1500", "999", "42.2", "5000"]) {
       expect(type(v)).toBe(v);
     }
+  });
+});
+
+describe("a field holding a default must be REPLACED, not appended to", () => {
+  const reps = { maxIntDigits: INT_DIGITS.reps, allowDecimal: false };
+
+  it("typing 5 into a reps box showing 0 gives 5 — the daily-friction bug", () => {
+    // The keystroke arrives as the concatenation the browser produced.
+    expect(maskNumeric("05", "0", reps)).toBe("5");
+  });
+
+  it("keeps stripping however many zeros accumulated", () => {
+    expect(maskNumeric("0164", "016", reps)).toBe("164");
+    expect(maskNumeric("00", "0", reps)).toBe("0");
+  });
+
+  it("a DELIBERATE zero still enters — added weight on a bodyweight lift", () => {
+    expect(maskNumeric("0", "", reps)).toBe("0");
+    expect(maskNumeric("0", "")).toBe("0");
+  });
+
+  it("0.5 keeps its leading zero — the point is a digit-follows rule, not a strip-all", () => {
+    expect(maskNumeric("0", "")).toBe("0");
+    expect(maskNumeric("0.", "0")).toBe("0.");
+    expect(maskNumeric("0.5", "0.")).toBe("0.5");
+    // And typed in one go.
+    expect(maskNumeric("0.5", "")).toBe("0.5");
+    expect(maskNumeric("00.5", "0.5")).toBe("0.5");
+  });
+
+  it("does not eat a zero that is not leading", () => {
+    expect(maskNumeric("10", "1", reps)).toBe("10");
+    expect(maskNumeric("100", "10", reps)).toBe("100");
+    expect(maskNumeric("205", "20", reps)).toBe("205");
+  });
+
+  it("survives a negative — the sign is split off before the strip", () => {
+    expect(maskNumeric("-05", "-0", { allowNegative: true })).toBe("-5");
+    expect(maskNumeric("-0", "-", { allowNegative: true })).toBe("-0");
+  });
+
+  it("digit caps still hold, and now count the stripped value", () => {
+    expect(maskNumeric("0999", "099", reps)).toBe("999");   // 3 digits, allowed
+    expect(maskNumeric("9999", "999", reps)).toBe("999");   // 4th digit refused
+    expect(maskNumeric("12345", "1234")).toBe("1234");      // default cap of 4
+    expect(maskNumeric("177.5", "177.")).toBe("177.5");     // the decimal case
+  });
+
+  it("character-by-character: 0 → 5 → 0 types 50, not 050", () => {
+    // Typing with the caret at the END of a default 0, which is what a device
+    // that ignores select() produces.
+    let v = "0";
+    v = maskNumeric(v + "5", v, reps);
+    expect(v).toBe("5");
+    v = maskNumeric(v + "0", v, reps);
+    expect(v).toBe("50");
   });
 });

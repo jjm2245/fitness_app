@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { maskNumeric, INT_DIGITS } from "@/lib/numericInput";
+import { useSelectOnFocus } from "./selectOnFocus";
 
 // THE plain numeric input — the unitless sibling of UnitNumberInput.
 //
@@ -42,6 +43,7 @@ export function NumberInput({
   // parent stores Number("177.") = 177, and the dot vanishes as you type it —
   // "177.5" ends up as "1775". Holding the text here and only emitting upward
   // keeps the point alive until a digit follows it.
+  const selectProps = useSelectOnFocus();
   const [text, setText] = useState(value);
   // What our own typing last emitted. An EXTERNAL change to `value` resyncs the
   // display; our own emissions must not (or the dot is stripped again).
@@ -65,6 +67,11 @@ export function NumberInput({
       className={className}
       style={style}
       value={text}
+      // Tapping in selects what's there, so the first keystroke REPLACES a
+      // default instead of appending to it. The mask strips a leading zero as
+      // well, deliberately — that half needs no focus event at all, so a device
+      // that mishandles selection still can't produce an undeletable `05`.
+      {...selectProps}
       // The mask decides what the field shows. A refused keystroke returns the
       // previous text, so the input never renders something it won't keep.
       onChange={(e) => {

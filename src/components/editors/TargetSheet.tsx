@@ -12,6 +12,7 @@ import { parseRangeValue, storeRangeValue, rangeValueComplete, type ParsedRangeV
 import { useDistanceUnit } from "@/lib/useUnit";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { maskNumeric, INT_DIGITS } from "@/lib/numericInput";
+import { useSelectOnFocus } from "@/components/selectOnFocus";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -47,6 +48,7 @@ function NumField({
   error?: boolean;
   maxIntDigits?: number;
 }) {
+  const selectProps = useSelectOnFocus();
   return (
     <label className={styles.fieldHalf}>
       {label && <span className={styles.fieldLabel}>{label}</span>}
@@ -54,6 +56,8 @@ function NumField({
         className={`${styles.fieldInput} ${error ? styles.inputErr : ""}`}
         inputMode={allowDecimal ? "decimal" : "numeric"}
         value={value}
+        // Same replace-a-default behaviour as the two shared inputs.
+        {...selectProps}
         onChange={(e) => onChange(maskNumeric(e.target.value, value, { maxIntDigits, allowDecimal: !!allowDecimal }))}
         placeholder={placeholder}
       />

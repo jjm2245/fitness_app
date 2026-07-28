@@ -50,6 +50,15 @@ export function maskNumeric(raw: string, prev: string, opts: NumericMaskOptions 
   // a field must always be possible.
   if (s === "" || s === ".") return sign + s;
 
+  // A field sitting on a default must REPLACE on the next digit, not append:
+  // typing 5 into a box showing 0 gives 5, never 05. This is the half that
+  // survives a device where focus doesn't select — see NumberInput's onFocus.
+  //
+  // Only zeros followed by ANOTHER DIGIT go, which is what keeps the two
+  // legitimate zeros intact: a deliberate `0` (added weight on a bodyweight
+  // lift) has no digit after it, and `0.5` has a decimal point after it.
+  s = s.replace(/^0+(?=\d)/, "");
+
   const intPart = s.split(".")[0];
   // Leading zeros are digits for display purposes but shouldn't burn the
   // allowance: "0.5" has one integer digit, not zero.

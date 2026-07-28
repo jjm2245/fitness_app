@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatForUnit, parseInUnit, type UnitDimension } from "@/lib/units";
 import { maskNumeric, INT_DIGITS } from "@/lib/numericInput";
 import { useDistanceUnit, useWeightUnit } from "@/lib/useUnit";
+import { useSelectOnFocus } from "./selectOnFocus";
 
 // THE weight/distance input (§3 universal pattern). The parent owns the
 // CANONICAL value (lb/mi, string form, "" = empty); this component owns only
@@ -49,6 +50,7 @@ export function UnitNumberInput({
   const preferred = dimension === "weight" ? weight[0] : distance[0];
   const unit = unitOverride ?? preferred;
 
+  const selectProps = useSelectOnFocus();
   const [text, setText] = useState(() => formatForUnit(canonical, unit, dimension));
   // The canonical value our own typing last emitted — external canonical
   // changes resync the display; our own emissions must not (or "10." → "10").
@@ -87,6 +89,9 @@ export function UnitNumberInput({
       className={className}
       style={style}
       value={text}
+      // Selects on tap so the first keystroke replaces a prefilled or default
+      // value. Paired with the mask's leading-zero strip — see NumberInput.
+      {...selectProps}
       onChange={(e) => handleChange(e.target.value)}
       placeholder={placeholder ?? unit}
       autoFocus={autoFocus}
