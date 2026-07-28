@@ -197,6 +197,10 @@ export function UnitFormFields({
             onCanonical={(v) => onChange({ builtInWeight: v })}
             dimension="weight"
             unit={sUnit}
+            // Assisted machines carry a NEGATIVE built-in — the counterweight
+            // subtracts from what you lift — so this is the one weight field
+            // where a leading minus has to survive the mask.
+            allowNegative
             className={styles.fieldInput}
             placeholder="unknown"
           />

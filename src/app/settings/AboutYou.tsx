@@ -5,6 +5,8 @@ import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { useWeightUnit } from "@/lib/useUnit";
 import { WeighInHistory } from "./WeighInHistory";
+import { NumberInput } from "@/components/NumberInput";
+import { INT_DIGITS } from "@/lib/numericInput";
 import {
   cmToIn,
   ftInToIn,
@@ -72,6 +74,7 @@ export function AboutYou() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [yearsText, setYearsText] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -89,6 +92,10 @@ export function AboutYou() {
   useEffect(() => {
     void load();
   }, [load]);
+  // Re-seed the controlled text whenever the stored value arrives or changes.
+  useEffect(() => {
+    setYearsText(data?.trainingYears == null ? "" : String(data.trainingYears));
+  }, [data?.trainingYears]);
 
   async function save(patch: Record<string, unknown>) {
     const res = await fetch("/api/profile", {
@@ -171,16 +178,15 @@ export function AboutYou() {
         open={editing === "years"}
         onOpen={() => setEditing(editing === "years" ? null : "years")}
       >
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          min="0"
-          defaultValue={data.trainingYears ?? ""}
+        <NumberInput
+          value={yearsText}
+          onChange={setYearsText}
+          maxIntDigits={INT_DIGITS.trainingYears}
           placeholder="years of consistent training"
           className={styles.aboutInput}
-          onBlur={(e) => save({ trainingYears: e.target.value === "" ? null : Number(e.target.value) })}
+          ariaLabel="Years of consistent training"
         />
+        <button type="button" className={styles.dataBtn} onClick={() => save({ trainingYears: yearsText === "" ? null : Number(yearsText) })}>Save</button>
       </Row>
 
       <BodyweightRow latest={latest} unit={wUnit} onOpen={() => setHistoryOpen(true)} />
@@ -250,45 +256,58 @@ function HeightRow({
   // Metric preference → one cm box. Imperial → feet and inches, because a
   // single decimal-feet input is the sort of thing nobody enters correctly.
   const ftIn = heightIn != null ? inToFtIn(heightIn) : { ft: 0, inch: 0 };
+  // Controlled so the mask can refuse a keystroke; keyed re-seed below keeps
+  // them in step with the stored value and with a unit change.
+  const [cmText, setCmText] = useState(heightIn != null ? String(inToCm(heightIn)) : "");
+  const [ftText, setFtText] = useState(heightIn != null ? String(ftIn.ft) : "");
+  const [inText, setInText] = useState(heightIn != null ? String(ftIn.inch) : "");
   return (
     <Row label="Height" value={formatHeight(heightIn, unit)} open={open} onOpen={onOpen}>
       {unit === "kg" ? (
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          defaultValue={heightIn != null ? inToCm(heightIn) : ""}
-          placeholder="cm"
-          className={styles.aboutInput}
-          onBlur={(e) => onSave(e.target.value === "" ? null : cmToIn(Number(e.target.value)))}
-        />
+        <span className={styles.aboutFtIn}>
+          <NumberInput
+            value={cmText}
+            onChange={setCmText}
+            maxIntDigits={INT_DIGITS.heightCm}
+            placeholder="cm"
+            className={styles.aboutInput}
+            ariaLabel="Height in centimetres"
+          />
+          <button
+            type="button"
+            className={styles.dataBtn}
+            onClick={() => onSave(cmText === "" ? null : cmToIn(Number(cmText)))}
+          >
+            Save
+          </button>
+        </span>
       ) : (
         <span className={styles.aboutFtIn}>
-          <input
-            type="number"
-            inputMode="numeric"
-            min="0"
-            defaultValue={heightIn != null ? ftIn.ft : ""}
+          <NumberInput
+            value={ftText}
+            onChange={setFtText}
+            maxIntDigits={INT_DIGITS.heightFt}
+            allowDecimal={false}
             placeholder="ft"
-            aria-label="Feet"
+            ariaLabel="Feet"
             className={styles.aboutInputSmall}
-            onBlur={(e) => {
-              const ft = Number(e.target.value);
-              if (e.target.value === "") return onSave(null);
-              onSave(ftInToIn(ft, heightIn != null ? ftIn.inch : 0));
-            }}
           />
-          <input
-            type="number"
-            inputMode="numeric"
-            min="0"
-            max="11"
-            defaultValue={heightIn != null ? ftIn.inch : ""}
+          <NumberInput
+            value={inText}
+            onChange={setInText}
+            maxIntDigits={INT_DIGITS.heightIn}
+            allowDecimal={false}
             placeholder="in"
-            aria-label="Inches"
+            ariaLabel="Inches"
             className={styles.aboutInputSmall}
-            onBlur={(e) => onSave(ftInToIn(heightIn != null ? ftIn.ft : 0, Number(e.target.value || 0)))}
           />
+          <button
+            type="button"
+            className={styles.dataBtn}
+            onClick={() => onSave(ftText === "" && inText === "" ? null : ftInToIn(Number(ftText || 0), Number(inText || 0)))}
+          >
+            Save
+          </button>
         </span>
       )}
     </Row>

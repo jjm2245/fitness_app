@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { formatForUnit, parseInUnit, type UnitDimension } from "@/lib/units";
+import { maskNumeric, INT_DIGITS } from "@/lib/numericInput";
 import { useDistanceUnit, useWeightUnit } from "@/lib/useUnit";
 
 // THE weight/distance input (§3 universal pattern). The parent owns the
@@ -21,6 +22,8 @@ export function UnitNumberInput({
   placeholder,
   autoFocus,
   unit: unitOverride,
+  maxIntDigits = INT_DIGITS.default,
+  allowNegative = false,
 }: {
   canonical: string;
   onCanonical: (canonical: string) => void;
@@ -35,6 +38,11 @@ export function UnitNumberInput({
   // weights). The canonical-only contract below is unchanged: an override
   // re-FORMATS exactly like a preference change, and never re-parses.
   unit?: "lb" | "kg" | "mi" | "km";
+  /** Integer-digit cap on the DISPLAYED value. Applied to what's typed, which
+   *  is the unit the user is in — the canonical value follows from it. */
+  maxIntDigits?: number;
+  /** Assisted machines carry a negative built-in weight. */
+  allowNegative?: boolean;
 }) {
   const weight = useWeightUnit();
   const distance = useDistanceUnit();
@@ -61,10 +69,11 @@ export function UnitNumberInput({
   }, [unit]);
 
   function handleChange(raw: string) {
-    // Decimal mask (same as the target sheet's inputs).
-    const c = raw.replace(/[^\d.]/g, "");
-    const i = c.indexOf(".");
-    const masked = i === -1 ? c : c.slice(0, i + 1) + c.slice(i + 1).replace(/\./g, "");
+    // ONE mask for every numeric field in the app (src/lib/numericInput). A
+    // keystroke that would exceed the integer-digit cap is refused, so the box
+    // keeps the previous text rather than showing a value it will not keep.
+    const masked = maskNumeric(raw, text, { maxIntDigits, allowDecimal: true, allowNegative });
+    if (masked === text) return; // refused — nothing changed, don't re-emit
     setText(masked);
     const next = parseInUnit(masked, unit, dimension);
     lastEmitted.current = next;

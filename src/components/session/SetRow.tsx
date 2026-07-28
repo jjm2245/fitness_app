@@ -7,6 +7,8 @@ import { EFFORT_LABEL, EFFORT_OPTIONS, type EffortTag } from "./shared";
 import { lbToKg, displayLb, type WeightUnit } from "@/lib/units";
 import { isContextBound } from "@/lib/equipment";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
+import { NumberInput } from "@/components/NumberInput";
+import { INT_DIGITS } from "@/lib/numericInput";
 
 // One logged set: a read-only row (rows show information). Tapping it reveals
 // its controls (Edit / Delete / + Drop) — controls appear on demand; the card
@@ -67,7 +69,7 @@ export function SetRow({
         <div className={styles.setEditRow} style={isDrop ? { paddingLeft: 22 } : undefined}>
           <UnitNumberInput canonical={String(load)} onCanonical={(v) => setLoad(Number(v || 0))} dimension="weight" style={{ width: 64 }} />
           <span>×</span>
-          <input type="number" value={reps} onChange={(e) => setReps(Number(e.target.value))} style={{ width: 52 }} />
+          <NumberInput value={String(reps)} onChange={(v) => setReps(Number(v || 0))} style={{ width: 52 }} maxIntDigits={INT_DIGITS.reps} allowDecimal={false} />
           {/* Same effort pattern as the input trio — one dropdown everywhere. */}
           <select value={effort ?? ""} onChange={(e) => setEffort((e.target.value || null) as EffortTag | null)} className={styles.selectQuiet}>
             <option value="">effort —</option>

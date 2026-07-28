@@ -11,6 +11,13 @@ import { RestConnector } from "./RestConnector";
 import { publishRestTimer } from "@/lib/restTimerBus";
 import { fmtRest, type CardControls, type LoggableOccurrence } from "./shared";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
+import { NumberInput } from "@/components/NumberInput";
+import { INT_DIGITS } from "@/lib/numericInput";
+
+// A metric's own natural bound: incline and machine level are two-digit by
+// construction, speed three; duration and distance keep the default.
+const metricCap = (m: string) =>
+  m === "incline" || m === "level" ? INT_DIGITS.incline : m === "speed" ? INT_DIGITS.speed : INT_DIGITS.default;
 import { CARDIO_FIELD_LABEL, type CardioField } from "@/lib/cardioFields";
 import { resolveCardFields, resolveMetricFields, type LogField } from "@/lib/logFields";
 import { metricTargetParts, hasMetricTarget } from "@/lib/targetValues";
@@ -393,7 +400,7 @@ export function CardioCard({
                           <span className={styles.cellLabel}>
                             <EntryUnitLabel unit={wUnit} canonicalUnit="lb" />
                           </span>
-                          <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(e.target.value)} />
+                          <NumberInput className={styles.cellInput} value={load} onChange={setLoad} />
                         </label>
                       );
                     }
@@ -403,7 +410,7 @@ export function CardioCard({
                           <span className={styles.cellLabel}>
                             <EntryUnitLabel unit={dUnit} canonicalUnit="mi" />
                           </span>
-                          <input type="number" className={styles.cellInput} value={distance} onChange={(e) => setDistance(e.target.value)} />
+                          <NumberInput className={styles.cellInput} value={distance} onChange={setDistance} />
                         </label>
                       );
                     }
@@ -411,7 +418,7 @@ export function CardioCard({
                     return (
                       <label key={f} className={styles.cell}>
                         <span className={styles.cellLabel}>{CELL_LABEL[f] ?? f}</span>
-                        <input type="number" className={styles.cellInput} value={metricState[metric][0]} onChange={(e) => metricState[metric][1](e.target.value)} />
+                        <NumberInput className={styles.cellInput} value={metricState[metric][0]} onChange={metricState[metric][1]} maxIntDigits={metricCap(metric)} />
                       </label>
                     );
                   })}
@@ -497,11 +504,11 @@ function MetricEntryEdit({
     <li>
       <div className={styles.setEditRow} style={isDrop ? { paddingLeft: 22 } : undefined}>
         {has.load && <UnitNumberInput canonical={load} onCanonical={setLoad} dimension="weight" style={{ width: 64 }} />}
-        {has.duration && <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="min" style={{ width: 56 }} />}
+        {has.duration && <NumberInput value={durationMin} onChange={setDurationMin} placeholder="min" style={{ width: 56 }} />}
         {has.distance && <UnitNumberInput canonical={distance} onCanonical={setDistance} dimension="distance" style={{ width: 60 }} />}
-        {has.speed && <input type="number" value={speed} onChange={(e) => setSpeed(e.target.value)} placeholder="speed" style={{ width: 56 }} />}
-        {has.incline && <input type="number" value={incline} onChange={(e) => setIncline(e.target.value)} placeholder="incline" style={{ width: 56 }} />}
-        {has.level && <input type="number" value={level} onChange={(e) => setLevel(e.target.value)} placeholder="level" style={{ width: 52 }} />}
+        {has.speed && <NumberInput value={speed} onChange={setSpeed} placeholder="speed" style={{ width: 56 }} maxIntDigits={INT_DIGITS.speed} />}
+        {has.incline && <NumberInput value={incline} onChange={setIncline} placeholder="incline" style={{ width: 56 }} maxIntDigits={INT_DIGITS.incline} />}
+        {has.level && <NumberInput value={level} onChange={setLevel} placeholder="level" style={{ width: 52 }} maxIntDigits={INT_DIGITS.level} />}
         {has.effort && (
           <select value={effort} onChange={(e) => setEffort(e.target.value)} className={styles.selectQuiet}>
             <option value="">effort —</option>
@@ -567,7 +574,7 @@ function MetricDropForm({
     <div className={styles.setEditRow} style={{ paddingLeft: 22 }}>
       <span className={styles.setKind}>↳ drop</span>
       <UnitNumberInput canonical={load} onCanonical={setLoad} dimension="weight" style={{ width: 64 }} autoFocus />
-      <input type="number" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="min" style={{ width: 56 }} />
+      <NumberInput value={durationMin} onChange={setDurationMin} placeholder="min" style={{ width: 56 }} />
       <UnitNumberInput canonical={distance} onCanonical={setDistance} dimension="distance" style={{ width: 60 }} />
       <button type="button" onClick={commit} className={styles.smallBtn}>Add</button>
       <button type="button" onClick={onCancel} className={styles.smallBtn}>Cancel</button>

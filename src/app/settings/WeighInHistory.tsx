@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
+import { NumberInput } from "@/components/NumberInput";
 import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { kgToLb, lbToKg, displayLb, type WeightUnit } from "@/lib/units";
@@ -173,16 +174,7 @@ export function WeighInHistory({
 
       <div className={editors.sectionLabel}>Add a weigh-in</div>
       <div className={styles.aboutFtIn}>
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          value={newWeight}
-          onChange={(e) => setNewWeight(e.target.value)}
-          placeholder={unit}
-          aria-label={`Weight in ${unit}`}
-          className={styles.aboutInputSmall}
-        />
+        <NumberInput value={newWeight} onChange={setNewWeight} placeholder={unit} ariaLabel={`Weight in ${unit}`} className={styles.aboutInputSmall} />
         <input
           type="date"
           value={newDate}
@@ -218,13 +210,10 @@ function EditRow({
   const [date, setDate] = useState(row.date);
   return (
     <div className={styles.weighEdit} key={`${row.id}-${unit}`}>
-      <input
-        type="number"
-        inputMode="decimal"
-        step="0.1"
+      <NumberInput
         value={weight}
-        onChange={(e) => setWeight(e.target.value)}
-        aria-label={`Weight in ${unit}`}
+        onChange={setWeight}
+        ariaLabel={`Weight in ${unit}`}
         className={styles.aboutInputSmall}
       />
       <input

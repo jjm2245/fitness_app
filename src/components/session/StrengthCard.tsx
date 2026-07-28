@@ -7,6 +7,8 @@ import { EQUIPMENT_TYPES, EQUIPMENT_TYPE_BY_ID, laneKey, offsetPatch, suggestEqu
 import { logSet, editSet, type SessionSet, type SetSide } from "@/lib/sessionStore";
 import { parseStackMarking, resolveWeightUnit, formatDualWeight } from "@/lib/stack";
 import { nextSelectableLoad, checkLoadSanity, type GridSpec } from "@/lib/nextLoad";
+import { NumberInput } from "@/components/NumberInput";
+import { INT_DIGITS } from "@/lib/numericInput";
 import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
 import { EntryUnitLabel } from "./EntryUnitLabel";
 import { publishRestTimer } from "@/lib/restTimerBus";
@@ -997,9 +999,9 @@ export function StrengthCard({
                     <li>
                       <form onSubmit={addDrop} className={styles.dropForm}>
                         <span style={{ color: "var(--text-3)" }}>↳ drop:</span>
-                        <input type="number" value={dropLoad} onChange={(e) => setDropLoad(e.target.value)} placeholder={entryUnit} autoFocus style={{ width: 64 }} />
+                        <NumberInput value={dropLoad} onChange={setDropLoad} placeholder={entryUnit} autoFocus style={{ width: 64 }} />
                         <span>×</span>
-                        <input type="number" value={dropReps} onChange={(e) => setDropReps(Number(e.target.value))} style={{ width: 52 }} />
+                        <NumberInput value={String(dropReps)} onChange={(v) => setDropReps(Number(v || 0))} style={{ width: 52 }} maxIntDigits={INT_DIGITS.reps} allowDecimal={false} />
                         <button type="submit" className={styles.smallBtn}>Add drop</button>
                         <button type="button" onClick={() => setDropFor(null)} className={styles.smallBtn}>Cancel</button>
                       </form>
@@ -1086,11 +1088,11 @@ export function StrengthCard({
                     label={ex.loadType === "bodyweight" ? "added" : undefined}
                   />
                 </span>
-                <input type="number" className={styles.cellInput} value={load} onChange={(e) => setLoad(Number(e.target.value))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
+                <NumberInput className={styles.cellInput} value={String(load)} onChange={(v) => setLoad(Number(v || 0))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>reps</span>
-                <input type="number" className={styles.cellInput} value={reps} onChange={(e) => setReps(Number(e.target.value))} title="Reps" />
+                <NumberInput className={styles.cellInput} value={String(reps)} onChange={(v) => setReps(Number(v || 0))} title="Reps" maxIntDigits={INT_DIGITS.reps} allowDecimal={false} />
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>effort</span>
@@ -1112,16 +1114,8 @@ export function StrengthCard({
             {sanityWarn && sanityOk !== totalLoad && (
               <div className={styles.slipWarn}>
                 <span>
-                  {sanityWarn.kind === "above_stack" ? (
-                    <>
-                      <strong>{w(totalLoad)} {entryUnit}</strong> is above {selectedUnit?.label ?? "this machine"}&rsquo;s{" "}
-                      {w(sanityWarn.stackMax)} {entryUnit} stack. Sure?
-                    </>
-                  ) : (
-                    <>
-                      <strong>{w(totalLoad)} {entryUnit}</strong> is far beyond any real lift — a slipped digit? Sure?
-                    </>
-                  )}
+                  <strong>{w(totalLoad)} {entryUnit}</strong> is above {selectedUnit?.label ?? "this machine"}&rsquo;s{" "}
+                  {w(sanityWarn.stackMax)} {entryUnit} stack. Sure?
                 </span>
                 <span className={styles.slipWarnActions}>
                   <button type="button" className={styles.unitConfirmNo} onClick={() => setSanityOk(totalLoad)}>

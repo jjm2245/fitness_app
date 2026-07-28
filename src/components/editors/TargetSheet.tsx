@@ -11,6 +11,7 @@ import { TARGET_EFFORT_OPTIONS, rirForEffortTarget, type EffortTag } from "@/lib
 import { parseRangeValue, storeRangeValue, rangeValueComplete, type ParsedRangeValue } from "@/lib/targetValues";
 import { useDistanceUnit } from "@/lib/useUnit";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
+import { maskNumeric, INT_DIGITS } from "@/lib/numericInput";
 
 // Exercise target edit sheet (v4). No target by default: the sheet shows an
 // empty state until you opt in. Once opted in, ONE anchor is required (Sets for
@@ -36,6 +37,7 @@ function NumField({
   placeholder,
   allowDecimal,
   error,
+  maxIntDigits = INT_DIGITS.default,
 }: {
   label?: React.ReactNode;
   value: string;
@@ -43,6 +45,7 @@ function NumField({
   placeholder?: string;
   allowDecimal?: boolean;
   error?: boolean;
+  maxIntDigits?: number;
 }) {
   return (
     <label className={styles.fieldHalf}>
@@ -51,7 +54,7 @@ function NumField({
         className={`${styles.fieldInput} ${error ? styles.inputErr : ""}`}
         inputMode={allowDecimal ? "decimal" : "numeric"}
         value={value}
-        onChange={(e) => onChange((allowDecimal ? decimal : digits)(e.target.value))}
+        onChange={(e) => onChange(maskNumeric(e.target.value, value, { maxIntDigits, allowDecimal: !!allowDecimal }))}
         placeholder={placeholder}
       />
     </label>
@@ -357,7 +360,26 @@ export function TargetSheet({
             <div className={styles.fieldRow} style={{ marginTop: 10 }}>
               {extraFields.map((f) => {
                 const c = extraFieldState[f];
-                return <NumField key={f} label={c.label} value={c.value} onChange={c.set} placeholder="—" allowDecimal={c.decimal} />;
+                return (
+                  <NumField
+                    key={f}
+                    label={c.label}
+                    value={c.value}
+                    onChange={c.set}
+                    placeholder="—"
+                    allowDecimal={c.decimal}
+                    // Per-field caps: an incline or a machine level is
+                    // two-digit by construction, a speed three; duration and
+                    // distance keep the default.
+                    maxIntDigits={
+                      f === "incline" || f === "level"
+                        ? INT_DIGITS.incline
+                        : f === "speed"
+                        ? INT_DIGITS.speed
+                        : INT_DIGITS.default
+                    }
+                  />
+                );
               })}
             </div>
           )}
@@ -385,13 +407,13 @@ export function TargetSheet({
             </div>
           </div>
           <div className={styles.srBoxes}>
-            <NumField value={targetSets} onChange={setTargetSets} placeholder="3" error={anchorError} />
+            <NumField value={targetSets} onChange={setTargetSets} placeholder="3" error={anchorError} maxIntDigits={INT_DIGITS.targetSets} />
             {repMode === "single" ? (
-              <NumField value={repSingle} onChange={setRepSingle} placeholder="10" />
+              <NumField value={repSingle} onChange={setRepSingle} placeholder="10" maxIntDigits={INT_DIGITS.reps} />
             ) : (
               <>
-                <NumField value={repA} onChange={setRepA} placeholder="8" />
-                <NumField value={repB} onChange={setRepB} placeholder="12" />
+                <NumField value={repA} onChange={setRepA} placeholder="8" maxIntDigits={INT_DIGITS.reps} />
+                <NumField value={repB} onChange={setRepB} placeholder="12" maxIntDigits={INT_DIGITS.reps} />
               </>
             )}
           </div>

@@ -4988,3 +4988,76 @@ That needs a lane with three distinct loads AND a progression run returning
 forbids fixturing card behaviour via SQL. The resolver is unit-tested and the
 grid inputs are confirmed reaching the client from `GET /api/equipment`; the
 render itself is verified by construction.
+
+---
+
+## 2026-07-27 (input limits) — prevention replaces the absurd-load warning
+
+### The warning is gone; the machine-specific one stays
+
+`ABSURD_LOAD_LB` and its branch are deleted — no readers remain. Catching a
+slipped digit is an input constraint's job, not a line of commentary under the
+field. The `stack_max` arm survives because it says something a limit cannot
+("400 lb is above this machine's 240 lb stack"), stays advisory, and stays
+silent across all 18 units until a stack max is recorded.
+
+### The cap is on INTEGER DIGITS, and the keystroke is REFUSED
+
+`maxLength` would have broken real values — 177.5 is six characters, 4.35 is
+four — so `maskNumeric` (src/lib/numericInput.ts) counts digits before the
+decimal point instead. Decimals stay free below the cap and a leading minus
+survives where the field opts in.
+
+A keystroke that breaks a rule returns the PREVIOUS text, so `12345` in a
+4-digit field leaves `1234` and the `5` never appears. The field never displays
+a value it won't keep — that is the difference between a limit and an
+autocorrect.
+
+### The bug this shook out — worth remembering
+
+`177.5` first came out as `1775`. Several callers (StrengthCard's load/reps,
+SetRow) hold their state as a NUMBER, so an in-progress `"177."` round-tripped
+through the parent as `Number("177.") = 177` and the decimal point vanished as
+it was typed.
+
+`NumberInput` now owns its display text and only emits upward — the same
+`text` + `lastEmitted` pattern `UnitNumberInput` already used, and for exactly
+the same reason. The resync compares NUMERICALLY, so `"177."` vs `177` isn't
+mistaken for an external change.
+
+Caught by typing character-by-character in the real field. A single
+`setValue("177.5")` would have passed, because the failure only exists while a
+trailing point is on screen.
+
+### The enumeration
+
+Every numeric input now routes through one of two components — **zero raw
+`<input type="number">` remain outside `NumberInput` itself**:
+
+| where | fields | cap |
+|---|---|---|
+| Session card | load, drop load | 4 |
+| | reps, drop reps | **3** (integer-only) |
+| | built-in offset (UnitNumberInput) | 4 |
+| Metric card | duration, distance, load | 4 |
+| | speed | **3** |
+| | incline, level | **2** |
+| Target sheet | target sets | **2** |
+| | rep min/max/single | **3** |
+| | duration, distance | 4 |
+| | speed / incline / level (metric config) | 3 / 2 / 2 |
+| Equipment form | built-in (negative allowed), plate size, add-on, stack max | 4 |
+| Settings — About you | training years | **2** |
+| | height cm / ft / in | **3 / 1 / 2** |
+| Weigh-ins | bodyweight (add + edit) | 4 |
+
+`type="text"` + `inputMode` is deliberate: a real `number` input reports partial
+and exponent values as an empty string, which silently defeats a
+keystroke-refusing mask, and it draws spinners nobody taps on a phone.
+
+Load, distance, duration, bodyweight and the stack fields keep 4 — none has an
+obvious tighter bound that couldn't bite a legitimate entry (a loaded leg press,
+a long ruck, a marathon). Left at the default rather than guessed.
+
+Entry-side only: an md5 over every stored load and rep count is identical before
+and after.

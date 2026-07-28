@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  resolveIncrement,
-  nextSelectableLoad,
-  checkLoadSanity,
-  ABSURD_LOAD_LB,
-} from "../nextLoad";
+import { resolveIncrement, nextSelectableLoad, checkLoadSanity } from "../nextLoad";
 
 const spec = (o: Partial<Parameters<typeof nextSelectableLoad>[1]> = {}) => ({
   storedIncrement: null,
@@ -72,20 +67,14 @@ describe("next selectable load", () => {
   });
 });
 
-describe("load sanity — advisory, and quiet in the normal case", () => {
-  it("is silent on every plausible entry, including a real PR", () => {
-    // The bound must never be the thing that questions a genuine lift.
-    for (const load of [45, 120, 185, 315, 405, 500, 700, 1100]) {
+describe("stack-max advisory — the only load warning left", () => {
+  it("is silent on every entry when no stack max is recorded", () => {
+    // The absolute-ceiling arm was removed: a slipped digit is now prevented at
+    // the input (src/lib/numericInput), not remarked on afterwards. With no
+    // stack max there is nothing machine-specific to say, so nothing is said.
+    for (const load of [45, 120, 185, 315, 405, 700, 1100, 9999]) {
       expect(checkLoadSanity(load, null)).toBeNull();
     }
-  });
-
-  it("fires on the shapes a slip actually takes", () => {
-    expect(checkLoadSanity(9999, null)).toEqual({ kind: "absurd" });
-    expect(checkLoadSanity(12345, null)).toEqual({ kind: "absurd" });
-    expect(checkLoadSanity(15000, null)).toEqual({ kind: "absurd" }); // 1500 with a decimal slip
-    expect(checkLoadSanity(ABSURD_LOAD_LB, null)).toEqual({ kind: "absurd" });
-    expect(checkLoadSanity(ABSURD_LOAD_LB - 1, null)).toBeNull();
   });
 
   it("questions a load above a KNOWN stack max, without asserting it's wrong", () => {

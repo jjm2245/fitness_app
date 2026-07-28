@@ -92,40 +92,21 @@ export function nextSelectableLoad(current: number, spec: GridSpec): NextLoad {
 // Load sanity bounds (advisory only — never blocks a log)
 // ---------------------------------------------------------------------------
 
-/**
- * The absolute ceiling, in canonical lb.
- *
- * Chosen to sit above ANY entry a human could legitimately make and below the
- * shape of a slip. For reference: the heaviest raw squat ever recorded is
- * around 1100 lb, and a fully loaded leg press or hack squat tops out near
- * 1500 lb with every plate in the gym on it. 2000 lb clears all of that with
- * room to spare, while still catching the errors that actually happen — a
- * repeated digit (9999), a stray keypad row (12345), or a decimal slip that
- * multiplies by ten (1500 → 15000).
- *
- * Deliberately NOT derived from the user's own history. A "2× your usual"
- * bound was considered and rejected in the slip-guard round because a genuine
- * PR trips it, and a warning learned as noise is worse than no warning. The
- * kg/lb slip — the error that actually recurs — has its own specific check.
- */
-export const ABSURD_LOAD_LB = 2000;
-
-export type LoadWarning =
-  | { kind: "above_stack"; stackMax: number }
-  | { kind: "absurd" }
-  | null;
+export type LoadWarning = { kind: "above_stack"; stackMax: number } | null;
 
 /**
- * Should entering this load raise an eyebrow? Advisory only.
+ * Is this load above the machine's stack? Advisory only.
  *
- * `stack_max` is the precise check and fires only where a max is recorded —
- * NULL on every unit today, so this path is expected to stay quiet until the
- * owner fills some in. The absolute ceiling is the catch-all that works
- * everywhere, including for portable types with no unit at all.
+ * MACHINE-SPECIFIC and therefore informative — "400 lb is above this machine's
+ * 240 lb stack" tells you something a limit can't. Silent wherever no stack max
+ * is recorded, which is every unit today.
+ *
+ * The old absolute-ceiling arm was REMOVED: catching a slipped digit is an
+ * input constraint's job (src/lib/numericInput), not a line of commentary under
+ * the field. Prevention beats remarking on it afterwards.
  */
 export function checkLoadSanity(canonicalLb: number, stackMax: number | null): LoadWarning {
   if (!Number.isFinite(canonicalLb) || canonicalLb <= 0) return null;
-  if (canonicalLb >= ABSURD_LOAD_LB) return { kind: "absurd" };
   // Plates can be hung on some machines and the owner may simply be right, so
   // exceeding the stack is a question, not a verdict.
   if (stackMax != null && Number.isFinite(stackMax) && stackMax > 0 && canonicalLb > stackMax) {
