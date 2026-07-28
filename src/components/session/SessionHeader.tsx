@@ -28,12 +28,23 @@ export function SessionHeader({
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noteVal, setNoteVal] = useState("");
+  const [noteEditing, setNoteEditing] = useState(false);
+
+  function openNote() {
+    setNoteVal(session.notes ?? "");
+    setNoteEditing(true);
+  }
+  async function saveNote() {
+    // Empty or whitespace-only clears to NULL — "no note" stays one state.
+    await editSessionMeta(session.id, { notes: noteVal.trim() || null });
+    setNoteEditing(false);
+    onChanged();
+  }
   const [dateVal, setDateVal] = useState(session.date);
   const [timeVal, setTimeVal] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
 
   function open() {
-    setNoteVal(session.notes ?? "");
     setDateVal(session.date);
     if (session.firstFinishedAt) {
       const t = new Date(session.firstFinishedAt);
@@ -63,7 +74,8 @@ export function SessionHeader({
     }
     setError(null);
     // Empty or whitespace-only clears to NULL — "no note" is one state.
-    await editSessionMeta(session.id, { date: dateVal, firstFinishedAt, notes: noteVal.trim() || null });
+    // Date and time only. The note has its own line and its own save.
+    await editSessionMeta(session.id, { date: dateVal, firstFinishedAt });
     setEditing(false);
     onChanged();
   }
@@ -92,18 +104,6 @@ export function SessionHeader({
           <span className={styles.headerEdit}>
             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} />
             <input type="time" value={timeVal} onChange={(e) => setTimeVal(e.target.value)} title="Optional — leave blank for no time" />
-            {/* Session note — deliberately HERE, behind the ✎, and not a field
-                sitting between sets. It is for the things that explain a
-                session later (an injury, bad sleep, a crowded gym, a deload),
-                not something to fill in mid-set. */}
-            <textarea
-              className={styles.noteInput}
-              value={noteVal}
-              onChange={(e) => setNoteVal(e.target.value)}
-              placeholder="note about this session (optional)"
-              aria-label="Session note"
-              rows={2}
-            />
             <button type="button" onClick={save} className={styles.smallBtn}>Save</button>
             <button type="button" onClick={() => { setError(null); setEditing(false); }} className={styles.smallBtn}>Cancel</button>
             {session.firstFinishedSource === "user" && <span className={styles.chip}>set by you</span>}
@@ -118,9 +118,7 @@ export function SessionHeader({
           >
             <span className={styles.headerName}>{session.origin}</span>
             <span className={styles.headerWhen}>
-              {dateLabel}{timeLabel}
-              {session.notes ? <span className={styles.noteDot} title={session.notes}> · note</span> : null}{" "}
-              <span aria-hidden="true">✎</span>
+              {dateLabel}{timeLabel} <span aria-hidden="true">✎</span>
             </span>
           </button>
         )}
@@ -134,6 +132,33 @@ export function SessionHeader({
           <span className={`${styles.dot} ${dotClass}`} />
         </button>
       </div>
+
+      {/* The note lives on its own line under the title, not behind the ✎ —
+          that pencil sits beside the date and edits the date, which is what it
+          looks like it does. A note you have to remember to go looking for
+          defeats the point of writing one. One line of cost, and it only ever
+          shows content or an invitation to add some. */}
+      {noteEditing ? (
+        <div className={styles.noteEditRow}>
+          <textarea
+            className={styles.noteInput}
+            value={noteVal}
+            onChange={(e) => setNoteVal(e.target.value)}
+            placeholder="what's worth remembering about this session?"
+            aria-label="Session note"
+            rows={2}
+            autoFocus
+          />
+          <button type="button" className={styles.smallBtn} onClick={saveNote}>Save</button>
+          <button type="button" className={styles.smallBtn} onClick={() => setNoteEditing(false)}>Cancel</button>
+        </div>
+      ) : session.notes ? (
+        <button type="button" className={styles.noteLine} onClick={openNote} title={session.notes}>
+          {session.notes}
+        </button>
+      ) : (
+        <button type="button" className={styles.noteAdd} onClick={openNote}>+ Add note</button>
+      )}
 
       {syncError === "auth" && (
         <div className={styles.authBanner}>

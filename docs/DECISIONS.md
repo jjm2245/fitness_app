@@ -5061,3 +5061,27 @@ a long ruck, a marathon). Left at the default rather than guessed.
 
 Entry-side only: an md5 over every stored load and rep count is identical before
 and after.
+
+---
+
+## 2026-07-27 (note placement) — the note gets its own line
+
+Behind the ✎ was the wrong home. That pencil sits beside the date and edits the
+date and time, which is exactly what it looks like it does; hiding a second,
+unrelated thing there conflated them. A ⋯ menu would have been no better — a
+note you must remember to go looking for defeats the point of writing one.
+
+The note now renders on its own line under the session title: the text when
+there is one (truncated to a single line, muted, tappable, full text in the
+title attribute), and a quiet `+ Add note` when there isn't. One line of
+vertical cost, and it only ever shows content or an invitation to add some.
+
+The `· note` marker in the date line is gone — redundant once the note itself
+is on screen — and its dead CSS class was swept. The ✎ editor is back to date
+and time only, with its own save; the note has its own. History's row indicator
+and editor are unchanged.
+
+Verified in the app: `+ Add note` is the topmost element at its position
+(elementFromPoint), a saved note renders truncated with `white-space: nowrap` +
+`text-overflow: ellipsis`, and the ✎ editor contains exactly two inputs — a
+date and a time — with the note line still rendered beside it.

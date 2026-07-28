@@ -1366,7 +1366,41 @@
   font-family: inherit;
   resize: vertical;
 }
-/* "· note" beside the date — quiet, but enough to find the session again. */
-.noteDot {
-  color: var(--accent);
+
+/* The session note, on its own line under the title. Truncated to ONE line so
+   a long note can never push the logging surface down the screen; the full
+   text is in the title attribute and in the editor. */
+.noteLine {
+  display: block;
+  width: 100%;
+  padding: 2px 0 6px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.noteLine:hover { color: var(--text); }
+/* The invitation. Quiet enough to ignore, present enough to notice. */
+.noteAdd {
+  display: block;
+  padding: 2px 0 6px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.noteAdd:hover { color: var(--accent); }
+.noteEditRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 6px;
 }
