@@ -4858,6 +4858,21 @@ as well as reporting: `commitExOrder` captures the previous order before the
 optimistic `setExOrder` and restores it on failure, so a failed drag can't leave
 the list showing an order the server never accepted.
 
+**Driven through the UI, not verified by construction** (it is the only change
+in the round with real logic rather than a try/catch). Custom view, a real
+pointer-event drag of row 1 down past row 2 — `left_click_drag` does NOT work
+here, dnd-kit's PointerSensor needs intermediate `pointermove` events past its
+6px activation distance, so the sequence is dispatched by hand.
+
+| | POST | banner | UI order | server order |
+|---|---|---|---|---|
+| reorder rigged to 500 | attempted once | shown | **reverted to server's** | unchanged |
+| same drag, allowed through (control) | succeeded | none | new order | **matches UI** |
+
+The control is what makes the failure case mean anything: it proves the drag
+genuinely moves rows, so the reverted order is the revert logic working and not
+a drag that never registered. Local order restored afterwards.
+
 ### #5 — exercise writes detected failure and dropped it
 
 `ExerciseDetailSheet.patch()` (rename / retag / field config) had a try/finally
