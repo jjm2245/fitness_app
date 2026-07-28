@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sheet } from "@/components/session/Sheet";
 import styles from "./sessions.module.css";
+import { rangeLabel, durationLabel } from "@/lib/timeline";
 
 // Add or edit one timeline note. A bottom sheet, like every other editor in the
 // app — the list behind it doesn't move while you type.
@@ -18,6 +19,97 @@ export interface TimelineNote {
 /** Suggestions, not a vocabulary. Free text underneath, so "moved house" and
  *  "gym closed" don't need a migration to exist. */
 const KINDS = ["illness", "injury", "travel", "deload", "other"] as const;
+
+/** Read-first view of one note. Editing and deleting hang off it, but the
+ *  default act on tapping a rail is READING what you wrote — the full text,
+ *  never truncated, which is the one thing the chip can't give you. */
+export function TimelineNoteView({
+  note,
+  onClose,
+  onSaved,
+  onEdit,
+}: {
+  note: TimelineNote;
+  onClose: () => void;
+  onSaved: () => void;
+  onEdit: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const today = todayIso();
+
+  async function patch(body: Record<string, unknown>) {
+    setBusy(true);
+    const res = await fetch(`/api/timeline-notes/${note.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      return setErr(j.error ?? "Couldn't save that.");
+    }
+    onSaved();
+    onClose();
+  }
+
+  async function remove() {
+    setBusy(true);
+    const res = await fetch(`/api/timeline-notes/${note.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!res.ok) return setErr("Couldn't delete that note.");
+    onSaved();
+    onClose();
+  }
+
+  return (
+    <Sheet
+      title={
+        <span className={styles.tlViewTitle}>
+          {note.kind && (
+            <span className={styles.tlViewKind} data-kind={note.kind}>
+              <span className={styles.tlDot} data-kind={note.kind} aria-hidden="true" />
+              {note.kind}
+            </span>
+          )}
+        </span>
+      }
+      // Duration is DERIVED here, never stored — an open note's count is
+      // current every time you open it rather than frozen when it was written.
+      subtitle={`${rangeLabel(note, shortDay)} · ${durationLabel(note, today)}`}
+      onClose={onClose}
+    >
+      {err && <p className={styles.noteError} role="alert">{err}</p>}
+
+      {/* The whole point of the sheet: the text in full. */}
+      <p className={styles.tlViewText}>{note.notes}</p>
+
+      <div className={styles.tlActions}>
+        {note.endDate == null && (
+          // Only while open, and it beats opening an editor to change one date
+          // — closing a note is the natural next act after writing one.
+          <button type="button" className={styles.tlSave} disabled={busy} onClick={() => patch({ endDate: today })}>
+            Mark ended today
+          </button>
+        )}
+        <button type="button" className={styles.tlQuietBtn} disabled={busy} onClick={onEdit}>Edit</button>
+        {!confirmDelete && (
+          <button type="button" className={styles.tlDanger} disabled={busy} onClick={() => setConfirmDelete(true)}>Delete</button>
+        )}
+      </div>
+
+      {confirmDelete && (
+        <div className={styles.tlConfirm}>
+          <span>Delete this note?</span>
+          <button type="button" className={styles.tlDanger} onClick={remove} disabled={busy}>Delete</button>
+          <button type="button" className={styles.tlQuiet} onClick={() => setConfirmDelete(false)}>Cancel</button>
+        </div>
+      )}
+    </Sheet>
+  );
+}
 
 export function TimelineNoteSheet({
   note,
@@ -146,6 +238,11 @@ export function TimelineNoteSheet({
       )}
     </Sheet>
   );
+}
+
+export function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function todayIso(): string {

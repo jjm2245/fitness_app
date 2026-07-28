@@ -5171,3 +5171,93 @@ A sheet there would be ceremony for an edit already two taps deep.
 
 34 → 35 (exactly one). `timeline_notes` 0 rows; 215 sets and volume checksum
 236416 unchanged; the range CHECK present in prod.
+
+---
+
+## 2026-07-28 — History as a timeline: span rails
+
+A dated note is a SPAN, and rendering it at one point meant the longer it ran
+the harder it was to find — backwards. Sessions are now nodes on a spine and
+notes are rails in the gutter beside it.
+
+### Geometry: per-row segments, not absolute positioning
+
+Each row draws its own short rail segment for every span active on that row's
+date; contiguous segments meet and read as one line. No measurement, nothing to
+recompute on resize, and — the point — a note can never displace a session,
+because the gutter is a fixed column beside the cards rather than a row among
+them.
+
+Row gaps had to go to zero: any vertical space between items shows as a SEAM in
+the rail. Separation comes from the card's own padding instead.
+
+Lanes pack greedily by start date, lane 0 to whichever began earliest so
+long-running background context sits nearest the spine. **Past MAX_LANES = 3 a
+span gets no lane and is counted into a "+N more" marker** rather than dropped —
+losing one silently would mean the screen lying about a note the owner wrote.
+
+**Gutter: 44px at one lane, +8px per extra.** On a 390px screen every pixel is
+taken from the session card, so it never reserves space for lanes not in use.
+
+### Palette
+
+From the app's own tokens, not raw hues: illness `--hue-nutrition` (amber),
+injury `--danger` (red), travel `--hue-recovery` (teal), deload `--hue-coach`
+(violet), other `--text-3`. `other` is deliberately colourless — an untyped note
+shouldn't imply a category it doesn't have.
+
+### The bug the tests did not catch
+
+`chipRowIndex` originally returned -1 for a span covering no session row, and
+the caller rendered nothing — **a note the owner wrote, stored, and could not
+see.** That is the common case for a short note in a quiet week, and my own unit
+test asserted the -1 as correct. It was only visible in the browser, where a
+"flight day" note simply wasn't there.
+
+Now it chips against the first row older than the note (keeping chronology), or
+the last row if it predates everything. The test was rewritten to assert the
+corrected behaviour, with a note that the browser caught it.
+
+Also fixed: `SessionRow` rendered an `<li>` inside the timeline's own `<li>` —
+invalid, and React said so twice in the console. It takes an `asDiv` prop now.
+
+### Gap prompts removed
+
+The per-gap `+ Add note` is gone. Prompting on every rest gap would push the
+owner to annotate ordinary rhythm, and once some gaps carry notes and others
+don't, absence stops meaning anything — which would break the export's own
+promise that silence is never evidence. Adding lives on the header `＋ Note`.
+
+**Gap labels survive above a FIXED 7 days.** Fixed rather than derived from
+typical spacing: an adaptive threshold would stop labelling a week off precisely
+during an already-sparse period, which is when it matters most. Legible beats
+clever. No affordance on the label — orientation only.
+
+### The sheet
+
+Read-first: kind chip in colour, range with a DERIVED duration (`since Jun 28 ·
+30 days`, recomputed every open rather than frozen), then the full text with
+`white-space: pre-wrap` and no truncation. **Mark ended today** appears only
+while the note is open, since closing one is the natural next act and beats
+opening an editor to change a single date. Edit hands off to the existing editor
+sheet; Delete keeps its confirm.
+
+### Session header — the real source of the gap
+
+Last round I tightened `.sessionHeader`'s own `gap` 8px → 2px and the dead space
+persisted, because it was never coming from there. The actual sources were
+`.page`'s `gap: 12px` between the header and the card list, and `.headerLine`'s
+own `padding: 4px 2px`. Fixed by zeroing the header gap, dropping the block
+padding, and pulling the header up 6px — title, date and note now sit flush with
+6px to the first card.
+
+The note is an ANNOTATION now, not a subheading: `✎` glyph plus text at 0.73rem
+in `--text-3`, against the 1.15rem title. No "Note:" label (spends width on what
+the glyph conveys) and no "see note" button (hides the content when seeing it is
+the point).
+
+### Old tile chrome dropped
+
+The note tile's borders never matched the session cards, and under rails a note
+isn't a tile at all — the treatment was removed rather than restyled, and its
+dead CSS swept.

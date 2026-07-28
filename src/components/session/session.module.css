@@ -869,10 +869,14 @@
 .sessionHeader {
   display: flex;
   flex-direction: column;
-  /* 8px between the header's own rows read as a stanza once the note line
-     joined them. 2px keeps the title, date and note as ONE block; the space to
-     the first card comes from the card list's own margin, as everywhere else. */
-  gap: 2px;
+  gap: 0;
+  /* Cancels HALF of .page's 12px gap below the header. Last round I tightened
+     this element's own `gap` and the space persisted, because the dead vertical
+     was never coming from here — it was .page's `gap: 12px` between the header
+     and the card list, plus .headerLine's own 4px block padding. Title, date and
+     note now sit flush as one block, with 6px to the first card: the app's
+     standard rhythm, not a stanza break. */
+  margin-bottom: -6px;
 }
 .sessionHeaderRow {
   display: flex;
@@ -887,7 +891,9 @@
   gap: 8px;
   background: transparent;
   border: none;
-  padding: 4px 2px;
+  /* Was `4px 2px` — the bottom 4px was pushing the note line away from the
+     title it belongs to. */
+  padding: 0 2px;
   min-height: 44px;
   color: var(--text);
   text-align: left;
@@ -1374,17 +1380,20 @@
    a long note can never push the logging surface down the screen; the full
    text is in the title attribute and in the editor. */
 .noteLine {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   width: 100%;
-  /* Tight under the title — this reads as part of the title block, not a
-     separate stanza with air above and below it. */
-  margin-top: -2px;
-  padding: 0 0 2px;
+  padding: 0 0 0 2px;
   border: 0;
   background: none;
-  color: var(--text-2);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  /* HINT TIER — visibly subordinate to the 1.15rem title. A glyph carries
+     "this is a note" without spending width on a "Note:" label, and the text
+     stays visible rather than hidden behind a "see note" button, since seeing
+     it is the entire point. */
+  color: var(--text-3);
+  font-size: 0.73rem;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
   overflow: hidden;
@@ -1395,8 +1404,7 @@
 /* The invitation. Quiet enough to ignore, present enough to notice. */
 .noteAdd {
   display: block;
-  margin-top: -2px;
-  padding: 0 0 2px;
+  padding: 0 0 0 2px;
   border: 0;
   background: none;
   color: var(--text-3);
@@ -1428,3 +1436,5 @@
   font-weight: 500;
   cursor: pointer;
 }
+.noteGlyph { flex-shrink: 0; opacity: 0.7; font-size: 0.7rem; }
+.noteLineText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

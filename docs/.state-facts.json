@@ -5,8 +5,8 @@
     "expected": 35
   },
   "tests": {
-    "files": 25,
-    "cases": 308
+    "files": 26,
+    "cases": 324
   },
   "tables": 20,
   "routes": 43

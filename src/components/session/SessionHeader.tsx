@@ -167,10 +167,12 @@ export function SessionHeader({
       )}
       {session.notes ? (
         <button type="button" className={styles.noteLine} onClick={openNote} title={session.notes}>
-          {session.notes}
+          {/* The glyph does the labelling; the text stays visible. */}
+          <span className={styles.noteGlyph} aria-hidden="true">✎</span>
+          <span className={styles.noteLineText}>{session.notes}</span>
         </button>
       ) : (
-        <button type="button" className={styles.noteAdd} onClick={openNote}>+ Add note</button>
+        <button type="button" className={styles.noteAdd} onClick={openNote}>✎ Add note</button>
       )}
 
       {syncError === "auth" && (

@@ -274,57 +274,11 @@
 
 /* A timeline note in the stream. NOT a card: no border, no chevron, no session
    chrome — connective tissue between entries, read against a rail. */
-.tlRow { list-style: none; }
-.tlRowBtn {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
 /* The rail is what carries "this spans time" without drawing a box. */
-.tlRail {
-  flex-shrink: 0;
-  width: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
-}
-.tlBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.tlRange {
-  font-size: 0.72rem;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .tlKindTag { color: var(--accent); text-transform: none; letter-spacing: 0; }
-.tlNoteText {
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: var(--text-2);
-}
 
 /* The gap marker — quieter still than a note; it's an absence, not content. */
-.gapRow {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0 6px 12px;
-  font-size: 0.72rem;
-  color: var(--text-3);
-}
 .gapText { font-style: italic; }
-.gapAdd {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-3);
-  font-size: 0.72rem;
-  cursor: pointer;
-}
 .gapAdd:hover { color: var(--accent); }
 
 /* Timeline note sheet */
@@ -377,3 +331,142 @@
   cursor: pointer;
 }
 .tlConfirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.8rem; color: var(--text-2); }
+
+/* ── Timeline ────────────────────────────────────────────────────────────────
+   Sessions are NODES on a spine; notes are RAILS beside it. The gutter is a
+   fixed column, which is what guarantees a note can never displace a session:
+   they occupy different horizontal space, not different rows. */
+/* No gap and no row margins — any vertical space between items shows up as a
+   SEAM in the rails, because each row draws its own segment and they have to
+   meet. Separation between sessions comes from the card's own padding. */
+.tlList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.tlItem { display: flex; align-items: stretch; gap: 0; }
+.tlItem > * { margin-top: 0; margin-bottom: 0; }
+
+/* The gutter. Width comes from the lane count via an inline style so it never
+   reserves space for lanes that aren't in use — on a 390px screen every pixel
+   here is taken from the session card. */
+.tlGutter {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding-right: 10px;
+}
+/* One lane column per concurrent span. Full height, so adjacent rows' segments
+   meet and read as a single continuous rail. */
+.tlLane { position: relative; width: 3px; }
+.tlRail {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--tl-color, var(--text-3));
+  opacity: 0.75;
+}
+/* The spine node — a session's dot, pinned to the row's top so it aligns with
+   the card's title rather than floating in the middle of a tall card. */
+.tlNode {
+  position: absolute;
+  right: 1px;
+  top: 22px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+/* The session card, unchanged — it just lives to the right of the gutter now.
+   Applied to the CONTENT rather than the whole row so the card's border stops
+   at the spine instead of enclosing the rails. */
+.tlContent {
+  flex: 1;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-bottom: 0;
+  padding: 0 10px;
+}
+/* First and last in a month round off, so a run of sessions reads as one card
+   the way it did before rails existed. */
+.tlItem:first-child .tlContent { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.tlItem:last-child .tlContent {
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.tlItem:only-child .tlContent { border-radius: var(--radius-lg); }
+
+/* Kind palette — muted and dark-theme-first, drawn from the app's own tokens
+   rather than raw hues. `other` is deliberately colourless: an untyped note
+   shouldn't imply a category it doesn't have. */
+.tlRail[data-kind="illness"], .tlDot[data-kind="illness"] { --tl-color: var(--hue-nutrition); }
+.tlRail[data-kind="injury"],  .tlDot[data-kind="injury"]  { --tl-color: var(--danger); }
+.tlRail[data-kind="travel"],  .tlDot[data-kind="travel"]  { --tl-color: var(--hue-recovery); }
+.tlRail[data-kind="deload"],  .tlDot[data-kind="deload"]  { --tl-color: var(--hue-coach); }
+.tlRail[data-kind="other"],   .tlDot[data-kind="other"]   { --tl-color: var(--text-3); }
+
+/* The chip: a MARKER, not the content. One line, truncated — the sheet holds
+   the text in full. */
+.tlChip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 0 4px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+.tlDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tl-color, var(--text-3));
+  align-self: center;
+}
+.tlChipText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tlChipRange { flex-shrink: 0; color: var(--text-3); font-size: 0.7rem; }
+.tlOverflow { display: block; padding: 2px 0; font-size: 0.7rem; color: var(--text-3); }
+
+/* Gap label — orientation only, no affordance. */
+.gapText {
+  display: block;
+  padding: 10px 0;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--text-3);
+}
+
+/* Note view sheet */
+.tlViewTitle { display: inline-flex; align-items: center; }
+.tlViewKind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--tl-color, var(--text-3)) 18%, transparent);
+  color: var(--tl-color, var(--text-2));
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+.tlViewText {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;   /* full text, never truncated */
+}
+.tlQuietBtn {
+  padding: 9px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.82rem;
+  cursor: pointer;
+}

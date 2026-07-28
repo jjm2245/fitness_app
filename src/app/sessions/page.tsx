@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./sessions.module.css";
-import { TimelineNoteSheet, type TimelineNote } from "./TimelineNoteSheet";
+import { TimelineNoteSheet, TimelineNoteView, type TimelineNote } from "./TimelineNoteSheet";
+import { assignLanes, overflowAt, coversDate, chipRowIndex, rangeLabel, MAX_LANES, GAP_LABEL_DAYS, daysBetween } from "@/lib/timeline";
 import {
   listLocalSessionSummaries,
   deleteSession,
@@ -85,34 +86,20 @@ function shortDay(iso: string): string {
 }
 
 /**
- * A timeline note in the stream. Deliberately NOT a card and NOT tappable-to-
- * open-a-session: it's connective tissue between sessions, so it reads as a
- * margin note against a rail rather than an entry in the list. No chevron, no
- * row border, no session chrome.
+ * Gutter width: 44px with one lane (the mock's figure, and enough for the spine
+ * dot plus a rail), +8px per extra lane. On a 390px screen every pixel here is
+ * taken from the session card, so it stays as tight as the geometry allows and
+ * never reserves space for lanes that aren't in use.
  */
-function TimelineRow({ note, onEdit }: { note: TimelineNote; onEdit: () => void }) {
-  const range =
-    note.endDate == null
-      ? `${shortDay(note.startDate)} – ongoing`
-      : note.endDate === note.startDate
-      ? shortDay(note.startDate) // a single day is one date, not a dash to itself
-      : `${shortDay(note.startDate)} – ${shortDay(note.endDate)}`;
-  return (
-    <li className={styles.tlRow}>
-      <button type="button" className={styles.tlRowBtn} onClick={onEdit} title={note.notes}>
-        <span className={styles.tlRail} aria-hidden="true" />
-        <span className={styles.tlBody}>
-          <span className={styles.tlRange}>
-            {range}
-            {note.kind ? <span className={styles.tlKindTag}> · {note.kind}</span> : null}
-          </span>
-          <span className={styles.tlNoteText}>{note.notes}</span>
-        </span>
-      </button>
-    </li>
-  );
+function gutterWidth(laneCount: number): number {
+  return 44 + Math.max(0, laneCount - 1) * 8;
 }
 
+/**
+ * REMOVED: the old note tile. Under rails a note isn't a tile at all — the
+ * treatment was dropped rather than restyled, since its borders never matched
+ * the session cards and there is nothing left for it to be.
+ */
 function monthLabel(dateIso: string): string {
   const [y, m] = dateIso.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -147,6 +134,9 @@ export default function SessionsPage() {
   // sessions. Loaded alongside the list and interleaved by date below.
   const [tlNotes, setTlNotes] = useState<TimelineNote[]>([]);
   const [tlSheet, setTlSheet] = useState<{ note?: TimelineNote; start?: string; end?: string } | null>(null);
+  // Read-first: tapping a rail or chip opens the note; Edit hands off to the
+  // editor sheet above.
+  const [tlView, setTlView] = useState<TimelineNote | null>(null);
   const loadTimeline = useCallback(async () => {
     try {
       const res = await fetch("/api/timeline-notes", { cache: "no-store" });
@@ -317,54 +307,56 @@ export default function SessionsPage() {
   // don't need explaining; a stretch longer than that is the thing that becomes
   // unreadable later. The marker carries the gap's own dates so "+ Add note"
   // arrives pre-filled and correct.
-  const GAP_DAYS = 3;
   type Item =
     | { t: "session"; key: string; date: string; row: Row }
-    | { t: "note"; key: string; date: string; note: TimelineNote }
-    | { t: "gap"; key: string; date: string; from: string; to: string; days: number };
+    | { t: "gap"; key: string; date: string; days: number };
 
-  const months = useMemo(() => {
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }, []);
+
+  // Sessions are the NODES of the timeline; notes never enter this list, because
+  // a note is a rail beside the spine rather than an entry in it. That is what
+  // guarantees a note can't displace a session.
+  const tlRows = useMemo(() => {
     const items: Item[] = [];
-    for (const r of finished) items.push({ t: "session", key: `s${r.id}`, date: r.date, row: r });
-    for (const n of tlNotes) items.push({ t: "note", key: `n${n.id}`, date: n.startDate, note: n });
-
-    // Gaps are computed from SESSIONS ONLY — a note doesn't close a gap, it
-    // explains one, so a gap with a note still shows both.
-    const sessionDates = finished.map((r) => r.date);
-    for (let i = 0; i < sessionDates.length - 1; i++) {
-      const newer = sessionDates[i];
-      const older = sessionDates[i + 1];
-      const days = Math.round((Date.parse(newer) - Date.parse(older)) / 86_400_000);
-      if (days > GAP_DAYS) {
-        items.push({
-          t: "gap",
-          key: `g${older}-${newer}`,
-          // Ordered just after the newer session so it sits in the space
-          // between the two rows.
-          date: newer,
-          from: addDays(older, 1),
-          to: addDays(newer, -1),
-          days: days - 1,
-        });
+    for (let i = 0; i < finished.length; i++) {
+      const r = finished[i];
+      items.push({ t: "session", key: `s${r.id}`, date: r.date, row: r });
+      const next = finished[i + 1];
+      if (next) {
+        const days = daysBetween(next.date, r.date) - 1;
+        // A LABEL only — no affordance. Prompting on every rest gap would push
+        // the owner to annotate ordinary rhythm, and once some gaps carry notes
+        // and others don't, absence stops meaning anything. That would break
+        // the export's own promise that silence is never evidence.
+        if (days >= GAP_LABEL_DAYS) items.push({ t: "gap", key: `g${r.id}`, date: r.date, days });
       }
     }
+    return items;
+  }, [finished]);
 
-    items.sort((a, b) => {
-      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-      // At the same date: session, then the gap that follows it, then notes.
-      const rank = (x: Item) => (x.t === "session" ? 0 : x.t === "gap" ? 1 : 2);
-      return rank(a) - rank(b);
-    });
+  // Rail layout, computed once over every note.
+  const lanes = useMemo(() => assignLanes(tlNotes, todayIso), [tlNotes, todayIso]);
+  const rowDates = useMemo(() => tlRows.map((it) => it.date), [tlRows]);
+  const laneCount = useMemo(
+    () => Math.min(MAX_LANES, Math.max(0, ...[...lanes.values()].map((l) => (l == null ? 0 : l + 1)))),
+    [lanes]
+  );
 
-    const out: Array<{ label: string; items: Item[] }> = [];
-    for (const it of items) {
+  const months = useMemo(() => {
+    const out: Array<{ label: string; items: Array<Item & { idx: number }> }> = [];
+    tlRows.forEach((it, idx) => {
       const label = monthLabel(it.date);
       const bucket = out.at(-1);
-      if (bucket && bucket.label === label) bucket.items.push(it);
-      else out.push({ label, items: [it] });
-    }
+      const withIdx = { ...it, idx };
+      if (bucket && bucket.label === label) bucket.items.push(withIdx);
+      else out.push({ label, items: [withIdx] });
+    });
     return out;
-  }, [finished, tlNotes]);
+  }, [tlRows]);
 
   function open(id: string) {
     router.push(`/log/${id}`);
@@ -469,25 +461,75 @@ export default function SessionsPage() {
           {months.map((m) => (
             <div key={m.label}>
               <div className={styles.sectionLabel}>{m.label}</div>
-              <ul className={styles.list}>
-                {m.items.map((it) =>
-                  it.t === "session" ? (
-                    <SessionRow key={it.key} row={it.row} {...rowProps} reconciling={reconciling === it.row.id} detailOpen={openDetail === it.row.id} syncError={syncError} onNoteSaved={refresh} />
-                  ) : it.t === "note" ? (
-                    <TimelineRow key={it.key} note={it.note} onEdit={() => setTlSheet({ note: it.note })} />
-                  ) : (
-                    <li key={it.key} className={styles.gapRow}>
-                      <span className={styles.gapText}>{it.days} days without a session</span>
-                      <button type="button" className={styles.gapAdd} onClick={() => setTlSheet({ start: it.from, end: it.to })}>
-                        + Add note
-                      </button>
-                    </li>
-                  )
-                )}
+              <ul className={styles.tlList}>
+                {m.items.map((it) => (
+                  <li key={it.key} className={styles.tlItem}>
+                    {/* GUTTER: the spine dot plus one rail segment per active
+                        span. Segments are per-row and stack vertically, so
+                        contiguous rows join into a continuous line without any
+                        measurement — variable row heights just work. */}
+                    <span className={styles.tlGutter} style={{ width: gutterWidth(laneCount) }} aria-hidden="true">
+                      {Array.from({ length: laneCount }, (_, lane) => {
+                        const span = tlNotes.find(
+                          (n) => lanes.get(n.id) === lane && coversDate(n, it.date, todayIso)
+                        );
+                        return (
+                          <span key={lane} className={styles.tlLane}>
+                            {span && <span className={styles.tlRail} data-kind={span.kind ?? "other"} />}
+                          </span>
+                        );
+                      })}
+                      {it.t === "session" && <span className={styles.tlNode} />}
+                    </span>
+
+                    <span className={styles.tlContent}>
+                      {/* CHIPS: one per span, at the topmost row it covers —
+                          which for an ongoing note is the very first row, so an
+                          open note is visible without scrolling. */}
+                      {tlNotes
+                        .filter((n) => chipRowIndex(n, rowDates, todayIso) === it.idx)
+                        .map((n) => (
+                          <button
+                            key={`chip${n.id}`}
+                            type="button"
+                            className={styles.tlChip}
+                            onClick={() => setTlView(n)}
+                            title={n.notes}
+                          >
+                            <span className={styles.tlDot} data-kind={n.kind ?? "other"} aria-hidden="true" />
+                            <span className={styles.tlChipText}>{n.notes}</span>
+                            <span className={styles.tlChipRange}>· {rangeLabel(n, shortDay)}</span>
+                          </button>
+                        ))}
+                      {overflowAt(tlNotes, lanes, it.date, todayIso) > 0 && (
+                        // Shown, never dropped: the note exists and the screen
+                        // must not pretend otherwise.
+                        <span className={styles.tlOverflow}>+{overflowAt(tlNotes, lanes, it.date, todayIso)} more</span>
+                      )}
+
+                      {it.t === "session" ? (
+                        <SessionRow asDiv row={it.row} {...rowProps} reconciling={reconciling === it.row.id} detailOpen={openDetail === it.row.id} syncError={syncError} onNoteSaved={refresh} />
+                      ) : (
+                        // A label, deliberately with NO affordance — orientation
+                        // only, above a week.
+                        <span className={styles.gapText}>{it.days} days without a session</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
               </ul>
             </div>
           ))}
         </>
+      )}
+
+      {tlView && (
+        <TimelineNoteView
+          note={tlView}
+          onClose={() => setTlView(null)}
+          onSaved={loadTimeline}
+          onEdit={() => { const n = tlView; setTlView(null); setTlSheet({ note: n }); }}
+        />
       )}
 
       {tlSheet && (
@@ -519,6 +561,7 @@ export default function SessionsPage() {
 }
 
 function SessionRow({
+  asDiv,
   row,
   onOpen,
   onDelete,
@@ -530,6 +573,9 @@ function SessionRow({
   syncError,
   onNoteSaved,
 }: {
+  /** Render as a <div> when the timeline wraps it in its own <li> — an <li>
+   *  inside an <li> is invalid and React says so. */
+  asDiv?: boolean;
   row: Row;
   onOpen: (id: string) => void;
   onDelete: (id: string, label: string) => void;
@@ -543,6 +589,9 @@ function SessionRow({
 }) {
   // Dot semantics: green = in sync; amber = pending, drains on its own;
   // red = needs a decision (divergence) or sync is erroring.
+  // <li> inside the timeline's own <li> is invalid markup; a <div> is the same
+  // box without the nesting error.
+  const Wrap = (asDiv ? "div" : "li") as "div" | "li";
   const needsAction = row.conflict || row.behind;
   const dotClass = needsAction || (row.pendingSync && syncError && syncError !== "network")
     ? styles.dotRed
@@ -567,7 +616,7 @@ function SessionRow({
   const count = `${row.exerciseCount} exercise${row.exerciseCount === 1 ? "" : "s"}`;
 
   return (
-    <li className={styles.rowWrap}>
+    <Wrap className={styles.rowWrap}>
       <div className={styles.rowLine}>
         <button className={styles.row} onClick={() => onOpen(row.id)}>
           <div className={styles.rowTop}>
@@ -634,7 +683,7 @@ function SessionRow({
           )}
         </div>
       )}
-    </li>
+    </Wrap>
   );
 }
 
