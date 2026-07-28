@@ -309,7 +309,10 @@ export default function SessionsPage() {
   // arrives pre-filled and correct.
   type Item =
     | { t: "session"; key: string; date: string; row: Row }
-    | { t: "gap"; key: string; date: string; days: number };
+    | { t: "gap"; key: string; date: string; days: number }
+    /** A note's marker gets its OWN row. Rendered inside a session's content it
+     *  read as part of that session's entry — the thing being fixed here. */
+    | { t: "chip"; key: string; date: string; note: TimelineNote };
 
   const todayIso = useMemo(() => {
     const d = new Date();
@@ -341,6 +344,22 @@ export default function SessionsPage() {
   // Rail layout, computed once over every note.
   const lanes = useMemo(() => assignLanes(tlNotes, todayIso), [tlNotes, todayIso]);
   const rowDates = useMemo(() => tlRows.map((it) => it.date), [tlRows]);
+
+  // Chips spliced in as their own rows, immediately ABOVE the row they anchor
+  // to. Sessions keep their positions — a chip row is another item in the same
+  // sorted stream, never something wrapped around a session.
+  const withChips = useMemo(() => {
+    const out: Item[] = [];
+    tlRows.forEach((it, idx) => {
+      for (const n of tlNotes) {
+        if (chipRowIndex(n, rowDates, todayIso) === idx) {
+          out.push({ t: "chip", key: `c${n.id}`, date: it.date, note: n });
+        }
+      }
+      out.push(it);
+    });
+    return out;
+  }, [tlRows, tlNotes, rowDates, todayIso]);
   const laneCount = useMemo(
     () => Math.min(MAX_LANES, Math.max(0, ...[...lanes.values()].map((l) => (l == null ? 0 : l + 1)))),
     [lanes]
@@ -348,7 +367,7 @@ export default function SessionsPage() {
 
   const months = useMemo(() => {
     const out: Array<{ label: string; items: Array<Item & { idx: number }> }> = [];
-    tlRows.forEach((it, idx) => {
+    withChips.forEach((it, idx) => {
       const label = monthLabel(it.date);
       const bucket = out.at(-1);
       const withIdx = { ...it, idx };
@@ -356,7 +375,7 @@ export default function SessionsPage() {
       else out.push({ label, items: [withIdx] });
     });
     return out;
-  }, [tlRows]);
+  }, [withChips]);
 
   function open(id: string) {
     router.push(`/log/${id}`);
@@ -482,37 +501,32 @@ export default function SessionsPage() {
                       {it.t === "session" && <span className={styles.tlNode} />}
                     </span>
 
-                    <span className={styles.tlContent}>
-                      {/* CHIPS: one per span, at the topmost row it covers —
-                          which for an ongoing note is the very first row, so an
-                          open note is visible without scrolling. */}
-                      {tlNotes
-                        .filter((n) => chipRowIndex(n, rowDates, todayIso) === it.idx)
-                        .map((n) => (
-                          <button
-                            key={`chip${n.id}`}
-                            type="button"
-                            className={styles.tlChip}
-                            onClick={() => setTlView(n)}
-                            title={n.notes}
-                          >
-                            <span className={styles.tlDot} data-kind={n.kind ?? "other"} aria-hidden="true" />
-                            <span className={styles.tlChipText}>{n.notes}</span>
-                            <span className={styles.tlChipRange}>· {rangeLabel(n, shortDay)}</span>
-                          </button>
-                        ))}
-                      {overflowAt(tlNotes, lanes, it.date, todayIso) > 0 && (
-                        // Shown, never dropped: the note exists and the screen
-                        // must not pretend otherwise.
-                        <span className={styles.tlOverflow}>+{overflowAt(tlNotes, lanes, it.date, todayIso)} more</span>
-                      )}
-
+                    <span className={styles.tlContent} data-chip={it.t === "chip" ? "" : undefined}>
                       {it.t === "session" ? (
                         <SessionRow asDiv row={it.row} {...rowProps} reconciling={reconciling === it.row.id} detailOpen={openDetail === it.row.id} syncError={syncError} onNoteSaved={refresh} />
+                      ) : it.t === "chip" ? (
+                        // A PILL on its own row — bordered and coloured by kind.
+                        // Rendered inside a session's content it read as part of
+                        // that session's entry; a note is a marker beside the
+                        // timeline, not a field on a workout.
+                        <button
+                          type="button"
+                          className={styles.tlChip}
+                          data-kind={it.note.kind ?? "other"}
+                          onClick={() => setTlView(it.note)}
+                          title={it.note.notes}
+                        >
+                          <span className={styles.tlDot} data-kind={it.note.kind ?? "other"} aria-hidden="true" />
+                          <span className={styles.tlChipText}>{it.note.notes}</span>
+                          <span className={styles.tlChipRange}>· {rangeLabel(it.note, shortDay)}</span>
+                        </button>
                       ) : (
                         // A label, deliberately with NO affordance — orientation
                         // only, above a week.
                         <span className={styles.gapText}>{it.days} days without a session</span>
+                      )}
+                      {overflowAt(tlNotes, lanes, it.date, todayIso) > 0 && it.t === "session" && (
+                        <span className={styles.tlOverflow}>+{overflowAt(tlNotes, lanes, it.date, todayIso)} more</span>
                       )}
                     </span>
                   </li>

@@ -5261,3 +5261,39 @@ the point).
 The note tile's borders never matched the session cards, and under rails a note
 isn't a tile at all — the treatment was removed rather than restyled, and its
 dead CSS swept.
+
+---
+
+## 2026-07-28 (chip treatment) — the note stopped looking like a session
+
+Against `history-timeline-mock-v2`, one thing was wrong: the chip was rendered
+INSIDE a session row's content block, above the card. That made it read as a
+field belonging to that session — a note about the workout rather than an
+annotation beside the timeline.
+
+Three changes, all from the mock:
+
+1. **The chip is its own row.** It is spliced into the stream immediately above
+   the row it anchors to, as another item in the same sorted list. Sessions keep
+   their positions; nothing is wrapped around anything.
+2. **It is a PILL, not a line of text** — `inline-flex` so it shrinks to its
+   content instead of spanning the card's width (the specific thing that made it
+   look like an entry), with a border and text in the kind's colour. The palette
+   now drives the border too, at 40% alpha.
+3. **No spine dot on a chip row.** Dots mark sessions; a note is not a node.
+
+**Sessions became individual cards.** The continuous grouped card could not
+survive chip rows spliced between sessions — per-card is what lets a chip sit
+between two sessions without breaking either one's chrome, and it is what the
+mock does.
+
+Two things caught while matching it: bare `[data-kind="…"]` selectors are not
+valid in a CSS module (pure-selector rule), so they are scoped to `.tlItem` /
+`.tlViewKind` / `.tlDot`; and the card padding I added doubled `.row`'s existing
+12px/14px, squeezing the title and wrapping the meta line onto two rows once the
+44px gutter took its share of 375px.
+
+Verified: `border-radius 999px`, border and text in `--danger` for injury,
+`display: inline-flex` at 291px rather than full width, `closest('.rowWrap')`
+null (genuinely outside any session card), topmost at its own coordinates, and
+the sheet still opens with no layout shift.

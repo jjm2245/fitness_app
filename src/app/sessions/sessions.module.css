@@ -376,49 +376,48 @@
   background: var(--text-3);
   box-shadow: 0 0 0 3px var(--bg);
 }
-/* The session card, unchanged — it just lives to the right of the gutter now.
-   Applied to the CONTENT rather than the whole row so the card's border stops
-   at the spine instead of enclosing the rails. */
-.tlContent {
-  flex: 1;
-  min-width: 0;
+/* Each session is its OWN card now. The previous continuous grouped card can't
+   survive chip rows spliced between sessions — and per-card is what lets a chip
+   sit between two sessions without breaking either one's chrome. */
+.tlContent { flex: 1; min-width: 0; padding: 7px 0; }
+.tlContent[data-chip] { padding: 2px 0; }
+/* No extra padding here — `.row` already carries 12px/14px, and adding more on
+   top squeezed the title and wrapped the meta line onto two rows once the 44px
+   gutter took its share of a 375px screen. */
+.tlContent > div:first-child:not([class*="tlChip"]) {
   background: var(--card);
   border: 1px solid var(--hairline);
-  border-bottom: 0;
-  padding: 0 10px;
+  border-radius: var(--radius);
+  padding-right: 4px;
 }
-/* First and last in a month round off, so a run of sessions reads as one card
-   the way it did before rails existed. */
-.tlItem:first-child .tlContent { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-.tlItem:last-child .tlContent {
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-.tlItem:only-child .tlContent { border-radius: var(--radius-lg); }
 
 /* Kind palette — muted and dark-theme-first, drawn from the app's own tokens
    rather than raw hues. `other` is deliberately colourless: an untyped note
    shouldn't imply a category it doesn't have. */
-.tlRail[data-kind="illness"], .tlDot[data-kind="illness"] { --tl-color: var(--hue-nutrition); }
-.tlRail[data-kind="injury"],  .tlDot[data-kind="injury"]  { --tl-color: var(--danger); }
-.tlRail[data-kind="travel"],  .tlDot[data-kind="travel"]  { --tl-color: var(--hue-recovery); }
-.tlRail[data-kind="deload"],  .tlDot[data-kind="deload"]  { --tl-color: var(--hue-coach); }
-.tlRail[data-kind="other"],   .tlDot[data-kind="other"]   { --tl-color: var(--text-3); }
+.tlItem [data-kind="illness"], .tlViewKind[data-kind="illness"], .tlDot[data-kind="illness"] { --tl-color: var(--hue-nutrition); --tl-border: color-mix(in srgb, var(--hue-nutrition) 40%, transparent); }
+.tlItem [data-kind="injury"], .tlViewKind[data-kind="injury"], .tlDot[data-kind="injury"] { --tl-color: var(--danger);         --tl-border: color-mix(in srgb, var(--danger) 40%, transparent); }
+.tlItem [data-kind="travel"], .tlViewKind[data-kind="travel"], .tlDot[data-kind="travel"] { --tl-color: var(--hue-recovery);   --tl-border: color-mix(in srgb, var(--hue-recovery) 40%, transparent); }
+.tlItem [data-kind="deload"], .tlViewKind[data-kind="deload"], .tlDot[data-kind="deload"] { --tl-color: var(--hue-coach);      --tl-border: color-mix(in srgb, var(--hue-coach) 40%, transparent); }
+.tlItem [data-kind="other"], .tlViewKind[data-kind="other"], .tlDot[data-kind="other"] { --tl-color: var(--text-3);         --tl-border: var(--hairline); }
 
-/* The chip: a MARKER, not the content. One line, truncated — the sheet holds
-   the text in full. */
+/* The chip: a MARKER, not the content — and a PILL, not a row of text.
+   Bordered and coloured by kind so it reads as an annotation beside the
+   timeline rather than a field belonging to the session below it. inline-flex
+   so it shrinks to its content instead of spanning the card's width, which was
+   the specific thing making it look like a session entry. */
 .tlChip {
-  display: flex;
-  align-items: baseline;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 6px 0 4px;
-  border: 0;
-  background: none;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--tl-border, var(--hairline));
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--tl-color, var(--text-2));
+  font-size: 0.72rem;
   text-align: left;
   cursor: pointer;
-  font-size: 0.75rem;
-  color: var(--text-2);
 }
 .tlDot {
   flex-shrink: 0;
@@ -426,10 +425,9 @@
   height: 6px;
   border-radius: 50%;
   background: var(--tl-color, var(--text-3));
-  align-self: center;
 }
-.tlChipText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tlChipRange { flex-shrink: 0; color: var(--text-3); font-size: 0.7rem; }
+.tlChipText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tlChipRange { flex: 0 0 auto; color: var(--text-3); }
 .tlOverflow { display: block; padding: 2px 0; font-size: 0.7rem; color: var(--text-3); }
 
 /* Gap label — orientation only, no affordance. */
