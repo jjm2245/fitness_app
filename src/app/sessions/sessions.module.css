@@ -252,3 +252,128 @@
   color: var(--accent);
   font-weight: 400;
 }
+
+/* History title row — the general "+ Note" action sits beside the heading. */
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tlAddBtn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.tlAddBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* A timeline note in the stream. NOT a card: no border, no chevron, no session
+   chrome — connective tissue between entries, read against a rail. */
+.tlRow { list-style: none; }
+.tlRowBtn {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+/* The rail is what carries "this spans time" without drawing a box. */
+.tlRail {
+  flex-shrink: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.tlBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tlRange {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tlKindTag { color: var(--accent); text-transform: none; letter-spacing: 0; }
+.tlNoteText {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+/* The gap marker — quieter still than a note; it's an absence, not content. */
+.gapRow {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 6px 12px;
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+.gapText { font-style: italic; }
+.gapAdd {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.gapAdd:hover { color: var(--accent); }
+
+/* Timeline note sheet */
+.noteError { margin: 0 0 10px; font-size: 0.78rem; line-height: 1.45; color: var(--warning); }
+.tlField { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.tlLabel { min-width: 44px; font-size: 0.75rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.tlQuiet { padding: 0; border: 0; background: none; color: var(--text-3); font-size: 0.75rem; cursor: pointer; }
+.tlQuiet:hover { color: var(--accent); }
+.tlKinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.tlKind, .tlKindOn {
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-2);
+}
+.tlKindOn { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.tlText {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+.tlActions { display: flex; gap: 8px; margin-top: 12px; }
+.tlSave {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tlSave:disabled { opacity: 0.5; cursor: default; }
+.tlDanger {
+  padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.tlConfirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.8rem; color: var(--text-2); }

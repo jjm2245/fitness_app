@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import {
   profile,
   bodyMetrics,
+  timelineNotes,
   programs,
   programDays,
   programExercises,
@@ -65,6 +66,7 @@ const TABLES = [
   // — About you —
   { name: "profile", table: profile },
   { name: "body_metrics", table: bodyMetrics },
+  { name: "timeline_notes", table: timelineNotes },
   // — The exercise library and its graph —
   // The FULL library ships, not just customs: set_logs.exercise_id and
   // program_exercises.exercise_id are foreign keys into it. An export holding
@@ -236,6 +238,8 @@ async function jsonResponse() {
         "A SINGLETON — at most one row, id = 1, enforced by a CHECK constraint. Its NULLs mean not-recorded like everywhere else, and a partially filled profile is a valid state rather than an error. height_in is canonical INCHES; dob is stored rather than age, so age is derived and never stale. training_years is years of consistent training.",
       profile_unsurfaced_columns:
         "SIX columns on `profile` hold SCHEMA DEFAULTS, not values the owner entered, and no screen shows or edits them: goal_mode ('recomp'), training_age ('novice'), available_days (6), activity_seed ('sedentary'), equipment_profile ({}) and preferences ({}). They were populated by the column defaults the moment the row was created. Do NOT read them as facts about the owner — 'available_days: 6' in particular reads like a training schedule and is not one. Only dob, sex, height_in and training_years are owner-entered, and any of those may be NULL.",
+      timeline_notes:
+        "Dated free-text annotations explaining what happened BETWEEN sessions: illness, injury, travel, a deliberate deload. They exist because a gap in workout_logs is otherwise uninterpretable — two weeks of silence looks identical whether the owner was sick, deloading, travelling, or had stopped. end_date NULL means the period is STILL ONGOING as of `exportedAt`, not that it is unknown or unbounded; compare against exportedAt to bound it. A single-day note has start_date equal to end_date. `kind` is a loose label, not a controlled vocabulary — treat unfamiliar values as valid. ABSENCE OF A NOTE OVER A GAP MEANS NOTHING WAS RECORDED, NOT THAT NOTHING HAPPENED: these are opt-in, so silence is never evidence. Unlike injury_flags, this table is inert — nothing in the training engine reads it.",
       bodyweight_is_not_load:
         "Bodyweight is a body-composition metric and is NEVER added to set_logs.load. Bodyweight exercises (pullups, dips, captain's chair) correctly record load 0 when nothing was added — the load column measures what was ADDED to the body, not what was moved.",
     },

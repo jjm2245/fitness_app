@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./sessions.module.css";
+import { TimelineNoteSheet, type TimelineNote } from "./TimelineNoteSheet";
 import {
   listLocalSessionSummaries,
   deleteSession,
@@ -68,6 +69,50 @@ interface Row {
 
 // Month bucket key/label from the STABLE session date (local calendar parts —
 // new Date("YYYY-MM-DD") is UTC midnight and would shift the month).
+/** Calendar-day arithmetic on a plain YYYY-MM-DD, built from LOCAL parts —
+ *  `new Date("2026-07-14")` is UTC midnight and lands a day early west of
+ *  Greenwich. */
+function addDays(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, (d ?? 1) + delta);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/**
+ * A timeline note in the stream. Deliberately NOT a card and NOT tappable-to-
+ * open-a-session: it's connective tissue between sessions, so it reads as a
+ * margin note against a rail rather than an entry in the list. No chevron, no
+ * row border, no session chrome.
+ */
+function TimelineRow({ note, onEdit }: { note: TimelineNote; onEdit: () => void }) {
+  const range =
+    note.endDate == null
+      ? `${shortDay(note.startDate)} – ongoing`
+      : note.endDate === note.startDate
+      ? shortDay(note.startDate) // a single day is one date, not a dash to itself
+      : `${shortDay(note.startDate)} – ${shortDay(note.endDate)}`;
+  return (
+    <li className={styles.tlRow}>
+      <button type="button" className={styles.tlRowBtn} onClick={onEdit} title={note.notes}>
+        <span className={styles.tlRail} aria-hidden="true" />
+        <span className={styles.tlBody}>
+          <span className={styles.tlRange}>
+            {range}
+            {note.kind ? <span className={styles.tlKindTag}> · {note.kind}</span> : null}
+          </span>
+          <span className={styles.tlNoteText}>{note.notes}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function monthLabel(dateIso: string): string {
   const [y, m] = dateIso.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -98,6 +143,17 @@ export default function SessionsPage() {
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [confirm, setConfirm] = useState<{ id: string; label: string } | null>(null);
+  // Timeline notes — the annotations that explain the stretches BETWEEN
+  // sessions. Loaded alongside the list and interleaved by date below.
+  const [tlNotes, setTlNotes] = useState<TimelineNote[]>([]);
+  const [tlSheet, setTlSheet] = useState<{ note?: TimelineNote; start?: string; end?: string } | null>(null);
+  const loadTimeline = useCallback(async () => {
+    try {
+      const res = await fetch("/api/timeline-notes", { cache: "no-store" });
+      if (res.ok) setTlNotes(await res.json());
+    } catch { /* offline — the sessions list still works without them */ }
+  }, []);
+  useEffect(() => { void loadTimeline(); }, [loadTimeline]);
   const [deleting, setDeleting] = useState(false);
   const [openDetail, setOpenDetail] = useState<string | null>(null);
   // Queued session deletes the server has not confirmed yet.
@@ -251,16 +307,64 @@ export default function SessionsPage() {
   const finished = rows.filter((r) => !r.inProgress);
 
   // Finished rows bucketed by month of the stable session date.
+  // Sessions and timeline notes woven into ONE newest-first stream, then
+  // bucketed by month. A note is ordered by its start date, so a Jul 14–24
+  // illness lands between the Jul 25 session and the Jul 13 one — exactly where
+  // you're looking when you wonder what happened.
+  //
+  // A GAP marker is emitted between two sessions more than three days apart.
+  // Three days rather than two: a rest day and a missed day are normal and
+  // don't need explaining; a stretch longer than that is the thing that becomes
+  // unreadable later. The marker carries the gap's own dates so "+ Add note"
+  // arrives pre-filled and correct.
+  const GAP_DAYS = 3;
+  type Item =
+    | { t: "session"; key: string; date: string; row: Row }
+    | { t: "note"; key: string; date: string; note: TimelineNote }
+    | { t: "gap"; key: string; date: string; from: string; to: string; days: number };
+
   const months = useMemo(() => {
-    const out: Array<{ label: string; rows: Row[] }> = [];
-    for (const r of finished) {
-      const label = monthLabel(r.date);
+    const items: Item[] = [];
+    for (const r of finished) items.push({ t: "session", key: `s${r.id}`, date: r.date, row: r });
+    for (const n of tlNotes) items.push({ t: "note", key: `n${n.id}`, date: n.startDate, note: n });
+
+    // Gaps are computed from SESSIONS ONLY — a note doesn't close a gap, it
+    // explains one, so a gap with a note still shows both.
+    const sessionDates = finished.map((r) => r.date);
+    for (let i = 0; i < sessionDates.length - 1; i++) {
+      const newer = sessionDates[i];
+      const older = sessionDates[i + 1];
+      const days = Math.round((Date.parse(newer) - Date.parse(older)) / 86_400_000);
+      if (days > GAP_DAYS) {
+        items.push({
+          t: "gap",
+          key: `g${older}-${newer}`,
+          // Ordered just after the newer session so it sits in the space
+          // between the two rows.
+          date: newer,
+          from: addDays(older, 1),
+          to: addDays(newer, -1),
+          days: days - 1,
+        });
+      }
+    }
+
+    items.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      // At the same date: session, then the gap that follows it, then notes.
+      const rank = (x: Item) => (x.t === "session" ? 0 : x.t === "gap" ? 1 : 2);
+      return rank(a) - rank(b);
+    });
+
+    const out: Array<{ label: string; items: Item[] }> = [];
+    for (const it of items) {
+      const label = monthLabel(it.date);
       const bucket = out.at(-1);
-      if (bucket && bucket.label === label) bucket.rows.push(r);
-      else out.push({ label, rows: [r] });
+      if (bucket && bucket.label === label) bucket.items.push(it);
+      else out.push({ label, items: [it] });
     }
     return out;
-  }, [finished]);
+  }, [finished, tlNotes]);
 
   function open(id: string) {
     router.push(`/log/${id}`);
@@ -316,7 +420,16 @@ export default function SessionsPage() {
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>History</h1>
+      <div className={styles.titleRow}>
+        <h1 className={styles.title}>History</h1>
+        {/* The general entry point. The on-gap affordance covers the motivating
+            case, but plenty of notes ("started a new job, sleeping badly",
+            "began a cut") belong on a normal week with sessions either side —
+            and those have no gap to hang off. */}
+        <button type="button" className={styles.tlAddBtn} onClick={() => setTlSheet({})}>
+          + Note
+        </button>
+      </div>
 
       {syncError === "auth" && (
         <div className={styles.authBanner}>
@@ -357,13 +470,34 @@ export default function SessionsPage() {
             <div key={m.label}>
               <div className={styles.sectionLabel}>{m.label}</div>
               <ul className={styles.list}>
-                {m.rows.map((r) => (
-                  <SessionRow key={r.id} row={r} {...rowProps} reconciling={reconciling === r.id} detailOpen={openDetail === r.id} syncError={syncError} onNoteSaved={refresh} />
-                ))}
+                {m.items.map((it) =>
+                  it.t === "session" ? (
+                    <SessionRow key={it.key} row={it.row} {...rowProps} reconciling={reconciling === it.row.id} detailOpen={openDetail === it.row.id} syncError={syncError} onNoteSaved={refresh} />
+                  ) : it.t === "note" ? (
+                    <TimelineRow key={it.key} note={it.note} onEdit={() => setTlSheet({ note: it.note })} />
+                  ) : (
+                    <li key={it.key} className={styles.gapRow}>
+                      <span className={styles.gapText}>{it.days} days without a session</span>
+                      <button type="button" className={styles.gapAdd} onClick={() => setTlSheet({ start: it.from, end: it.to })}>
+                        + Add note
+                      </button>
+                    </li>
+                  )
+                )}
               </ul>
             </div>
           ))}
         </>
+      )}
+
+      {tlSheet && (
+        <TimelineNoteSheet
+          note={tlSheet.note}
+          defaultStart={tlSheet.start}
+          defaultEnd={tlSheet.end}
+          onClose={() => setTlSheet(null)}
+          onSaved={loadTimeline}
+        />
       )}
 
       {confirm && (

@@ -553,6 +553,35 @@ export const nutritionEntries = pgTable("nutrition_entries", {
   discrepancyFlag: boolean("discrepancy_flag").default(false),
 });
 
+// Dated free-text annotations for the periods BETWEEN sessions — illness,
+// injury, travel, a deliberate deload. They exist because a gap in
+// `workout_logs` is otherwise uninterpretable: two weeks of silence looks
+// identical whether the owner was sick, deloading, travelling, or had stopped.
+//
+// DELIBERATELY SEPARATE FROM `injury_flags`, and this is the whole reason the
+// table exists. `injury_flags` is read by `loadActiveInjuryStructures()` and
+// feeds `src/core/substitution.ts` — an "on holiday" row written there would
+// silently start excluding exercises from substitution. `timeline_notes` is
+// inert by construction: NOTHING in `src/core/*` may ever read it, and no
+// adapter may pass it in. It explains history; it never changes training.
+export const timelineNotes = pgTable("timeline_notes", {
+  id: serial("id").primaryKey(),
+  startDate: date("start_date").notNull(),
+  // NULL = STILL ONGOING, not unknown. "Injured since Tuesday" is the state you
+  // are actually in when you write one of these; requiring an end would force a
+  // guess, and you would simply never write it.
+  endDate: date("end_date"),
+  // Free text with a picker of suggestions, NOT an enum — an enum means a
+  // migration the first time reality produces "moved house" or "gym closed".
+  kind: text("kind"),
+  // The ONE justified exception to this schema's absence rules: a timeline note
+  // with no text is nothing at all. The dates alone explain nothing.
+  notes: text("notes").notNull(),
+  // timestamptz on purpose — not the tz-less default the rest of this schema
+  // keeps paying for (see SPEC-DRIFT).
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const formChecks = pgTable("form_checks", {
   id: serial("id").primaryKey(),
   date: date("date").notNull(),

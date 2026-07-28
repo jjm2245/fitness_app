@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import styles from "./session.module.css";
+import { Sheet } from "./Sheet";
 import { editSessionMeta, type LocalSession } from "@/lib/sessionStore";
 
 // One-line session header: name · date · time ✎ (tap to edit — the same
@@ -138,21 +139,33 @@ export function SessionHeader({
           looks like it does. A note you have to remember to go looking for
           defeats the point of writing one. One line of cost, and it only ever
           shows content or an invitation to add some. */}
-      {noteEditing ? (
-        <div className={styles.noteEditRow}>
+      {/* The editor is a bottom SHEET, not an inline box. Inline pushed the
+          exercise cards down the moment you tapped — the content moved under
+          your thumb as you were about to type. A sheet slides over instead and
+          the page behind it doesn't move, matching add-exercise, the unit sheet
+          and the target sheet. */}
+      {noteEditing && (
+        <Sheet
+          title={session.notes ? "Edit note" : "Note this session"}
+          subtitle="An injury, bad sleep, a crowded gym, a deload — whatever explains this session later."
+          onClose={() => setNoteEditing(false)}
+        >
           <textarea
-            className={styles.noteInput}
+            className={styles.noteSheetText}
             value={noteVal}
             onChange={(e) => setNoteVal(e.target.value)}
             placeholder="what's worth remembering about this session?"
             aria-label="Session note"
-            rows={2}
+            rows={5}
             autoFocus
           />
-          <button type="button" className={styles.smallBtn} onClick={saveNote}>Save</button>
-          <button type="button" className={styles.smallBtn} onClick={() => setNoteEditing(false)}>Cancel</button>
-        </div>
-      ) : session.notes ? (
+          <div className={styles.noteSheetActions}>
+            <button type="button" className={styles.noteSheetSave} onClick={saveNote}>Save</button>
+            <button type="button" className={styles.smallBtn} onClick={() => setNoteEditing(false)}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
+      {session.notes ? (
         <button type="button" className={styles.noteLine} onClick={openNote} title={session.notes}>
           {session.notes}
         </button>

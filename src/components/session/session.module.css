@@ -869,7 +869,10 @@
 .sessionHeader {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* 8px between the header's own rows read as a stanza once the note line
+     joined them. 2px keeps the title, date and note as ONE block; the space to
+     the first card comes from the card list's own margin, as everywhere else. */
+  gap: 2px;
 }
 .sessionHeaderRow {
   display: flex;
@@ -1373,7 +1376,10 @@
 .noteLine {
   display: block;
   width: 100%;
-  padding: 2px 0 6px;
+  /* Tight under the title — this reads as part of the title block, not a
+     separate stanza with air above and below it. */
+  margin-top: -2px;
+  padding: 0 0 2px;
   border: 0;
   background: none;
   color: var(--text-2);
@@ -1389,7 +1395,8 @@
 /* The invitation. Quiet enough to ignore, present enough to notice. */
 .noteAdd {
   display: block;
-  padding: 2px 0 6px;
+  margin-top: -2px;
+  padding: 0 0 2px;
   border: 0;
   background: none;
   color: var(--text-3);
@@ -1398,9 +1405,26 @@
   cursor: pointer;
 }
 .noteAdd:hover { color: var(--accent); }
-.noteEditRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 6px;
+.noteSheetText {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.noteSheetActions { display: flex; gap: 8px; margin-top: 12px; }
+.noteSheetSave {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent-grad);
+  color: var(--accent-fg);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
 }

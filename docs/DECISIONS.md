@@ -5085,3 +5085,89 @@ Verified in the app: `+ Add note` is the topmost element at its position
 (elementFromPoint), a saved note renders truncated with `white-space: nowrap` +
 `text-overflow: ellipsis`, and the ✎ editor contains exactly two inputs — a
 date and a time — with the note line still rendered beside it.
+
+---
+
+## 2026-07-28 — Timeline notes: annotating the gaps between sessions
+
+### Why a new table and NOT `injury_flags`
+
+`injury_flags` is not one of the inert declared-but-unwritten tables — it is
+**read by `loadActiveInjuryStructures()` and feeds `src/core/substitution.ts`**.
+A row meaning "on holiday" written there would have silently started excluding
+exercises from substitution, and nothing would have surfaced it. It is also
+keyed on anatomy (`structure` NOT NULL), carries an `active` boolean rather than
+dates, and its `created_at` is when you typed it, not when the period began.
+
+It is a **current-state clinical filter**; this is a **historical explanatory
+annotation**. Same word, different jobs — and only one of them may change what
+the app suggests.
+
+`recovery_metrics` is daily numeric telemetry with no text column and no range.
+Neither fits.
+
+**`timeline_notes` is inert by construction.** Nothing in `src/core/*` reads it
+and no adapter passes it in — verified by grep. That separation is the entire
+reason it is a separate table.
+
+### The model
+
+`start_date` NOT NULL · `end_date` NULL = **still ongoing** (not unknown) ·
+`kind` free text with a picker of five suggestions, NOT an enum (an enum means a
+migration the first time reality produces "moved house") · `notes` NOT NULL —
+the one justified exception to the absence rules, because a note with no text
+explains nothing · `created_at` **timestamptz**, deliberately not the tz-less
+default the rest of this schema keeps paying for.
+
+A single-day entry is a range where start equals end. One thing, not two.
+
+### Rendering
+
+Interleaved into History newest-first, ordered by `start_date`. **Not a card**:
+no border, no chevron, no session chrome — a left accent rail with the range and
+text set small, so it reads as connective tissue rather than an entry. A range
+overlapping sessions spans them without displacing anything, because notes and
+sessions are separate items in one sorted stream.
+
+A **gap marker** appears between sessions more than three days apart — three
+rather than two because a rest day and a missed day are normal and don't need
+explaining. It carries the gap's own interior dates so `+ Add note` arrives
+pre-filled (verified: an 11-day gap pre-fills Jul 2 – Jul 12).
+
+Gaps are computed from SESSIONS ONLY: a note doesn't close a gap, it explains
+one, so a gap that already has a note still shows both.
+
+### Additions
+
+**A general `+ Note`** sits beside the History heading — plenty of notes
+("started a new job, sleeping badly") belong on a normal week with sessions
+either side and have no gap to hang off.
+
+**Edit and delete** in the same sheet, including a one-tap "ended today" /
+"still ongoing" toggle, since closing an open note is the natural follow-up to
+writing one and re-opening it must be just as easy.
+
+**The CHECK constraint never reaches the UI.** `validateNote()` checks the date
+order first and returns *"The end date can't be before the start date."* A
+partial edit validates against the STORED start, so setting only an end is
+checked properly.
+
+### Addition 4 — the session note editor is a sheet
+
+Inline pushed the exercise cards down the moment you tapped, moving content
+under your thumb as you were about to type. It is now the app's standard bottom
+sheet (add-exercise, unit, target), with a 5-row textarea. **Verified: the first
+card's position is byte-identical before and after opening.**
+
+Header gap 8px → 2px: the title, date and note line now read as one block, with
+the space to the first card coming from the list's own margin as everywhere else.
+
+**History's row editor was left inline** — deliberately. It lives inside an
+expansion the user has already opted into by tapping the sync dot; that
+expansion moves the rows below it either way, so the editor adds no new shift.
+A sheet there would be ceremony for an edit already two taps deep.
+
+### Prod migration
+
+34 → 35 (exactly one). `timeline_notes` 0 rows; 215 sets and volume checksum
+236416 unchanged; the range CHECK present in prod.
