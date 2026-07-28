@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { exercises, cardioLogs, workoutLogs, setLogs } from "@/db/schema";
+import { laneKey } from "@/lib/equipment";
 import { routesToStrength } from "@/lib/logFields";
 import { loadSetLogInputsForExercise } from "@/lib/coreAdapters";
 import { toSessionSummaries } from "@/core/machineTracking";
@@ -68,10 +69,45 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ session: null });
   }
 
+  // The FIRST working set of that session, asked for separately and ordered
+  // explicitly.
+  //
+  // `session.sets` above CANNOT answer this: it comes from
+  // loadSetLogInputsForExercise, whose query carries no ORDER BY, so its row
+  // order is whatever Postgres happens to return — measured as load-DESCENDING
+  // on real data (180, 175, 164 for a session logged 164, 175, 180). `sets[0]`
+  // is therefore the heaviest set, not the first one.
+  //
+  // Deliberately additive rather than sorting the shared adapter: that adapter
+  // feeds core, and core's `topSet` breaks ties by input order, so re-ordering
+  // it would quietly change progression verdicts. The prefill needs an order;
+  // core does not want a new one.
+  const orderedRows = await db
+    .select({
+      load: setLogs.load,
+      reps: setLogs.reps,
+      equipmentId: setLogs.equipmentId,
+      equipmentType: setLogs.equipmentType,
+    })
+    .from(setLogs)
+    .innerJoin(workoutLogs, eq(setLogs.workoutLogId, workoutLogs.id))
+    .where(and(eq(setLogs.exerciseId, exerciseId), eq(workoutLogs.date, last.date), eq(setLogs.setType, "working")))
+    // set_index is the logged order; id breaks ties, since set_index has known
+    // gaps and repeats in the owner's history (documented 2026-07-27).
+    .orderBy(asc(setLogs.setIndex), asc(setLogs.id));
+
+  const firstRow =
+    scope === "exercise"
+      ? orderedRows[0]
+      : orderedRows.find((r) => laneKey(r.equipmentType, r.equipmentId) === machineId);
+
   return NextResponse.json({
     session: {
       date: last.date,
       sets: last.workingSets.map((s) => ({ load: s.load, reps: s.reps, rir: s.rir })),
+      // Warm-ups are already excluded by the WHERE above, so this is the first
+      // WORKING set — where you started, not where you finished or peaked.
+      firstWorkingSet: firstRow ? { load: Number(firstRow.load), reps: firstRow.reps } : null,
     },
   });
 }

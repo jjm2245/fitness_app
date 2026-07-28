@@ -99,6 +99,7 @@ export function StrengthCard({
   onSessionChanged,
   onToggleComplete,
   showTapHint,
+  asDiv,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -111,7 +112,11 @@ export function StrengthCard({
   // True only for the session's FIRST card with logged sets — hosts the
   // one-time tap hint (no permanent chrome).
   showTapHint?: boolean;
+  // Render a <div> instead of an <li>. Set when a SortableRow <li> already
+  // wraps this card — an <li> inside an <li> is invalid nesting.
+  asDiv?: boolean;
 }) {
+  const Root = asDiv ? "div" : "li";
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
     name: ex.exerciseName,
@@ -429,6 +434,19 @@ export function StrengthCard({
   }
   // Sets for THIS occurrence only (repeats keep separate set lists).
   const loggedSets = sessionSets.filter((s) => s.instanceId === ex.instanceId);
+  // §2 prefill guards, mirrored into refs so the prefill effect can consult
+  // them WITHOUT taking them as dependencies — it should fire when the lane
+  // changes, not every time a set is logged or an offset is confirmed.
+  const entryTouched = useRef(false); // the user has typed a load or reps
+  const loggedCountRef = useRef(0);
+  const offsetRef = useRef(0);
+  // Synced in an effect, not during render: writing a ref while rendering is a
+  // purity violation. Declared ABOVE the prefill effect so it runs first, and
+  // the prefill reads these only inside an awaited callback anyway.
+  useEffect(() => {
+    loggedCountRef.current = loggedSets.length;
+    offsetRef.current = effOffset;
+  });
   // Anchored to the heaviest WORKING set on this occurrence — the same set the
   // core treats as the top set, so the suggestion steps up from what was
   // actually lifted rather than from the last row entered.
@@ -503,10 +521,35 @@ export function StrengthCard({
         return;
       }
       const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?lane=${encodeURIComponent(lane)}`);
-      const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
+      const data: {
+        session: { sets: Array<{ load: number; reps: number }>; firstWorkingSet: { load: number; reps: number } | null } | null;
+      } = await res.json();
       if (cancelled) return;
       if (data.session) {
         setRecalNote(null); // this unit has its own history — no recalibration
+        // §2 — start today where you started last time. The FIRST working set,
+        // deliberately: the last set is usually the most fatigued and the
+        // heaviest is a peak, neither of which is where you begin.
+        //
+        // NOT `sets[0]` — that array's order is unspecified and measured as
+        // load-descending, so it would have prefilled the heaviest set while
+        // looking correct. `firstWorkingSet` is ordered by set_index server-side.
+        //
+        // This is a UI DEFAULT, never a write, and it is not target-prefill: a
+        // target is a prescription and stays a reference line, while this is a
+        // fact about what happened on this machine.
+        const first = data.session.firstWorkingSet;
+        // Never overwrite a number the user is already working with.
+        if (first != null && !entryTouched.current && loggedCountRef.current === 0) {
+          // History stores the TOTAL. The box holds what you put ON the
+          // machine, so the built-in comes back off — prefilling 65 into a box
+          // whose label already adds a 20 lb bar would silently claim 85.
+          const enteredLb = Math.max(0, first.load - offsetRef.current);
+          // In the unit this lane DISPLAYS in, via the same resolver the rest
+          // of the card uses — a marked-kg machine must not prefill in lb.
+          setLoad(entryUnit === "kg" ? lbToKg(enteredLb) : enteredLb);
+          setReps(first.reps);
+        }
         return;
       }
       const any = await fetch(`/api/exercises/${activeExercise.id}/last-session`);
@@ -521,7 +564,10 @@ export function StrengthCard({
     return () => {
       cancelled = true;
     };
-  }, [activeExercise.id, lane]);
+    // `entryUnit` is a dependency for the PREFILL, not the note: toggling units
+    // runs the clear-to-0 effect declared above this one, so without re-running
+    // here a prefilled 164 would silently become 0 on a unit toggle.
+  }, [activeExercise.id, lane, entryUnit]);
 
   const checkProgression = useCallback(async () => {
     setChecking(true);
@@ -800,7 +846,7 @@ export function StrengthCard({
   return (
     // Dim only while COLLAPSED — an expanded done card is the review state
     // and must be fully readable.
-    <li className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
+    <Root className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
         <input
           type="checkbox"
@@ -1088,11 +1134,11 @@ export function StrengthCard({
                     label={ex.loadType === "bodyweight" ? "added" : undefined}
                   />
                 </span>
-                <NumberInput className={styles.cellInput} value={String(load)} onChange={(v) => setLoad(Number(v || 0))} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
+                <NumberInput className={styles.cellInput} value={String(load)} onChange={(v) => { entryTouched.current = true; setLoad(Number(v || 0)); }} title={ex.loadType === "bodyweight" ? "Added weight (0 = bodyweight)" : "Load"} />
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>reps</span>
-                <NumberInput className={styles.cellInput} value={String(reps)} onChange={(v) => setReps(Number(v || 0))} title="Reps" maxIntDigits={INT_DIGITS.reps} allowDecimal={false} />
+                <NumberInput className={styles.cellInput} value={String(reps)} onChange={(v) => { entryTouched.current = true; setReps(Number(v || 0)); }} title="Reps" maxIntDigits={INT_DIGITS.reps} allowDecimal={false} />
               </label>
               <label className={styles.cell}>
                 <span className={styles.cellLabel}>effort</span>
@@ -1168,6 +1214,6 @@ export function StrengthCard({
           onClose={() => setSwapOpen(false)}
         />
       )}
-    </li>
+    </Root>
   );
 }

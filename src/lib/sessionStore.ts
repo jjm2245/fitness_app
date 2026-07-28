@@ -993,6 +993,35 @@ export async function moveOccurrence(sessionId: string, instanceId: string, dir:
   await markOccurrencesDirty(sessionId);
 }
 
+/**
+ * Reorder a session's occurrences to exactly `orderedInstanceIds`.
+ *
+ * Writes CONTIGUOUS indices 0..n-1 rather than swapping pairs, so a drag across
+ * several positions lands in one consistent state instead of n-1 swaps. Any
+ * occurrence not named in the list keeps its relative position AFTER the named
+ * ones — a list that has gone stale can never silently drop a card.
+ *
+ * Scoped to this session by construction: the write set is built from
+ * `listOccurrences(sessionId)`, so an id belonging to another session is
+ * ignored rather than re-indexed.
+ */
+export async function reorderOccurrences(sessionId: string, orderedInstanceIds: string[]): Promise<void> {
+  const db = await getDb();
+  const current = await listOccurrences(sessionId);
+  const byId = new Map(current.map((o) => [o.instanceId, o]));
+  const named = orderedInstanceIds.map((id) => byId.get(id)).filter((o): o is Occurrence => o != null);
+  const namedIds = new Set(named.map((o) => o.instanceId));
+  const rest = current.filter((o) => !namedIds.has(o.instanceId));
+  const next = [...named, ...rest];
+  // No-op guard: an unchanged order must not dirty the sync queue.
+  if (next.every((o, i) => o.orderIndex === i)) return;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i].orderIndex === i) continue;
+    await db.put("occurrences", { ...next[i], orderIndex: i, synced: false });
+  }
+  await markOccurrencesDirty(sessionId);
+}
+
 /** Remove an occurrence and everything hanging off it (for an accidental add). */
 export async function removeOccurrence(sessionId: string, instanceId: string): Promise<void> {
   const db = await getDb();

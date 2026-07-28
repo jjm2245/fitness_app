@@ -5477,3 +5477,92 @@ this unit"** — JSX drops the trailing space on an expression when the line wra
 Three sibling text nodes, the third beginning `"and this unit"` with no leading
 space. Fixed with an explicit `{" "}`. A unit test on the predicate would never
 have found it; only reading the rendered string did.
+
+---
+
+## 2026-07-28 (session logging) — leading zero, lane prefill, mid-session reorder
+
+### §1 · A field holding a default appended instead of replacing
+
+Typing `5` into a reps box showing `0` produced `05`, with no way to delete the
+zero. Two independent halves, because they fail independently:
+
+**The mask** now drops leading zeros followed by another digit, so `05` collapses
+to `5` with no focus event involved. Only zeros with a DIGIT after them go, which
+keeps both legitimate zeros intact: a deliberate `0` (added weight on a bodyweight
+lift) has nothing after it, and `0.5` has a decimal point.
+
+**Selection on tap** is the other half, and `onFocus={e => e.currentTarget.select()}`
+DOES NOT WORK on its own. It looks like it does until you drive a real field: the
+browser's own mouseup lands after the focus handler and collapses the selection to
+a caret. Measured in the running app — `selectionStart/End` came back `[2,2]` on a
+field showing `81`, and typing appended. The fix suppresses only the mouseup that
+COMPLETES the focusing tap, leaving later ones alone so drag-select inside an
+already-focused field still works. It lives in one shared hook
+(`components/selectOnFocus.ts`) rather than three call sites.
+
+Two automation artifacts wasted time and are worth recording so the next session
+doesn't re-chase them: the browser tool's `type` action inserts at the caret and
+does NOT honour an existing selection, and a JS `.focus()` fires no focus event
+when the document itself isn't focused. Both made a working fix look broken.
+Real clicks plus `execCommand("insertText")` is what actually exercises this.
+
+### §2 · Prefill from the lane's last session
+
+`sets[0]` WAS NOT the first working set, and using it would have shipped a
+plausible-looking bug. `loadSetLogInputsForExercise` has no `ORDER BY`, so its
+row order is whatever Postgres returns — measured load-DESCENDING on real data
+(180, 175, 164 for a session logged 164, 175, 180). The prefill would have
+silently used the heaviest set.
+
+Fixed by adding an explicitly ordered `firstWorkingSet` to the last-session
+route, ordered by `set_index` then `id`. Deliberately ADDITIVE rather than
+sorting the shared adapter: that adapter feeds core, and core's `topSet` breaks
+ties by input order, so re-ordering it would quietly change progression verdicts.
+
+The first working set is the choice on purpose — the last set is usually the most
+fatigued and the heaviest is a peak; neither is where you begin. Warm-ups are
+excluded by the query. History stores the TOTAL, so the built-in offset comes
+back off before prefilling: putting 65 into a box whose label already adds a 20 lb
+bar would claim 85. Rendered in the unit the lane displays in, via the existing
+resolver. It is a UI default, never a write, and never reads a target.
+
+**Sets 2 and 3 already carry forward** — the log handler doesn't reset the
+inputs, so what you typed for set 1 stays. Nothing was built for that.
+
+**Known, pre-existing, NOT fixed:** the card's `last …` line reads `sets[0]` too,
+so it shows the heaviest load and lists reps in load order. The staged session
+logged 164×9, 175×6, 180×5 and the line reads `last 180 lb × 5, 6, 9` — backwards.
+Left alone this round because changing it changes a display the owner reads every
+session, and it deserves its own decision.
+
+### §3 · Mid-session reorder — the ordering column already existed
+
+**Answered before building, since it changed the shape:** `session_exercises`
+HAS `order_index` (integer, not null, default 0). It is populated contiguously,
+it is already the read order (`orderBy(sessionExercises.orderIndex)`), and it
+already round-trips through the `/api/session-exercises` upsert. Ordering is
+EXPLICIT, not implicit-by-id. **No schema change, no migration.**
+
+So the work was UI only: `SortableList`/`SortableRow` from the program editor,
+unchanged — same PointerSensor, same 6px activation, same grip-only activator.
+`SortableRow` gained an `as` prop because the session list is a real `<ol>` whose
+children are `<li>`, and a wrapper `<div>` between them is invalid nesting (the
+trap the History timeline already hit); the cards take `asDiv` in exchange.
+
+`reorderOccurrences` writes contiguous 0..n-1 rather than a chain of swaps, so a
+multi-position drag lands in one consistent state. Occurrences missing from a
+stale list keep their relative position AFTER the named ones — a stale list can
+never silently drop a card. Scoped by construction: the write set is built from
+that session's own occurrences, so a foreign id is ignored rather than
+re-indexed. An unchanged order is a no-op and does not dirty the sync queue.
+
+Revert is structural rather than a saved copy: the list renders from the store,
+so a failed write leaves the store unchanged and the refresh puts the card back.
+Verified by patching `IDBObjectStore.put` to throw — the order snapped back and
+"Couldn't save that order — the list is unchanged." appeared.
+
+Verified end to end by dispatching a real pointer sequence (`left_click_drag`
+does not activate dnd-kit — the 6px sensor needs intermediate `pointermove`s):
+the drag reordered, survived a reload, reached Postgres as contiguous 0–7, and
+the other two sessions kept their indices.

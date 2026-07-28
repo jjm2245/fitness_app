@@ -44,9 +44,15 @@ export function SortableList({
 // handle only — so tapping the row body still fires its own onClick.
 export function SortableRow({
   id,
+  as: Tag = "div",
   children,
 }: {
   id: string;
+  /** The wrapper's element. `li` when the list container is a real `<ol>`/`<ul>`
+   *  — a `<div>` between `<ol>` and `<li>` is invalid, and the session card
+   *  list is an `<ol>` whose children are `<li>`s (the same nesting trap the
+   *  History timeline hit). The card then renders as a div. */
+  as?: "div" | "li";
   children: (grip: { ref: (el: HTMLElement | null) => void; props: Record<string, unknown> }) => React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -58,8 +64,8 @@ export function SortableRow({
     position: "relative",
   };
   return (
-    <div ref={setNodeRef} style={style}>
+    <Tag ref={setNodeRef} style={style}>
       {children({ ref: setActivatorNodeRef, props: { ...attributes, ...listeners, className: styles.gripHandle } })}
-    </div>
+    </Tag>
   );
 }

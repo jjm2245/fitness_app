@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { SessionBar } from "@/components/shell/SessionBar";
 import { StrengthCard } from "@/components/session/StrengthCard";
+import { SortableList, SortableRow } from "@/components/editors/SortableList";
 import { CardioCard } from "@/components/session/CardioCard";
 import { FinishSheet } from "@/components/session/FinishSheet";
 import { SessionHeader } from "@/components/session/SessionHeader";
@@ -35,6 +36,7 @@ import {
   addOccurrence,
   listOccurrences,
   moveOccurrence,
+  reorderOccurrences,
   removeOccurrence,
   getSessionCardio,
   type LocalSession,
@@ -69,6 +71,7 @@ export default function LogSessionPage() {
   const [pending, setPending] = useState(0);
   const [syncError, setSyncError] = useState<"auth" | "network" | "server" | null>(null);
   const [showFinish, setShowFinish] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
   // The add palette is a sheet now — the exercise list is the default view.
   const [addOpen, setAddOpen] = useState(false);
 
@@ -273,6 +276,21 @@ export default function LogSessionPage() {
     await refreshSession();
   }
 
+  // Drag-reorder. The list renders from `loggables`, which comes from the local
+  // store, so the honest way to show the new order is to WRITE it and re-read —
+  // no separate optimistic copy to drift. If the write throws, nothing moved and
+  // the refresh below puts the card back where it was, which is the revert: the
+  // UI is never left disagreeing with the store.
+  async function reorder(newInstanceIds: string[]) {
+    setReorderError(null);
+    try {
+      await reorderOccurrences(sessionId, newInstanceIds);
+    } catch {
+      setReorderError("Couldn't save that order — the list is unchanged.");
+    }
+    await refreshSession();
+  }
+
   async function remove(instanceId: string) {
     await removeOccurrence(sessionId, instanceId);
     await onSessionChanged();
@@ -326,9 +344,12 @@ export default function LogSessionPage() {
         onReconcile={reconcile}
       />
 
+      {reorderError && <p className={sessionStyles.errorText} role="alert">{reorderError}</p>}
+
       {loggables.length === 0 ? (
         <p className={sessionStyles.emptyPrompt}>Add your first exercise — the order you log is your session record.</p>
       ) : (
+        <SortableList ids={loggables.map((l) => l.instanceId)} onReorder={reorder}>
         <ol className={sessionStyles.cardList}>
           {loggables.map((ex, i) => {
             const controls: CardControls = {
@@ -341,8 +362,9 @@ export default function LogSessionPage() {
             // THE router (Phase 2): the resolved CONFIG decides — reps →
             // StrengthCard + set_logs; else the metric card + cardio_logs.
             // conditioning_only only seeds the default field set now.
-            return !routesToStrength({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
+            const card = !routesToStrength({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
               <CardioCard
+                asDiv
                 key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
@@ -355,6 +377,7 @@ export default function LogSessionPage() {
               />
             ) : (
               <StrengthCard
+                asDiv
                 key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
@@ -367,8 +390,21 @@ export default function LogSessionPage() {
                 showTapHint={ex.instanceId === firstWithSetsId}
               />
             );
+            // The grip is the ONLY drag activator (6px, PointerSensor) — the
+            // rest of the card stays tappable, so logging is unaffected.
+            return (
+              <SortableRow key={ex.instanceId} id={ex.instanceId} as="li">
+                {(grip) => (
+                  <>
+                    <button type="button" ref={grip.ref} {...grip.props} aria-label={`Reorder ${ex.exerciseName}`}>⠿</button>
+                    {card}
+                  </>
+                )}
+              </SortableRow>
+            );
           })}
         </ol>
+        </SortableList>
       )}
 
       {addOpen && (

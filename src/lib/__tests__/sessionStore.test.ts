@@ -22,6 +22,7 @@ import {
   deleteSession,
   addOccurrence,
   listOccurrences,
+  reorderOccurrences,
   moveOccurrence,
   removeOccurrence,
   listLocalSessionSummaries,
@@ -1351,5 +1352,54 @@ describe("equipment_type is history — the edit path can never rewrite it", () 
     for (const [, init] of patches) {
       expect(JSON.parse(String(init!.body))).not.toHaveProperty("equipmentType");
     }
+  });
+});
+
+
+describe("reorderOccurrences — contiguous, session-scoped, no-op safe", () => {
+  const other = { ...attachInput, exerciseId: "ex-b", exerciseName: "Exercise B" };
+  const third = { ...attachInput, exerciseId: "ex-c", exerciseName: "Exercise C" };
+
+  it("writes CONTIGUOUS indices, not a chain of swaps", async () => {
+    const { id, inst: a } = await newSession();
+    const b = (await addOccurrence(id, other, "Test day")).instanceId;
+    const c = (await addOccurrence(id, third, "Test day")).instanceId;
+
+    await reorderOccurrences(id, [c, a, b]);
+    const after = await listOccurrences(id);
+    expect(after.map((o) => o.instanceId)).toEqual([c, a, b]);
+    // 0,1,2 — a drag across several positions lands in ONE consistent state.
+    expect(after.map((o) => o.orderIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("never drops an occurrence missing from a stale list", async () => {
+    const { id, inst: a } = await newSession();
+    const b = (await addOccurrence(id, other, "Test day")).instanceId;
+    const c = (await addOccurrence(id, third, "Test day")).instanceId;
+
+    // A list that predates `c` being added: it must survive, after the named.
+    await reorderOccurrences(id, [b, a]);
+    const after = await listOccurrences(id);
+    expect(after.map((o) => o.instanceId)).toEqual([b, a, c]);
+    expect(after.map((o) => o.orderIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("ignores ids from ANOTHER session rather than re-indexing them", async () => {
+    const one = await newSession();
+    const two = await newSession();
+    const twoBefore = await listOccurrences(two.id);
+
+    await reorderOccurrences(one.id, [two.inst, one.inst]);
+    expect((await listOccurrences(one.id)).map((o) => o.instanceId)).toEqual([one.inst]);
+    // The other session is byte-identical — no cross-session effect.
+    expect(await listOccurrences(two.id)).toEqual(twoBefore);
+  });
+
+  it("is a no-op when the order is unchanged — an idle drag must not dirty sync", async () => {
+    const { id, inst: a } = await newSession();
+    const b = (await addOccurrence(id, other, "Test day")).instanceId;
+    const before = await listOccurrences(id);
+    await reorderOccurrences(id, [a, b]);
+    expect(await listOccurrences(id)).toEqual(before);
   });
 });

@@ -86,6 +86,7 @@ export function CardioCard({
   completed,
   onSessionChanged,
   onToggleComplete,
+  asDiv,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -95,7 +96,10 @@ export function CardioCard({
   completed: boolean;
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
+  // See StrengthCard: a SortableRow <li> already wraps this card.
+  asDiv?: boolean;
 }) {
+  const Root = asDiv ? "div" : "li";
   // Inputs start EMPTY — like every other exercise. The program's prescribed
   // params aren't prefilled; the muted `last …` line is the reference instead.
   const [durationMin, setDurationMin] = useState<string>("");
@@ -254,7 +258,7 @@ export function CardioCard({
 
   return (
     // Dim only while collapsed; expanded done = readable review (no input).
-    <li className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
+    <Root className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
         <input
           type="checkbox"
@@ -442,7 +446,7 @@ export function CardioCard({
           {error && <p className={styles.errorText}>{error}</p>}
         </div>
       )}
-    </li>
+    </Root>
   );
 }
 
