@@ -1464,3 +1464,60 @@
   cursor: grabbing;
   color: var(--text-2);
 }
+
+/* ── PR chip + the moment (variant B) ──────────────────────────────────────
+   Indigo→violet, deliberately NOT amber/gold: amber already carries "warning"
+   in this app (required target fields, above-stack loads), and a celebration
+   in the same hue would compete with it. */
+.prChip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.58rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  background: linear-gradient(100deg, var(--accent), #8B5CF6);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* The moment: the row it already rendered washes, then settles. No banner —
+   a banner would push the Log button down exactly as a thumb reaches for it,
+   the same problem the note editor was moved into a sheet to avoid. Only
+   background/border/shadow animate, so nothing reflows. */
+.setRowPr {
+  animation: prWash 2.2s ease-out forwards;
+}
+@keyframes prWash {
+  0% {
+    background: linear-gradient(100deg,
+      color-mix(in srgb, var(--accent) 26%, transparent),
+      color-mix(in srgb, #8B5CF6 26%, transparent));
+    box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  70% {
+    background: linear-gradient(100deg,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      color-mix(in srgb, #8B5CF6 12%, transparent));
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  100% { background: transparent; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The chip still lands; only the wash is dropped. */
+  .setRowPr { animation: none; }
+}
+
+/* The header's `best` line — mono numerals, tinted toward the chip so the two
+   read as the same idea without the line shouting. */
+.bestLoad {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-2));
+}
+.metaDot { color: var(--text-3); }

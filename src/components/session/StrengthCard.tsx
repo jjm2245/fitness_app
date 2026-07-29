@@ -9,6 +9,7 @@ import { parseStackMarking, resolveWeightUnit, formatDualWeight } from "@/lib/st
 import { nextSelectableLoad, checkLoadSanity, type GridSpec } from "@/lib/nextLoad";
 import { NumberInput } from "@/components/NumberInput";
 import { INT_DIGITS } from "@/lib/numericInput";
+import { markPrs, wouldBePr } from "@/lib/prs";
 import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
 import { EntryUnitLabel } from "./EntryUnitLabel";
 import { publishRestTimer, getRestTimer } from "@/lib/restTimerBus";
@@ -46,6 +47,13 @@ function parseRepRangeMax(repRange: string | null): number {
 // and since set rows show no per-set unit, orphans were invisible. Six
 // hand-attributions were silently lost to it. The picker now reflects only
 // what is stored. See DECISIONS.
+/** `Jul 18` — the best's date on the header line. Parsed from the YYYY-MM-DD
+ *  parts rather than `new Date(iso)`, which would read a bare date as UTC and
+ *  render the previous day west of Greenwich. */
+function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 function lastTypeKey(exerciseId: string) {
   return `fitness-app:last-equiptype:${exerciseId}`;
 }
@@ -94,6 +102,10 @@ interface LastSessionResponse {
     setsInOrder: Array<{ load: number; reps: number }>;
     firstWorkingSet: { load: number; reps: number } | null;
   } | null;
+  /** Weight-only, per-lane. Computed server-side from set_logs; never stored. */
+  best: { load: number; date: string } | null;
+  /** The bar a set logged in THIS session must clear — this session excluded. */
+  priorBest: number | null;
 }
 
 // The exercise card (phase 2): rows show information; controls appear on
@@ -229,6 +241,13 @@ export function StrengthCard({
   // recalibration note is lane-level (this unit has no history but the exercise
   // does elsewhere). They are decoupled so "last" never vanishes on unit change.
   const [lastText, setLastText] = useState<string | null>(null);
+  // The lane's best (header line) and the bar today's sets must clear (chips).
+  const [best, setBest] = useState<{ load: number; date: string } | null>(null);
+  const [priorBest, setPriorBest] = useState<number | null>(null);
+  // The set that just turned out to be a PR — washes once, then settles to the
+  // chip alone. Variant B: no banner, so nothing can push the Log button under
+  // a thumb that is already reaching for it.
+  const [prFlash, setPrFlash] = useState<number | null>(null);
   const [recalNote, setRecalNote] = useState<string | null>(null);
   const [recalDismissed, setRecalDismissed] = useState(false);
   const [progression, setProgression] = useState<ProgressionResult | null>(null);
@@ -529,7 +548,8 @@ export function StrengthCard({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const url = (q: string) => `/api/exercises/${activeExercise.id}/last-session?${q}`;
+      const ex = `&excludeSession=${encodeURIComponent(sessionId)}`;
+      const url = (q: string) => `/api/exercises/${activeExercise.id}/last-session?${q}${ex}`;
       const useLane = resolvedUnitId != null && lane != null;
       const res = await fetch(useLane ? url(`lane=${encodeURIComponent(lane)}`) : url("scope=exercise"));
       const data: LastSessionResponse = await res.json();
@@ -546,11 +566,17 @@ export function StrengthCard({
         const anyData: LastSessionResponse = await any.json();
         if (cancelled) return;
         session = anyData.session;
+        data.best = anyData.best;
+        data.priorBest = anyData.priorBest;
         recal = session?.firstWorkingSet
           ? `Recalibrating for this unit — you were at ${session.firstWorkingSet.load} lb on another unit (effort + volume carry over)`
           : null;
       }
       setRecalNote(recal);
+      // From the SAME response as `last`, so the header's two lines can never
+      // describe different lanes.
+      setBest(data.best ?? null);
+      setPriorBest(data.priorBest ?? null);
 
       // §3 — `setsInOrder` is the session AS LOGGED (set_index, warm-ups
       // excluded), so the load shown is the FIRST set's and the reps read in
@@ -605,7 +631,7 @@ export function StrengthCard({
     if (!Number.isFinite(reps) || reps < 1) return setError("Reps must be at least 1.");
     if (!Number.isFinite(load) || load < 0) return setError("Load can't be negative.");
     setError(null);
-    await logSet({
+    const logged = await logSet({
       sessionId,
       instanceId: ex.instanceId,
       date,
@@ -628,6 +654,23 @@ export function StrengthCard({
       // If the rest timer is running, this set consumes it as an exact rest.
       timedRestSeconds: takeTimedRest(),
     });
+    // A2/A3 — did that clear the lane's bar? `wouldBePr` is the single-set form
+    // of the same rule the chips use, so the moment and the marker can't
+    // disagree. Warm-ups and drop segments are excluded by the guards here for
+    // the reason markPrs excludes them: neither is an independent working set.
+    if (setType === "working" && dropFor == null && wouldBePr(totalLoad, priorBest)) {
+      // NOTE: `priorBest` is deliberately NOT advanced here. It is the bar from
+      // OTHER sessions, and `markPrs` already carries its own running best
+      // across this session's sets — so a second set at the same load still
+      // won't fire. Advancing it here moved the bar to the set that had just
+      // cleared it, and `prKeys` then recomputed it as "not a PR": the wash
+      // fired and the chip never appeared. Caught by logging a real set.
+      setPrFlash(logged?.localId ?? null);
+      // The wash is transient; the chip is not — `prKeys` recomputes from the
+      // stored sets, so the marker survives this timeout, a re-render, and a
+      // reload.
+      window.setTimeout(() => setPrFlash(null), 2200);
+    }
     // Auto-alternate for the next side-set (L→R→L…); "both" stays put.
     if (activeExercise.unilateral && side !== "both") setSide(side === "left" ? "right" : "left");
     onSessionChanged();
@@ -747,6 +790,42 @@ export function StrengthCard({
     }
     return out;
   }, [loggedSets]);
+
+  // The best to SHOW. The server's figure predates anything logged in this
+  // session, so a PR set moments ago would otherwise leave the header claiming
+  // the old number — and offline it would never catch up. Taking the max of the
+  // two keeps the line true the instant it changes, with no refetch.
+  const localBest = useMemo(
+    () =>
+      displaySets
+        .filter(({ set: st, isDrop }) => st.setType === "working" && !isDrop)
+        .reduce<number | null>((m, { set: st }) => {
+          const v = Number(st.load) || 0;
+          return m == null || v > m ? v : m;
+        }, null),
+    [displaySets]
+  );
+  const shownBest =
+    localBest != null && (best == null || localBest > best.load)
+      ? { load: localBest, date }
+      : best;
+
+  // Which of this occurrence's rows were a PR when logged. `priorBest` is the
+  // lane's best from every OTHER session, so re-rendering never re-judges a set
+  // against itself. Drop segments and warm-ups are excluded inside markPrs.
+  const prKeys = useMemo(
+    () =>
+      markPrs(
+        displaySets.map(({ set: st, isDrop }) => ({
+          key: st.localId ?? -1,
+          load: Number(st.load) || 0,
+          setType: st.setType,
+          isDropSegment: isDrop,
+        })),
+        priorBest
+      ),
+    [displaySets, priorBest]
+  );
 
   async function openSwap() {
     setSwapOpen(true);
@@ -916,6 +995,17 @@ export function StrengthCard({
               <span className={styles.metaLabel}>last</span>{" "}
               {lastText != null ? dualWeights(lastText) : <span className={styles.metaEmpty}>— no prior data</span>}
             </div>
+            {/* The useful half: the number to beat, before you lift. Shown
+                whenever the lane has working history, in the lane's own display
+                unit via the same resolver as everything else on this card. */}
+            {shownBest != null && (
+              <div className={styles.metaLine}>
+                <span className={styles.metaLabel}>best</span>{" "}
+                <strong className={styles.bestLoad}>{w(shownBest.load)} {entryUnit}</strong>
+                <span className={styles.metaDot}> · </span>
+                {shownBest.date === date ? "today" : shortDate(shownBest.date)}
+              </div>
+            )}
             {targetText && (
               <div className={styles.metaLine}>
                 <span className={styles.metaLabel}>target</span> {targetText}
@@ -1073,6 +1163,8 @@ export function StrengthCard({
                     secondaryUnit={stackMarking != null && stackMarking !== wUnit ? wUnit : undefined}
                     set={s}
                     isDrop={isDrop}
+                    isPr={prKeys.has(s.localId ?? -1)}
+                    prFlash={prFlash === s.localId}
                     unilateral={activeExercise.unilateral}
                     revealed={revealedSetId === s.localId}
                     onToggleReveal={() => toggleReveal(s.localId!)}

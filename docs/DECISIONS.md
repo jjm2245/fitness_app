@@ -5771,3 +5771,82 @@ live build misread anything — the ordering was a preference, not a requirement
 Post-deploy the export now returns `created_at` as `2026-07-14T23:01:31.206Z`,
 identical to `logged_at` on the same row — the 222/222 anchor visible directly
 in the payload rather than only in a check.
+
+---
+
+## 2026-07-29 (PRs + drop segments are not sets)
+
+Both halves rest on one principle: **a drop segment is not an independent
+working set.** It is the same set continued at a lighter load, which is why it
+can neither be a record nor appear as a rep entry in the `last …` summary.
+
+### Part A · PR detection
+
+Weight only, per lane `(exercise, unit)`, working sets only, strictly greater,
+computed and **never stored** — a PR is a fact about a set's position in its
+lane's history, so a stored copy could only disagree with the rows it came from.
+`src/lib/prs.ts` holds the rule; `markPrs` marks a list, `wouldBePr` is the
+single-set form used at log time, so the chip and the moment cannot diverge.
+
+A set **keeps** its chip after being beaten — it was a best when it happened,
+and keeping it is what makes a lane read as a progression rather than one
+highlighted row.
+
+**Bodyweight lanes will never produce a PR.** Every load ties at 0 and `0 > 0`
+is false. That falls out of weight-only rather than being special-cased, and is
+recorded here so it is not later filed as a bug. Added weight on a bodyweight
+lift *does* PR — the rule is about the load, not the equipment.
+
+Colour is the indigo→violet gradient, not amber/gold: amber already means
+*warning* in this app (required target fields, above-stack loads) and a
+celebration in that hue would fight it.
+
+**Variant B for the moment**, as chosen: the row that was going to render
+anyway washes and keeps the chip. Measured across a real logged PR —
+`document.scrollHeight` 964 → 964, `scrollY` 0 → 0. A banner would push the Log
+button down exactly as a thumb reaches for it, the same problem that moved the
+note editor into a sheet.
+
+### Two bugs found by logging a real set rather than setting state
+
+1. **The wash fired and the chip never appeared.** The log handler advanced
+   `priorBest` to the load just logged, and `prKeys` — which recomputes from
+   `priorBest` — then judged that same set as not exceeding the bar. `markPrs`
+   already carries a running best across the session, so `priorBest` must stay
+   what it means: the bar from OTHER sessions. Advancing it was both wrong and
+   unnecessary.
+2. **The header kept claiming the old best after a PR.** `best` comes from the
+   server and predates anything logged this session, so it would have stayed
+   stale until a refetch — and offline, forever. The displayed figure is now
+   `max(server best, this session's best)`, which is correct the instant it
+   changes and needs no round trip.
+
+Neither would have surfaced from a unit test: the first needs the real
+state round-trip, the second needs a real fetch.
+
+### Part B · The `last …` line no longer counts drop segments
+
+`130 lb × 7, 3` claimed the `3` was a third set at 130 when it was a segment at
+100. The load and the reps in that line make a single claim together, so a
+segment logged at a different load doesn't belong in it. Now `130 lb × 7`,
+verified on the exact case.
+
+No drop indicator was added to the line: it would have to say *which* rep was
+the segment and at what load, which is the set rows' job — they keep `↳ drop`.
+The owner's lean was a clean `130 lb × 7` and nothing here argues against it.
+
+Segment identification is the ONE existing rule — lowest id in the group is the
+parent — reused via a shared `isDropSegment` helper for the summary line and the
+PR filter alike, not re-derived.
+
+**Prefill is unaffected, verified rather than assumed:** it takes
+`firstWorkingSet`, which is `laneOrdered[0]` after the same filter, and a parent
+always precedes its segment. The drop-pair case returns `{load: 130, reps: 7}`.
+
+### Scope note: History needs no change
+
+The brief anticipated the chip having to render "anywhere set rows render,
+including History". It doesn't: `SetRow` has exactly one consumer
+(`StrengthCard`), and History renders session-level rows and drills into
+`/log/[id]` for sets. Nothing about how History composes rows had to change.
+The mock's per-exercise PR arc belongs with Stats, as it says.

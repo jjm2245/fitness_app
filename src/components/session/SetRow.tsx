@@ -17,6 +17,8 @@ import { INT_DIGITS } from "@/lib/numericInput";
 export function SetRow({
   set,
   isDrop,
+  isPr,
+  prFlash,
   unilateral,
   weightUnit = "lb",
   secondaryUnit,
@@ -27,6 +29,11 @@ export function SetRow({
 }: {
   set: SessionSet;
   isDrop: boolean;
+  /** Was a PR when logged — weight-only, per lane. Kept after being beaten, so
+   *  a lane reads as a progression rather than one highlighted row. */
+  isPr?: boolean;
+  /** Just logged AND a PR: wash this row once. The chip is what persists. */
+  prFlash?: boolean;
   unilateral: boolean;
   // Global display unit (read-side only — edits still enter canonical lb).
   weightUnit?: WeightUnit;
@@ -120,7 +127,11 @@ export function SetRow({
   return (
     <li>
       <div className={isDrop ? styles.setDropWrap : undefined}>
-        <button type="button" className={`${styles.setRow} ${revealed ? styles.setRowActive : ""}`} onClick={onToggleReveal}>
+        <button
+          type="button"
+          className={`${styles.setRow} ${revealed ? styles.setRowActive : ""} ${prFlash ? styles.setRowPr : ""}`}
+          onClick={onToggleReveal}
+        >
           <span className={pending ? styles.setTickPending : styles.setTick} title={pending ? "Not yet synced" : "Synced"}>
             {pending ? "○" : "✓"}
           </span>
@@ -135,7 +146,17 @@ export function SetRow({
             {set.notes && <span className={styles.setNote} title={set.notes}> · {set.notes}</span>}
           </span>
           {set.effort && <span className={styles.setEffort}>{EFFORT_LABEL[set.effort]}</span>}
-          <span className={styles.setChevron} aria-hidden="true">›</span>
+          {isPr ? (
+            // Indigo→violet, NOT amber: amber already means warning here
+            // (required fields, stack ceilings) and a celebration in that hue
+            // would fight it. Replaces the chevron rather than sitting beside
+            // it — the row's affordance is unchanged, so nothing reflows.
+            <span className={styles.prChip} title="Personal record on this machine when logged">
+              <span aria-hidden="true">★</span> PR
+            </span>
+          ) : (
+            <span className={styles.setChevron} aria-hidden="true">›</span>
+          )}
         </button>
         {revealed && (
           <div className={styles.setActions}>
