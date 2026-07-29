@@ -13,7 +13,7 @@ for the spec owner, **not** something an agent should "fix" by editing the spec.
 
 ---
 
-## Status: current as of v0.6 — clean slate
+## Status: v0.6 — six open drift entries
 
 **The spec is v0.6.** Every drift item this file previously tracked (the
 `Machine`→`Equipment` type-vs-instance model + additive offset, `pulley_ratio`
@@ -24,14 +24,20 @@ recalibrate-with-continuity + unspecified-gets-its-own-lane, the
 `defaultLoadIncrement`-keys-on-`load_type` impurity, and the §15 status
 delegation) was **folded into v0.6** — see its "What changed in v0.6" section.
 
-**Open as of 2026-07-29 (2 entries), plus 2 closed by the build:**
+**Open as of 2026-07-29 (6 entries), plus 2 closed by the build.** They differ in
+weight — one is a promised mechanism that cannot fire, one is a behavioural
+question, and two are notifications:
 
-| Entry | State |
-|---|---|
-| `workout_logs.finished_at` is named for a fact it stopped carrying | **open — deliberately.** The label is already correct at every read site; a rename is a migration for a name. A note for the next revision, not work. |
-| §7 — set-counting uses three emphasis tiers, not the spec's two | **open — needs a spec revision.** The build is the better of the two; the sentence is what's wrong. |
-| Instants in `timestamp WITHOUT time zone` | ✅ closed by migration 0035 |
-| `updated_at` mixes two clocks | ✅ closed by migration 0035 |
+| Entry | Weight | State |
+|---|---|---|
+| §7 — regression unreachable on bodyweight lanes | **highest** | Open. The spec promises a deload trigger that *structurally cannot fire* on Pullups / Dips / Captain's Chair. Resolution known, deferred to the agent layer. |
+| §7 / §1 — PR detection vs the spec's deprioritisation of PRs | **behavioural** | Open, and the one needing a human judgement rather than a decision about wording. |
+| §7 — an absent effort tag is read as at-target | medium | Open. Biases `true_stall` / `increase_load` toward firing; not fixable by rules. |
+| §7 — set-counting uses three emphasis tiers, not the spec's two | medium | Open. The build is the better of the two; the sentence is what's wrong. |
+| §6 — `timeline_notes` outruns the spec | low | Open — a notification. New schema to name; no behaviour the spec would object to. |
+| `workout_logs.finished_at` named for a fact it stopped carrying | low | Open **deliberately.** The label is already correct at every read site; a rename is a migration for a name. |
+| Instants in `timestamp WITHOUT time zone` | — | ✅ closed by migration 0035 |
+| `updated_at` mixes two clocks | — | ✅ closed by migration 0035 |
 
 *(This block previously read "there is no open drift", which stopped being true
 the moment the `finished_at` entry was appended below it. Keep it in step with
@@ -60,7 +66,7 @@ doing, and a deleted entry reads as though the problem never existed. A resolved
 entry needs nothing from the spec owner at the next revision: the build has come
 back to what the spec already meant.
 
-_(Two entries to fold in at the next revision — see the table above.)_
+_(Six entries to fold in at the next revision — see the table above.)_
 
 ## `workout_logs.finished_at` is named for a fact it stopped carrying
 
@@ -260,3 +266,135 @@ error, just a wrong zone.
 untouched — intent is human-owned, and the built behaviour is the better of the
 two. What is owed is a **spec revision naming the third tier**, so the sentence
 and the code stop disagreeing. Until then: **use `volume.ts`, not the sentence.**
+
+---
+
+## §7 — Regression detection is structurally unreachable on bodyweight lanes
+
+**Spec says.** §7 line 229: *"regression across 2+ sessions → fatigue → deload /
+reduce load"*, and line 240 makes it a deload trigger: *"**Deload triggers
+(any):** 2+ sessions of regression; …"*. Stated unconditionally — no carve-out
+for any class of exercise.
+
+**Built is.** The trend runs on volume-load. `sessionVolumeLoad()`
+(`src/core/progression.ts`) is `Σ(load × reps)`, and the test is
+`lastThree[0] > lastThree[1] && lastThree[1] > lastThree[2]`. On a bodyweight
+lift `load` is 0 by design (load measures what was *added* to the body — see the
+closed bodyweight decision), so every session's volume-load is identically 0 and
+`0 > 0 > 0` is never true.
+
+**Pullups, Dips and Captain's Chair therefore have no fatigue signal and no
+deload trigger at all** — not a weak one, an unreachable one. Confirmed in prod:
+all 25 sets across those three exercises carry `load` min 0, max 0.
+
+The spec promises a safety mechanism that a whole class of trained exercises
+cannot reach, and nothing in the app says so. That is the drift.
+
+**The resolution is already known** and is not lost: a static bodyweight and a
+rep-only trend are *the same computation* — multiplying every set by a constant
+cannot change the direction of a comparison, so a constant multiplier makes the
+trend purely rep-driven. One change, and it needs **no stored bodyweight**, which
+matters because storing one would make every historical set's volume depend on a
+weight measured today. Deferred to the agent-layer round.
+
+See [`DECISIONS.md`](DECISIONS.md) 2026-07-28 ("deferred to the LLM phase") and
+[`CURRENT_STATE.md`](CURRENT_STATE.md) §9.
+
+---
+
+## §7 — An absent effort tag is read as at-target
+
+**Spec says.** §7 line 210: the 3-point tag (`more_in_me | near_failure |
+to_failure`) is the primary signal and *"exact `rir` remains optional"*. The spec
+is **silent on what absence means** — it says the precise number is optional, not
+that a missing tag should be treated as any particular effort.
+
+**Built is.** `(s.rir ?? context.targetRir) <= context.targetRir` — at
+`progression.ts:83`, `progression.ts:118` and `stallBuster.ts:33`. A set with no
+effort recorded resolves to *the target*, i.e. is assumed to have been taken to
+the intended effort. Both `true_stall` and `increase_load` require
+at-or-below-target effort, so the assumption biases them **toward firing**.
+
+**The scale, stated honestly — and it is volatile, not fixed.** 71 of 244 sets
+carry a tag overall (**29%**). Per session it swings widely rather than trending:
+
+| Session | 07-14 | 07-16 | 07-17 | 07-18 | 07-21 | 07-23 | 07-25 | 07-28 |
+|---|---|---|---|---|---|---|---|---|
+| tagged | 7% | 0% | 0% | 47% | 59% | 30% | 26% | **66%** |
+
+Across the last four sessions it is **45%**, not the ~65% a glance at the most
+recent session suggests. Exposure may well be shrinking, but with eight sessions
+and that variance it is **not yet demonstrated** — 66% is one session, not a
+trend. Treat 29% as the historical figure and expect it to move.
+
+**Why it is not simply fixed.** The alternatives are *keep assuming* (biased
+toward action) or *stop assuming* (the engine goes mostly silent on the majority
+of sets). Neither is a threshold problem. Effort **cannot be inferred** from
+these logs: within-session rep decay was investigated as a proxy and **rejected**
+— the owner logs to a rep target rather than to failure, so 10/10/10 is the
+expected shape of an easy session and a hard one alike and carries no effort
+information. Recorded so the proxy is not rediscovered.
+
+See [`DECISIONS.md`](DECISIONS.md) 2026-07-28 and
+[`CURRENT_STATE.md`](CURRENT_STATE.md) §11.
+
+---
+
+## §7 / §1 — PR detection sits against the spec's deprioritisation of PRs
+
+**Spec says.** PRs are deprioritised in all three places they appear:
+line 5, *"goal = muscle gain with recomposition … **not strength/PRs**"*;
+line 47, *"your goal (aesthetics/hypertrophy, **no barbell PRs**)"*; and
+line 236, the stall-buster is *"framed as 'keep overloading to keep growing,'
+**not 'hit a PR.'**"*
+
+**Built is.** Per-lane weight PR detection (2026-07-29): a `★ PR` chip on the set
+row, a `best … · date` line in the card header, and a gradient wash on the row at
+the moment one is logged.
+
+**The defence is genuine, and is recorded first because it is the stronger
+reading.** A per-lane machine best is a **progressive-overload marker, not a
+powerlifting PR** — and progressive overload is the hypertrophy mechanism the
+spec itself runs on. The spec is rejecting *strength as a goal* and *barbell
+PRs as an ambition*, not the observation that a load went up on a machine. The
+detection is deliberately weight-only and lane-scoped; rep records were
+considered and rejected by the owner as "not what PR means".
+
+**The tension worth weighing at the next revision is behavioural, not
+technical.** The chip fires on **load alone**, so `190 × 6` after `180 × 9`
+registers as a PR even though it may be the worse hypertrophy set — fewer reps,
+less volume-load, possibly a shorter time under tension. A celebration attached
+purely to load can pull training toward heavier-and-fewer, which is exactly the
+drift the spec's PR language exists to prevent. The feature may therefore be
+correct in mechanism and still push behaviour the wrong way.
+
+Two mitigations exist. **Neither is proposed here** — this is a signal, and the
+choice is the owner's: gate the PR on reps staying within the target range, or
+mark **volume-load** bests instead of weight bests. Nothing has been changed.
+
+---
+
+## §6 — `timeline_notes` outruns the spec
+
+**Spec says.** Nothing. There is no timeline-note concept and no dated-annotation
+model anywhere in v0.6.
+
+**Built is.** A `timeline_notes` table (migration 0034): a date range with a
+**nullable open end** meaning *still ongoing* rather than unknown, a free-text
+body, and a loose `kind` that is a suggestion rather than a controlled
+vocabulary. Rendered as span rails down the History gutter. It exists so that a
+gap in `workout_logs` is **interpretable**: two weeks of silence otherwise looks
+identical whether the owner was ill, deloading, travelling, or had stopped.
+
+**Low stakes, and worth saying so plainly.** It is **inert by construction** —
+`grep -rn timeline src/core/` returns nothing, and that is the entire reason it
+is a separate table from `injury_flags`. `injury_flags` **does** reach the
+engine: `loadActiveInjuryStructures()` in `src/lib/coreAdapters.ts` feeds
+`src/core/substitution.ts:23`, where a candidate is excluded if its
+`affectedStructures` intersect an active flag. A row meaning "on holiday" landing
+in that table would silently remove exercises from substitution.
+
+So this entry is a **notification, not a concern**: new schema the spec should
+name at the next revision, carrying no behaviour the spec would object to. See
+[`DECISIONS.md`](DECISIONS.md) 2026-07-28 (timeline notes) for the
+injury-flags-vs-timeline-notes separation.
