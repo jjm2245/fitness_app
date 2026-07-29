@@ -23,7 +23,19 @@ substitution division of labor + `SUBSTITUTION-JUDGMENT.md`, the opaque lane key
 recalibrate-with-continuity + unspecified-gets-its-own-lane, the
 `defaultLoadIncrement`-keys-on-`load_type` impurity, and the §15 status
 delegation) was **folded into v0.6** — see its "What changed in v0.6" section.
-There is **no open drift** between the built system and the spec right now.
+
+**Open as of 2026-07-29 (2 entries), plus 2 closed by the build:**
+
+| Entry | State |
+|---|---|
+| `workout_logs.finished_at` is named for a fact it stopped carrying | **open — deliberately.** The label is already correct at every read site; a rename is a migration for a name. A note for the next revision, not work. |
+| §7 — set-counting uses three emphasis tiers, not the spec's two | **open — needs a spec revision.** The build is the better of the two; the sentence is what's wrong. |
+| Instants in `timestamp WITHOUT time zone` | ✅ closed by migration 0035 |
+| `updated_at` mixes two clocks | ✅ closed by migration 0035 |
+
+*(This block previously read "there is no open drift", which stopped being true
+the moment the `finished_at` entry was appended below it. Keep it in step with
+what the file actually contains.)*
 
 **Deliberately-deferred items are not drift** — they're recorded as intent in the
 spec and tracked live in [`CURRENT_STATE.md`](CURRENT_STATE.md) §9: the agent
@@ -48,7 +60,7 @@ doing, and a deleted entry reads as though the problem never existed. A resolved
 entry needs nothing from the spec owner at the next revision: the build has come
 back to what the spec already meant.
 
-_(Nothing to fold in as of v0.6. Add new drift below.)_
+_(Two entries to fold in at the next revision — see the table above.)_
 
 ## `workout_logs.finished_at` is named for a fact it stopped carrying
 
@@ -181,3 +193,70 @@ band an offset mismatch would produce, and the app-written and DB-written
 values from the same seed run landed 95 ms apart. Both writers had in fact been
 agreeing, because Vercel runs UTC — but that agreement was a property of the
 deployment, not of the schema. Now it is a property of the schema.
+
+---
+
+## §7 — Set-counting uses three emphasis tiers, not the spec's two
+
+**Spec says.** §7: *"a working set counts 1.0 for the primary muscle and 0.5 for
+meaningful secondaries; warm-ups count 0."* Two tiers, stated as a fixed rule
+because "without a fixed rule the volume landmarks are meaningless."
+
+**Built is.** The seed JSON's `emphasis_convention` declares **three** tiers —
+1.0 primary / 0.5 meaningful secondary / **0.3 minor secondary** — and it was
+hand-tagged that way. `src/db/seed.ts` stores the per-relation value verbatim in
+`exercise_muscles.emphasis`, and `countedSetContribution()` in
+`src/core/volume.ts` sums that stored value directly rather than flattening every
+secondary to 0.5.
+
+**This was intentional, not an oversight.** The call was made in the first
+session and recorded under *"Seed loader (spec §6, seed file's own notes)"* in
+[`DECISIONS.md`](DECISIONS.md): the three-tier tagging is *"strictly more
+information and clearly intentional in how the seed was hand-tagged."* That
+reasoning still holds — flattening 0.3 to 0.5 would invent emphasis the tagger
+did not intend, and dropping it would discard a distinction they made on purpose.
+
+**Why it is recorded here anyway.** Standing rule: spec-versus-reality
+divergence belongs in this file so the spec owner can fold it into the next
+revision. It never got an entry, and has been live since the first session with
+only that `DECISIONS` note. It surfaced again while writing the Stats inventory
+in [`CURRENT_STATE.md`](CURRENT_STATE.md) §10, which documents it for readers
+with **the code as authoritative** — correct for someone building a screen, but
+that is a reader-facing note, not a signal to the spec owner. This is the signal.
+
+### The concrete consequence
+
+Production carries **35 `exercise_muscles` rows at emphasis 0.3, across 22
+exercises — and 14 of those 22 appear in actual logged history**, i.e. half the
+28 exercises ever trained. This is not a theoretical corner:
+
+| Exercise (logged) | 0.3 relation |
+|---|---|
+| Hack Squat | calves, hamstrings |
+| Smith Machine Stiff-Legged Deadlift | forearms, lats, upper_traps |
+| Machine Shoulder (Military) Press | upper_traps |
+| Butterfly | anterior_deltoid |
+| Pullups | mid_traps |
+| Wide-Grip Lat Pulldown | rhomboids |
+| Machine Preacher Curls / Standing Biceps Cable Curl | brachialis |
+| …and 6 more | |
+
+**The spec's sentence is ambiguous for a 0.3 relation, and BOTH resolutions
+disagree with the code.** A reader implementing §7 literally must decide whether
+a minor secondary is a "meaningful secondary":
+
+- read as **not** meaningful → contributes 0 → total is **0.3 lower per counted
+  set** than `volume.ts` returns;
+- read as **a** secondary → contributes 0.5 → total is **0.2 higher**.
+
+Either way the number disagrees, and neither reader would know it. **This is the
+thing a Stats surface or an LLM summary would get wrong by trusting the spec
+sentence** — it would produce a muscle-week total that looks plausible, sits
+beside `VOLUME_LANDMARKS` (floor 8, productive 10–20) as though comparable, and
+silently misplaces a muscle relative to its landmark. The failure is quiet: no
+error, just a wrong zone.
+
+**Not changed, deliberately.** The spec, the seed and `volume.ts` are all
+untouched — intent is human-owned, and the built behaviour is the better of the
+two. What is owed is a **spec revision naming the third tier**, so the sentence
+and the code stop disagreeing. Until then: **use `volume.ts`, not the sentence.**
