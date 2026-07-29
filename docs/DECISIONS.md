@@ -4916,6 +4916,11 @@ the process's zone mixed with `now()` values in the DB's zone. That hazard is
 real, applies to `updated_at`, and is recorded in SPEC-DRIFT rather than patched
 four times.
 
+> **Superseded 2026-07-29:** that hazard was closed by migration 0035 —
+> `updated_at` is now `timestamptz`, so the two writers normalise to the same
+> instant and the SPEC-DRIFT entry is marked resolved. Left in place because it
+> is what the decision looked like at the time.
+
 ---
 
 ## 2026-07-27 (session surface) — concrete progression, load bounds, session notes
@@ -5912,3 +5917,34 @@ to open, and a side-car archive changes the export from one file to a bundle.
 photos exist, every export taken in the interim is silently incomplete, and no
 later fix repairs files already downloaded. Whoever wires the first
 progress-photo write should resolve the export story in the same round.
+
+
+---
+
+## 2026-07-29 (docs) — SPEC-DRIFT closures, recorded
+
+The round that closed the two timestamp entries was docs-only and did not get an
+entry here at the time; adding it so the log is complete rather than nearly so.
+
+Both entries migration 0035 resolved are marked `✅ RESOLVED (migration 0035)`
+with their original text **kept**, not deleted — the reasoning is what justified
+the migration, and a deleted entry reads as though the problem never existed. A
+resolution section is appended to each.
+
+The `updated_at` addendum resolved **without a single write site changing**,
+which is the part worth keeping: two writers were never the defect. Mixed
+provenance only mattered because a tz-less column discards the offset, so a value
+written by `now()` under GMT and one written by `new Date()` under another zone
+become indistinguishable once stored. `timestamptz` normalises on write. The four
+one-off fixes that entry declined to make were correctly declined.
+
+The convention is now stated in `SPEC-DRIFT.md`'s own "How to use" section: mark
+the heading with the migration number, append a resolution, don't delete — and a
+resolved entry needs nothing from the spec owner at the next revision, because
+the build has come back to what the spec already meant.
+
+**`SPEC-DRIFT.md` now holds one open entry**, `workout_logs.finished_at is named
+for a fact it stopped carrying`, and it is open **deliberately**: the label is
+already correct at every site that reads it (`ended_at` / `last_updated_at` in
+the CSVs, `first_finished_at` for the stable instant). Renaming the column would
+be a migration for a name. It is a note for the next spec revision, not work.

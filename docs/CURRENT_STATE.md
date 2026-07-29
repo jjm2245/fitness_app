@@ -262,6 +262,34 @@ modules have focused unit tests. No browser/E2E runner.
 
 ## 9. Known gaps / in-flight (hand-written — keep honest)
 
+### Status, plainly: the training work is CLOSED
+
+**Training logging is complete and has no open work.** Program, blocks,
+exercises, equipment, session logging, history, settings and export are all
+built, shipped and in daily use on a real phone against production. A fresh
+reader should not have to infer this from the decision log: there is no
+half-finished training feature waiting to be picked up.
+
+What follows in this section is either (a) **deliberately deferred**, with its
+reason, or (b) **closed by decision** and recorded so it is not re-litigated.
+Neither is a to-do list.
+
+**Deliberately deferred, and why:**
+
+| Deferred | Reason |
+|---|---|
+| The five progression findings (dead `regression` on bodyweight, `topSet` tie degeneration, the `rir ?? target` assumption, exercise-specific norms, plateau interpretation) | They need **interpretation**, not more rules. Recorded in full in DECISIONS 2026-07-28 — including the rep-decay proxy that was considered and **rejected**, so it isn't rediscovered. Belongs to the LLM phase. |
+| Import / restore | The **export** is now restorable (sequences + procedure shipped in the file, 2026-07-29). Reading one back is a separate build nobody has needed yet. |
+| Per-exercise history + per-muscle volume | This is **Stats v1** — see §10 for the inventory of what already exists to build it on. |
+| Progress-photo blob storage | A decision **owed before `progress_photos` is first written**, not after: the export would otherwise carry rows referencing images it does not contain, and no later fix repairs files already downloaded. |
+
+**The one open `SPEC-DRIFT` entry is open on purpose.**
+`workout_logs.finished_at is named for a fact it stopped carrying` remains open
+because the *label* is already correct at every site that reads it — the CSVs
+expose `ended_at` / `last_updated_at`, and `first_finished_at` carries the stable
+instant. Renaming the column would be a migration for a name. It is a note for
+the next spec revision, **not unfinished work.**
+
 - **Hand-curated substitutions are documentation-only.** `exercise_substitutions`
   carries ~71 candidates but `candidate_exercise_id` is null; the live engine
   computes candidates from pattern+muscle+equipment instead. The **judgment** in
@@ -304,18 +332,139 @@ modules have focused unit tests. No browser/E2E runner.
   Pullups / Dips / Captain's Chair record `load 0` and that is CORRECT: load
   measures what was added to the body. Bodyweight is a body-composition metric
   tracked in `body_metrics`. No snapshot column, no `load = bodyweight + belt`.
-  See DECISIONS 2026-07-27. **Open question the owner may act on:** regression
-  detection is structurally dead for these exercises, because volume-load is
-  `Σ(0 × reps) = 0` every session.
-- **Export has two restore gaps** (`/api/export`, built 2026-07-26): unsynced
-  sets still in the IndexedDB outbox aren't in it (it reads the server), and
-  serial sequence positions aren't exported (a restore must `setval` or the
-  first insert collides). Everything else round-trips.
+  See DECISIONS 2026-07-27. **Consequence, now recorded as a deferred finding:**
+  regression detection is structurally dead for these exercises, because
+  volume-load is `Σ(0 × reps) = 0` every session and `0 > 0 > 0` never fires.
+  The resolution is known (a constant multiplier makes the trend purely
+  rep-driven, needing no stored bodyweight) and is held for the LLM phase — see
+  DECISIONS 2026-07-28. **PRs are also structurally impossible on these lanes**,
+  for the same reason: every load ties at 0 and a PR requires strictly greater.
+  That is correct, not a bug.
+- **Export: both restore gaps CLOSED (2026-07-29).** The file now carries a
+  `sequences` block (every serial's value) and a `restore` block stating the
+  procedure — apply migrations from the repo, insert with **explicit ids** so
+  foreign keys resolve, then `setval` from `max(id)`. Without that, a restore
+  looks perfect and dies on write #1. Unsynced writes are handled at the source:
+  the export syncs first and, if writes remain, names the number and asks before
+  building a short file, recording it as `pendingAtExport`. `null` there means
+  *nobody reported* (a raw fetch) and is deliberately **not** zero. 21 of 22
+  tables ship; only `login_attempts` is excluded (rate-limit telemetry).
 - **Legacy `completed` IndexedDB store** — dead mirror; remove.
 - Some historical `set_logs.equipment_type` are null on named-machine sets (type
   recoverable via the equipment row) — cosmetic; self-corrects on edit.
 
-## 10. Core generality self-check
+## 10. What Stats has to work with (inventory, not a design)
+
+Written for whoever starts Stats v1. This is what **already exists** — none of
+it is a proposal, and the numbers are read from production on 2026-07-29.
+
+### `src/core/volume.ts` — written, tested, **zero production importers**
+
+Exports `countedSetContribution`, `volumeByMuscle`, `volumeByMuscleInRange`,
+`VOLUME_LANDMARKS` (floor 8, productive 10–20) and `classifyVolumeZone`. Its only
+importer today is its own test file — it has never been wired to a screen.
+
+It expects `SetLogInput[]` (the shape `loadSetLogInputsForExercise` produces,
+carrying `exerciseId`, `date`, `setType`, `load`, `reps`, `rir`, `machineId`) plus
+`exercisesById: Record<string, { muscles }>`. It returns **counted sets per
+muscle**, not tonnage — a set contributes its stored emphasis, and warm-ups
+contribute nothing.
+
+**Read this before trusting the spec's wording.** Spec §7 states the rule as
+"1.0 for the primary muscle and 0.5 for meaningful secondaries; warm-ups 0" —
+two tiers. The implementation uses the seed's **three**-tier stored emphasis, and
+production matches it:
+
+| emphasis | rows in `exercise_muscles` |
+|---|---|
+| 1.0 (primary) | 869 |
+| 0.5 (meaningful secondary) | 1681 |
+| **0.3 (minor secondary)** | **35** |
+
+So a minor secondary contributes 0.3, which the spec's flatter rule does not
+describe. This was a deliberate choice (see DECISIONS) and it means **any total
+computed from the spec's wording will disagree with `volume.ts` by design.** Use
+the code, not the sentence.
+
+### The muscle graph
+
+`muscles` (24 rows) and `exercise_muscles` (2,585 links) are the graph behind
+per-muscle volume. Fully populated across the library, not just the exercises in
+use — **28 distinct exercises appear in `set_logs` against 878 in the library**,
+so any "volume by muscle" surface reads a graph far larger than the training
+history that references it. That is intentional (the library ships whole so
+`set_logs.exercise_id` always resolves), but it means the graph size is not a
+proxy for how much has actually been trained.
+
+### Lane semantics — the constraint on every per-exercise chart
+
+A **lane** is `(exercise, unit)`, and loads are **not comparable across lanes**.
+190 lb on VSL13 is a best on VSL13, not on "Butterfly" generally: different cams,
+pulleys and starting resistances produce different numbers for the same effort.
+Everything lane-aware in the app already honours this — PRs, the `best` line,
+progression re-baselining on a machine change, the recalibration note.
+
+**A per-exercise chart that plots load over time without splitting by lane will
+draw a cliff every time a machine changed and call it a regression.** The lane
+key is `laneKey()` in `src/lib/equipment.ts` (unit id → else `"type:unspecified"`
+→ else portable/null); use it rather than re-deriving the rule.
+
+### Everything Stats would show is COMPUTED, never stored
+
+PRs, progression verdicts, the `last …` line, `firstWorkingSet`, session
+duration, volume, the plate-increment suggestion — all derived from `set_logs` on
+each read. There is no cache to invalidate and no stored copy that could
+disagree; equally, there is no precomputed table to read from, so Stats computes
+like everything else does. Ordering rules matter when doing so: the shared
+adapter carries **no `ORDER BY`** (its row order was measured as
+load-descending), and a drop segment shares its parent's `set_index` — order by
+`(set_index, id)` and treat the lowest id in a `drop_set_group` as the parent.
+
+### Context tables that exist and are populated
+
+- **`body_metrics`** — dated weigh-ins, one row per date, canonical lb. A time
+  series, not a current value; back-dated rows are valid and expected.
+- **`timeline_notes`** — dated free-text spanning the gaps *between* sessions
+  (illness, travel, deload). `end_date` NULL means still ongoing. **Inert by
+  construction**: nothing in the engine reads it, unlike `injury_flags`. Absence
+  of a note over a gap means nothing was recorded, never that nothing happened.
+
+### The current `/stats` route
+
+A **59-line placeholder**. `src/app/stats/page.tsx` renders a title and three
+`LockedTile`s (Training trends / Recovery / Nutrition) using the same locked-tile
+language as Home. **It reads no data and has no API route behind it.** Stats v1
+is a greenfield surface on top of a populated database, not a rewrite.
+
+## 11. The effort-coverage constraint (read before designing anything on effort)
+
+Effort is recorded on **71 of 244 sets — 29%** in production today, and **this is
+expected to stay low.** The owner logs to a rep target, not to failure, so most
+sets legitimately have nothing to record.
+
+It is not a data-quality problem to be fixed. It was investigated for the
+progression work and the conclusion was that **effort cannot be inferred**:
+within-session rep decay was considered as a proxy and rejected, because 10/10/10
+is the expected shape of an easy session and a hard one alike. See DECISIONS
+2026-07-28.
+
+**Consequences for anything built next:**
+
+- The core currently treats an untagged set as *at target*
+  (`s.rir ?? context.targetRir`), which biases `true_stall` and `increase_load`
+  toward firing on ~71% of the data. That assumption is recorded as a deferred
+  finding, not endorsed.
+- **Any Stats or LLM surface leaning on effort must degrade honestly** — say
+  "effort not recorded" rather than assume, average, or impute. An effort-weighted
+  chart computed over 29% coverage and drawn as though it were complete is a
+  confident lie.
+- Load, reps, sets and time remain the primary signals, and that is fine: those
+  are what actually drive hypertrophy.
+
+*(The figure moves as more is logged — it was 24% (52/215) when the progression
+brief measured it in July. The constraint is the shape, not the number.)*
+
+## 12. Core generality self-check
 
 `src/core/*` carries **no** routine-specific or equipment-specific literals
 (exercise ids, machine names, offsets, equipment types). Equipment is handed to
@@ -323,7 +472,7 @@ the core only as an opaque **lane key** string (`laneKey` in `src/lib/equipment.
 outside core). Run `grep -rn` for equipment types / offsets / exercise ids in
 `src/core` every session — it must stay empty (test fixtures excepted).
 
-## 11. Traps (things that waste time or cause damage)
+## 13. Traps (things that waste time or cause damage)
 
 - **IndexedDB migrations must stay additive** — `migrateSessionDb` creates only;
   never `deleteObjectStore` a store carrying data forward (silently eats unsynced
