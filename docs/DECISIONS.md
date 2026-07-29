@@ -5688,7 +5688,7 @@ stayed 77.
 
 ---
 
-## 2026-07-29 (0035 timestamptz) — LOCAL APPLIED, PROD HELD
+## 2026-07-29 (0035 timestamptz) — APPLIED LOCAL AND PROD
 
 13 `timestamp WITHOUT time zone` columns across 9 tables become `timestamptz`.
 The nine `date` columns are untouched and are not in the migration: a weigh-in
@@ -5746,3 +5746,28 @@ silently. Both sides are now instants.
   `finished_at` reads 00:53 ET because it is a last-modified stamp and was
   rewritten on Jul 28. Both columns are already `timestamptz` and neither is in
   this migration, so this is about which one to READ when checking the anchor.
+
+### Applied to prod 2026-07-29
+
+Run against the Neon DIRECT endpoint (`ep-spring-mode-atj10u3g`, not the pooler)
+per the runbook, which reported `TimeZone = GMT` — so `current_setting('TimeZone')`
+resolved to UTC there and the conversion added a label without moving a value.
+
+Every gate met: types **13 tz-less → 0**, timestamptz **5 → 18**, date **9
+unchanged**; migrations **35 → 36**; all nine row counts identical
+(`set_logs` 245, `exercises` 878, `session_exercises` 78, `equipment` 19,
+`workout_logs` 9, `programs` 2, `profile` 1, `cardio_logs` 1, `injury_flags` 0);
+volume checksum **259046 → 259046**; anchor **222/222**; log 3 at **19:01 /
+19:58 ET**; `set_logs` id 7 reads **`2026-07-14 23:01:31.206105+00`** — the
+before-value with `+00` appended and nothing else changed.
+
+**The deploy gap was proved harmless before pushing**, not assumed: the OLD
+shim expression evaluated against the newly-converted columns returns byte-
+identical strings to the new one (`2026-07-14T23:01:31.206Z` either way),
+because `tstz at time zone 'GMT' at time zone 'UTC'` round-trips to the same
+instant under a GMT session. So migrate-then-deploy had no window in which the
+live build misread anything — the ordering was a preference, not a requirement.
+
+Post-deploy the export now returns `created_at` as `2026-07-14T23:01:31.206Z`,
+identical to `logged_at` on the same row — the 222/222 anchor visible directly
+in the payload rather than only in a check.
