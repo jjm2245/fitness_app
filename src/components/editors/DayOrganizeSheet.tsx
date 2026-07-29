@@ -51,7 +51,7 @@ export function DayOrganizeSheet({
               <SortableRow key={id} id={String(id)}>
                 {(grip) => (
                   <div className={styles.organizeRow}>
-                    <span ref={grip.ref} {...grip.props} aria-label="Drag to reorder" className={styles.gripHandle}>⋮⋮</span>
+                    <span ref={grip.setHandle} {...grip.handleProps} aria-label="Drag to reorder" className={styles.gripHandle}>⋮⋮</span>
                     <span className={styles.organizeName}>{d.name}</span>
                     <span className={styles.organizeCount}>{d.exercises.length}</span>
                   </div>

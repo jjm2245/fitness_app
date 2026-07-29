@@ -5566,3 +5566,99 @@ Verified end to end by dispatching a real pointer sequence (`left_click_drag`
 does not activate dnd-kit — the 6px sensor needs intermediate `pointermove`s):
 the drag reordered, survived a reload, reached Postgres as contiguous 0–7, and
 the other two sessions kept their indices.
+
+---
+
+## 2026-07-28 (session surface) — grip in the header, rest above the route, one source for `last`
+
+### §1 · The grip moved inside the card, and the wrapper disappeared with it
+
+It was rendering as its own element above the card, reading as a stray object
+rather than part of the card it moves. It now sits **leftmost in the existing
+header row**, before the checkbox — matching the program editor, and away from
+the `⋯` so a drag handle and a menu button aren't neighbouring targets.
+
+**It adds no height**, verified by measuring rather than eyeballing: the header
+was already 52px because `⋯` carries the shared 44px tap-target minimum, and the
+grip takes the same 44px target behind an 18px icon. The header is `flex` /
+`nowrap` and the grip is one more item on the line.
+
+Two attempts were wrong before this one, both caught by lint against a HEAD
+baseline rather than by looking:
+
+1. Passing the dnd-kit activator into the card as a `grip` prop produced eight
+   `Cannot access refs during render` errors — a ref-setting function crossing a
+   component boundary. Renaming the fields off `ref`/`props` did not help.
+2. The fix is that **the card IS the sortable row**: `useSortableCard` is called
+   inside the card, so the ref is created where it is used. The `SortableRow`
+   wrapper, the `as="li"` prop and the cards' `asDiv` prop all went away, and
+   with them the `<ol>`/`<li>` nesting problem — the list is a plain `<ol>` of
+   `<li>` cards again. The hook's result must be DESTRUCTURED at the call site;
+   `sortable.setNodeRef` in JSX trips the same rule that `setNodeRef` does not.
+
+`touch-action: none` is on the grip only, so a vertical drag starts there while
+the rest of the card keeps scrolling and tapping normally.
+
+### §2 · Rest now outlives the route
+
+**Reported before changing, because half the ask was already true:** elapsed was
+ALREADY wall-clock — `timerStart` held `Date.now()` and every reader derived
+`Date.now() - start`. The intervals only forced repaints; nothing accumulated.
+
+What actually stopped the rest was three separate things: the state was a
+`useState` inside `StrengthCard` (unmounted by navigation), the effect cleanup
+called `publishRestTimer(null)` on unmount — actively cancelling it — and
+`SessionBar` renders only on `/log/[id]`, so nothing showed it elsewhere anyway.
+
+So the bus became the owner and is persisted to localStorage as
+`{ startedAt, sessionId, instanceId }`. The cards restore from it on mount when
+the record is theirs, and the unmount cleanup is gone. A malformed record reads
+as NO timer rather than a rest starting at `NaN`, which would render an absurd
+elapsed value and then write it onto a set.
+
+Off-session screens get a `RestPill` in `GlobalNav` — that is the bar that
+persists there, since `SessionBar` is the logging-mode bar and its Finish/Add
+need log-page state. Tapping it returns to the owning session.
+
+**Completion behaviour is unchanged because there is none**: the count-up
+target+notify was removed in 2.6-3, so a rest runs until you stop it (holding the
+value) or log a set (consuming it). Nothing fires at any threshold, on-screen or
+off. The value written to the next set is untouched.
+
+Verified live: started a rest, went to Equipment (`resting 0:19`), **reloaded**
+(`resting 0:38` — the whole JS context was destroyed and rebuilt), returned to
+the session (`0:59` in both the card banner and the session bar, matching true
+elapsed). A backgrounded tab is a strictly weaker disruption than that reload.
+
+### §3 · `last …` reads the session as logged
+
+The last place the missing `ORDER BY` survived. The line read `sets[0]`, so it
+showed the heaviest load with reps in load order: a session logged 164 → 175 →
+180 rendered `last 180 lb × 5, 6, 9`. It now reads `setsInOrder`, ordered by
+`set_index` then `id` server-side (**set_index**, not `logged_at` — `logged_at`
+is NULL on 23 backfilled rows and would sort them arbitrarily, while set_index is
+present on every row). Warm-ups excluded, same as prefill.
+
+The shared adapter is still NOT sorted, for the reason established last round:
+core's `topSet` breaks ties by input order. `session.sets` is returned unchanged
+beside the new ordered field.
+
+### §4 · The line and the prefill now share one source
+
+They were two fetches at two scopes — the line exercise-scoped, the prefill
+lane-scoped — so a card opened showing `last 164 lb × 9` beside inputs sitting on
+45/8 until a unit was picked. Two things claiming the same history, disagreeing.
+
+One effect now, one response, one rule: **scope narrows only when a unit is
+actually chosen.** No unit (including a portable exercise, which has none to
+choose) → both read the exercise's most recent working set, so the inputs are
+populated the moment the card opens. A unit chosen → both narrow to that lane.
+
+The case the brief didn't specify: a chosen unit with **no history of its own**.
+Both fall back to exercise scope so they still agree, and the recalibration note
+explains where the numbers came from. Falling back only for the line is what let
+them disagree in the first place.
+
+`entryTouched` still wins over everything — verified by typing 77, switching
+units, and watching the line narrow to `100 lb × 12, 10, 8` while the input
+stayed 77.

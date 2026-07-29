@@ -8,7 +8,8 @@ import { logCardio, editCardio, deleteCardio, type SessionCardio } from "@/lib/s
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import { RestBanner } from "./RestBanner";
 import { RestConnector } from "./RestConnector";
-import { publishRestTimer } from "@/lib/restTimerBus";
+import { useSortableCard } from "@/components/editors/SortableList";
+import { publishRestTimer, getRestTimer } from "@/lib/restTimerBus";
 import { fmtRest, type CardControls, type LoggableOccurrence } from "./shared";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
 import { NumberInput } from "@/components/NumberInput";
@@ -86,7 +87,6 @@ export function CardioCard({
   completed,
   onSessionChanged,
   onToggleComplete,
-  asDiv,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -97,9 +97,10 @@ export function CardioCard({
   onSessionChanged: () => void;
   onToggleComplete: (instanceId: string, completed: boolean) => void;
   // See StrengthCard: a SortableRow <li> already wraps this card.
-  asDiv?: boolean;
 }) {
-  const Root = asDiv ? "div" : "li";
+  // This card IS the sortable row — no wrapper element, so the list stays a
+  // plain <ol> of <li> and the grip lives inside the card's own header.
+  const { setNodeRef: sortRef, style: sortStyle, setHandle: gripRef, handleProps: gripProps } = useSortableCard(ex.instanceId);
   // Inputs start EMPTY — like every other exercise. The program's prescribed
   // params aren't prefilled; the muted `last …` line is the reference instead.
   const [durationMin, setDurationMin] = useState<string>("");
@@ -129,7 +130,12 @@ export function CardioCard({
   // ── Rest (§2) — the SAME state machine + banner the strength card owns
   // (timer, bus mirror to the session bar). No stored rest for metric entries:
   // cardio_logs has no rest column, so the timer is reference-only here.
-  const [timerStart, setTimerStart] = useState<number | null>(null);
+  // Restored from the cross-route bus, same as the strength card: leaving the
+  // screen mid-rest is navigation, not a decision to stop resting.
+  const [timerStart, setTimerStart] = useState<number | null>(() => {
+    const t = getRestTimer();
+    return t && t.instanceId === ex.instanceId ? t.startedAt : null;
+  });
   const [timerElapsed, setTimerElapsed] = useState(0);
   const [heldRest, setHeldRest] = useState<number | null>(null);
   useEffect(() => {
@@ -140,9 +146,14 @@ export function CardioCard({
     return () => clearInterval(iv);
   }, [timerStart]);
   useEffect(() => {
-    publishRestTimer(timerStart);
-    return () => publishRestTimer(null);
-  }, [timerStart]);
+    if (timerStart != null) {
+      publishRestTimer({ startedAt: timerStart, sessionId, instanceId: ex.instanceId });
+      return;
+    }
+    const t = getRestTimer();
+    if (t && t.instanceId === ex.instanceId) publishRestTimer(null);
+    // No unmount cleanup — see StrengthCard.
+  }, [timerStart, sessionId, ex.instanceId]);
   // Mirror of the strength card's consumption: a held or still-running timer
   // becomes the next entry's rest (source "timed"), exactly once.
   function takeTimedRest(): number | null {
@@ -258,8 +269,33 @@ export function CardioCard({
 
   return (
     // Dim only while collapsed; expanded done = readable review (no input).
-    <Root className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
+    <li ref={sortRef} style={sortStyle} className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
+        {(
+          // Leftmost, matching the program editor. Inline in the existing
+          // header row — it adds no row and no height; the header is already
+          // a flex line and this is one more item in it. onClick stops the
+          // header's collapse toggle; dnd listens on pointerdown, so the two
+          // do not collide.
+          <button
+            type="button"
+            ref={gripRef}
+            {...gripProps}
+            className={styles.cardGrip}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Reorder ${ex.exerciseName}`}
+            title="Drag to reorder"
+          >
+            <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
+              <circle cx="2.5" cy="3" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="3" r="1.3" fill="currentColor" />
+              <circle cx="2.5" cy="8" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="8" r="1.3" fill="currentColor" />
+              <circle cx="2.5" cy="13" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="13" r="1.3" fill="currentColor" />
+            </svg>
+          </button>
+        )}
         <input
           type="checkbox"
           className={styles.doneBox}
@@ -446,7 +482,7 @@ export function CardioCard({
           {error && <p className={styles.errorText}>{error}</p>}
         </div>
       )}
-    </Root>
+    </li>
   );
 }
 

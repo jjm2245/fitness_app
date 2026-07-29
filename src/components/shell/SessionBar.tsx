@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./SessionBar.module.css";
-import { subscribeRestTimer } from "@/lib/restTimerBus";
+import { subscribeRestTimer, restElapsedSeconds, formatRest, type RestTimer } from "@/lib/restTimerBus";
 
 // The session bar — replaces the global nav while logging (mode switch:
 // navigating vs. training). Back · + Add · live rest timer (mirrors the
@@ -26,19 +26,20 @@ export function SessionBar({
   onAdd?: () => void;
 }) {
   const router = useRouter();
-  const [startMs, setStartMs] = useState<number | null>(null);
+  const [timer, setTimer] = useState<RestTimer | null>(null);
   const [, force] = useState(0);
 
-  useEffect(() => subscribeRestTimer(setStartMs), []);
+  useEffect(() => subscribeRestTimer(setTimer), []);
   useEffect(() => {
-    if (startMs == null) return;
+    if (timer == null) return;
+    // Re-render only. The elapsed value is derived from the stored start below,
+    // so a throttled or skipped interval costs a repaint, never a second.
     const iv = setInterval(() => force((n) => n + 1), 1000);
     return () => clearInterval(iv);
-  }, [startMs]);
+  }, [timer]);
 
-  const elapsed = startMs != null ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : null;
-  const mmss =
-    elapsed != null ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` : null;
+  const elapsed = restElapsedSeconds(timer);
+  const mmss = elapsed != null ? formatRest(elapsed) : null;
 
   return (
     <>

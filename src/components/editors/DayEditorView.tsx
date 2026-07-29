@@ -240,7 +240,7 @@ export function DayEditorView({
                     <SortableRow key={ex.id} id={String(ex.id)}>
                       {(grip) => (
                         <div className={styles.row}>
-                          <span ref={grip.ref} {...grip.props} aria-label="Drag to reorder">⋮⋮</span>
+                          <span ref={grip.setHandle} {...grip.handleProps} aria-label="Drag to reorder">⋮⋮</span>
                           {rowBody(ex)}
                         </div>
                       )}

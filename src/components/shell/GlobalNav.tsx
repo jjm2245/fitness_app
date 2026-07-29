@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import styles from "./GlobalNav.module.css";
+import { subscribeRestTimer, restElapsedSeconds, formatRest, type RestTimer } from "@/lib/restTimerBus";
 
 // Global bottom nav: Home / Train / Stats. Settings lives behind a gear on
 // Home — nav slots are reserved for frequent, direct destinations, and the
@@ -42,6 +44,10 @@ export function GlobalNav() {
   return (
     <>
       <div className={styles.spacer} aria-hidden="true" />
+      {/* The rest keeps running when you leave the session to look something
+          up, so it has to be VISIBLE from wherever you went. Tapping returns
+          to the session that owns it. */}
+      <RestPill />
       <nav className={styles.nav}>
         {items.map((it) => (
           <button
@@ -57,5 +63,38 @@ export function GlobalNav() {
         ))}
       </nav>
     </>
+  );
+}
+
+// The running rest, shown on every non-session screen. Read-only: stopping and
+// writing the rest stay with the card that owns it, exactly as before — this
+// only means the count is not hidden while you are on Equipment.
+function RestPill() {
+  const router = useRouter();
+  const [timer, setTimer] = useState<RestTimer | null>(null);
+  const [, force] = useState(0);
+
+  useEffect(() => subscribeRestTimer(setTimer), []);
+  useEffect(() => {
+    if (timer == null) return;
+    // Re-render only — the seconds come from the stored start, so a throttled
+    // interval in a backgrounded tab cannot lose time.
+    const iv = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(iv);
+  }, [timer]);
+
+  const elapsed = restElapsedSeconds(timer);
+  if (timer == null || elapsed == null) return null;
+
+  return (
+    <button
+      type="button"
+      className={styles.restPill}
+      onClick={() => router.push(`/log/${timer.sessionId}`)}
+      title="Rest running — tap to return to your session"
+    >
+      <span className={styles.restDot} aria-hidden="true" />
+      resting <strong>{formatRest(elapsed)}</strong>
+    </button>
   );
 }

@@ -96,18 +96,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // gaps and repeats in the owner's history (documented 2026-07-27).
     .orderBy(asc(setLogs.setIndex), asc(setLogs.id));
 
-  const firstRow =
+  const laneOrdered =
     scope === "exercise"
-      ? orderedRows[0]
-      : orderedRows.find((r) => laneKey(r.equipmentType, r.equipmentId) === machineId);
+      ? orderedRows
+      : orderedRows.filter((r) => laneKey(r.equipmentType, r.equipmentId) === machineId);
 
   return NextResponse.json({
     session: {
       date: last.date,
+      // UNCHANGED and still unordered — progression and the recalibration note
+      // read this, and core's `topSet` breaks ties by input order, so imposing
+      // one here would quietly change verdicts. Display uses `setsInOrder`.
       sets: last.workingSets.map((s) => ({ load: s.load, reps: s.reps, rir: s.rir })),
+      // The session AS LOGGED: ordered by set_index, warm-ups excluded. This is
+      // what the card's "last …" line renders, so the line, the first-set load
+      // and the prefilled values all describe the same set.
+      setsInOrder: laneOrdered.map((r) => ({ load: Number(r.load), reps: r.reps })),
       // Warm-ups are already excluded by the WHERE above, so this is the first
       // WORKING set — where you started, not where you finished or peaked.
-      firstWorkingSet: firstRow ? { load: Number(firstRow.load), reps: firstRow.reps } : null,
+      firstWorkingSet: laneOrdered[0]
+        ? { load: Number(laneOrdered[0].load), reps: laneOrdered[0].reps }
+        : null,
     },
   });
 }

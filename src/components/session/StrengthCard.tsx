@@ -11,7 +11,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { INT_DIGITS } from "@/lib/numericInput";
 import { detectUnitSlip, recentLoadsFromLastText } from "@/lib/unitSlip";
 import { EntryUnitLabel } from "./EntryUnitLabel";
-import { publishRestTimer } from "@/lib/restTimerBus";
+import { publishRestTimer, getRestTimer } from "@/lib/restTimerBus";
 import { displayWeights, displayLb, getEntryUnit, kgToLb, lbToKg } from "@/lib/units";
 import { useWeightUnit } from "@/lib/useUnit";
 import { UnitNumberInput } from "@/components/UnitNumberInput";
@@ -21,6 +21,7 @@ import { RestBanner } from "./RestBanner";
 import { CardMenu, type CardMenuItem } from "./CardMenu";
 import { AddUnitModal } from "./AddUnitModal";
 import { SwapSheet } from "./SwapSheet";
+import { useSortableCard } from "@/components/editors/SortableList";
 import { rirToEffortTag, TARGET_EFFORT_LABEL } from "@/lib/targetEffort";
 import {
   EFFORT_OPTIONS,
@@ -85,6 +86,16 @@ interface SessionUnit {
   exercises: { exerciseId: string }[];
 }
 
+/** GET /api/exercises/[id]/last-session. `sets` is the unordered core view and
+ *  is NOT read here; the display and the prefill both use the ordered fields. */
+interface LastSessionResponse {
+  session: {
+    date: string;
+    setsInOrder: Array<{ load: number; reps: number }>;
+    firstWorkingSet: { load: number; reps: number } | null;
+  } | null;
+}
+
 // The exercise card (phase 2): rows show information; controls appear on
 // demand. The entire state machine below (offset machinery, lanes, timer→rest
 // write, drop groups, swap, relabel) moved VERBATIM from the pre-rebuild
@@ -99,7 +110,6 @@ export function StrengthCard({
   onSessionChanged,
   onToggleComplete,
   showTapHint,
-  asDiv,
 }: {
   ex: LoggableOccurrence;
   sessionId: string;
@@ -114,9 +124,10 @@ export function StrengthCard({
   showTapHint?: boolean;
   // Render a <div> instead of an <li>. Set when a SortableRow <li> already
   // wraps this card — an <li> inside an <li> is invalid nesting.
-  asDiv?: boolean;
 }) {
-  const Root = asDiv ? "div" : "li";
+  // This card IS the sortable row — no wrapper element, so the list stays a
+  // plain <ol> of <li> and the grip lives inside the card's own header.
+  const { setNodeRef: sortRef, style: sortStyle, setHandle: gripRef, handleProps: gripProps } = useSortableCard(ex.instanceId);
   const [activeExercise, setActiveExercise] = useState({
     id: ex.exerciseId,
     name: ex.exerciseName,
@@ -163,7 +174,15 @@ export function StrengthCard({
   // Set-level rest timer: lives with THIS exercise's sets. Tap-to-start after
   // racking; stopping (or hitting the target) HOLDS the elapsed value, which is
   // auto-written as the NEXT set's restBefore (source "timed").
-  const [timerStart, setTimerStart] = useState<number | null>(null);
+  // Restored from the cross-route bus: a rest that was running when this card
+  // last unmounted (navigation, reload, backgrounded tab) is still running, and
+  // its elapsed time comes from the stored START rather than anything counted.
+  // Scoped to THIS occurrence — one rest at a time, owned by the card that
+  // will consume it.
+  const [timerStart, setTimerStart] = useState<number | null>(() => {
+    const t = getRestTimer();
+    return t && t.instanceId === ex.instanceId ? t.startedAt : null;
+  });
   const [heldRest, setHeldRest] = useState<number | null>(null);
   // Display mirror of the running elapsed seconds (render never reads the clock).
   // (The timer target + notify feature was removed in 2.6-3: a separately-
@@ -180,9 +199,18 @@ export function StrengthCard({
   // Mirror the running timer into the session bar (display-only bus — the bar
   // renders it; this card still owns start/stop and the rest write).
   useEffect(() => {
-    publishRestTimer(timerStart);
-    return () => publishRestTimer(null);
-  }, [timerStart]);
+    if (timerStart != null) {
+      publishRestTimer({ startedAt: timerStart, sessionId, instanceId: ex.instanceId });
+      return;
+    }
+    // Clear ONLY if this card is the owner — another card's running rest must
+    // not be cancelled just because this one has no timer.
+    const t = getRestTimer();
+    if (t && t.instanceId === ex.instanceId) publishRestTimer(null);
+    // DELIBERATELY NO UNMOUNT CLEANUP. The old `return () => publishRestTimer(null)`
+    // is exactly why leaving the screen stopped the rest: unmounting is
+    // navigation, not a decision to stop resting.
+  }, [timerStart, sessionId, ex.instanceId]);
   function takeTimedRest(): number | null {
     if (heldRest != null) {
       const v = heldRest;
@@ -488,86 +516,73 @@ export function StrengthCard({
     })();
   }, [activeExercise.id]);
 
-  // "last" — the exercise's most recent session across ALL units (scope=exercise).
-  // Depends only on the exercise, never the selected lane, so switching units
-  // never makes it disappear (2.9).
+  // §4 — "last", the recalibration note and the PREFILL all come from ONE
+  // response, so they can never describe different sets. Before this they were
+  // two fetches at two scopes: the line was exercise-scoped while the prefill
+  // was lane-scoped, so a card opened on Machine Shoulder Press showed
+  // "last 130 lb x 9" beside inputs sitting on 45/8 until a unit was picked.
+  //
+  // The scope narrows only when a unit is actually CHOSEN. With none chosen
+  // (including a portable exercise, which has no unit to choose) both read the
+  // exercise's most recent working set, so the inputs are populated the moment
+  // the card opens.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?scope=exercise`);
-      const data: { session: { sets: Array<{ load: number; reps: number }> } | null } = await res.json();
+      const url = (q: string) => `/api/exercises/${activeExercise.id}/last-session?${q}`;
+      const useLane = resolvedUnitId != null && lane != null;
+      const res = await fetch(useLane ? url(`lane=${encodeURIComponent(lane)}`) : url("scope=exercise"));
+      const data: LastSessionResponse = await res.json();
       if (cancelled) return;
-      if (data.session && data.session.sets.length > 0) {
-        const reps = data.session.sets.map((s) => s.reps).join(", ");
-        const load = data.session.sets[0]?.load;
-        setLastText(load != null ? `${load} lb × ${reps}` : `× ${reps}`);
-      } else {
-        setLastText(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeExercise.id]);
 
-  // Recalibration note — lane-level: no history in THIS unit's lane, but the
-  // exercise has history on another. Detection unchanged from before; it now
-  // drives only its own dismissible chip (never the "last" line).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!lane) {
-        setRecalNote(null);
-        return;
+      let session = data.session;
+      let recal: string | null = null;
+      // A chosen unit with NO history of its own: BOTH fall back to exercise
+      // scope so they still agree, and the note explains why the numbers come
+      // from a different machine. Falling back only for the line (the old
+      // behaviour) is what let them disagree.
+      if (useLane && !session) {
+        const any = await fetch(url("scope=exercise"));
+        const anyData: LastSessionResponse = await any.json();
+        if (cancelled) return;
+        session = anyData.session;
+        recal = session?.firstWorkingSet
+          ? `Recalibrating for this unit — you were at ${session.firstWorkingSet.load} lb on another unit (effort + volume carry over)`
+          : null;
       }
-      const res = await fetch(`/api/exercises/${activeExercise.id}/last-session?lane=${encodeURIComponent(lane)}`);
-      const data: {
-        session: { sets: Array<{ load: number; reps: number }>; firstWorkingSet: { load: number; reps: number } | null } | null;
-      } = await res.json();
-      if (cancelled) return;
-      if (data.session) {
-        setRecalNote(null); // this unit has its own history — no recalibration
-        // §2 — start today where you started last time. The FIRST working set,
-        // deliberately: the last set is usually the most fatigued and the
-        // heaviest is a peak, neither of which is where you begin.
-        //
-        // NOT `sets[0]` — that array's order is unspecified and measured as
-        // load-descending, so it would have prefilled the heaviest set while
-        // looking correct. `firstWorkingSet` is ordered by set_index server-side.
-        //
-        // This is a UI DEFAULT, never a write, and it is not target-prefill: a
-        // target is a prescription and stays a reference line, while this is a
-        // fact about what happened on this machine.
-        const first = data.session.firstWorkingSet;
-        // Never overwrite a number the user is already working with.
-        if (first != null && !entryTouched.current && loggedCountRef.current === 0) {
-          // History stores the TOTAL. The box holds what you put ON the
-          // machine, so the built-in comes back off — prefilling 65 into a box
-          // whose label already adds a 20 lb bar would silently claim 85.
-          const enteredLb = Math.max(0, first.load - offsetRef.current);
-          // In the unit this lane DISPLAYS in, via the same resolver the rest
-          // of the card uses — a marked-kg machine must not prefill in lb.
-          setLoad(entryUnit === "kg" ? lbToKg(enteredLb) : enteredLb);
-          setReps(first.reps);
-        }
-        return;
+      setRecalNote(recal);
+
+      // §3 — `setsInOrder` is the session AS LOGGED (set_index, warm-ups
+      // excluded), so the load shown is the FIRST set's and the reps read in
+      // the order they happened. `sets[0]` gave the heaviest load and reps in
+      // load order: a session logged 164/175/180 rendered "180 lb × 5, 6, 9".
+      const inOrder = session?.setsInOrder ?? [];
+      setLastText(inOrder.length > 0 ? `${inOrder[0].load} lb × ${inOrder.map((s) => s.reps).join(", ")}` : null);
+
+      // Same set the line describes — start today where you started last time.
+      // The last set is usually the most fatigued and the heaviest is a peak;
+      // neither is where you begin.
+      const first = session?.firstWorkingSet;
+      // Never overwrite a number already in play: something typed, or a card
+      // that has already logged a set this session.
+      if (first != null && !entryTouched.current && loggedCountRef.current === 0) {
+        // History stores the TOTAL. The box holds what you put ON the machine,
+        // so the built-in comes back off — prefilling 65 into a box whose label
+        // already adds a 20 lb bar would silently claim 85.
+        const enteredLb = Math.max(0, first.load - offsetRef.current);
+        // In the unit this lane DISPLAYS in, via the same resolver the rest of
+        // the card uses — a marked-kg machine must not prefill in lb.
+        setLoad(entryUnit === "kg" ? lbToKg(enteredLb) : enteredLb);
+        setReps(first.reps);
       }
-      const any = await fetch(`/api/exercises/${activeExercise.id}/last-session`);
-      const anyData: { session: { sets: Array<{ load: number; reps: number }> } | null } = await any.json();
-      if (cancelled) return;
-      setRecalNote(
-        anyData.session
-          ? `Recalibrating for this unit — you were at ${anyData.session.sets[0]?.load ?? "?"} lb on another unit (effort + volume carry over)`
-          : null
-      );
     })();
     return () => {
       cancelled = true;
     };
-    // `entryUnit` is a dependency for the PREFILL, not the note: toggling units
-    // runs the clear-to-0 effect declared above this one, so without re-running
-    // here a prefilled 164 would silently become 0 on a unit toggle.
-  }, [activeExercise.id, lane, entryUnit]);
+    // `entryUnit` is a dependency for the PREFILL: toggling units runs the
+    // clear-to-0 effect declared above this one, so without re-running here a
+    // prefilled 164 would silently become 0 on a unit toggle.
+  }, [activeExercise.id, lane, resolvedUnitId, entryUnit]);
 
   const checkProgression = useCallback(async () => {
     setChecking(true);
@@ -846,8 +861,33 @@ export function StrengthCard({
   return (
     // Dim only while COLLAPSED — an expanded done card is the review state
     // and must be fully readable.
-    <Root className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
+    <li ref={sortRef} style={sortStyle} className={`${styles.card} ${completed && collapsed ? styles.cardDone : ""}`}>
       <div className={styles.headRow} role="button" tabIndex={0} onClick={toggleCollapsed} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleCollapsed(); }}>
+        {(
+          // Leftmost, matching the program editor. Inline in the existing
+          // header row — it adds no row and no height; the header is already
+          // a flex line and this is one more item in it. onClick stops the
+          // header's collapse toggle; dnd listens on pointerdown, so the two
+          // do not collide.
+          <button
+            type="button"
+            ref={gripRef}
+            {...gripProps}
+            className={styles.cardGrip}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Reorder ${activeExercise.name}`}
+            title="Drag to reorder"
+          >
+            <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
+              <circle cx="2.5" cy="3" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="3" r="1.3" fill="currentColor" />
+              <circle cx="2.5" cy="8" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="8" r="1.3" fill="currentColor" />
+              <circle cx="2.5" cy="13" r="1.3" fill="currentColor" />
+              <circle cx="7.5" cy="13" r="1.3" fill="currentColor" />
+            </svg>
+          </button>
+        )}
         <input
           type="checkbox"
           className={styles.doneBox}
@@ -1214,6 +1254,6 @@ export function StrengthCard({
           onClose={() => setSwapOpen(false)}
         />
       )}
-    </Root>
+    </li>
   );
 }

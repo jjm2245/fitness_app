@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { ExerciseSearchResult } from "@/components/ExerciseSearch";
 import { SessionBar } from "@/components/shell/SessionBar";
 import { StrengthCard } from "@/components/session/StrengthCard";
-import { SortableList, SortableRow } from "@/components/editors/SortableList";
+import { SortableList } from "@/components/editors/SortableList";
 import { CardioCard } from "@/components/session/CardioCard";
 import { FinishSheet } from "@/components/session/FinishSheet";
 import { SessionHeader } from "@/components/session/SessionHeader";
@@ -362,9 +362,8 @@ export default function LogSessionPage() {
             // THE router (Phase 2): the resolved CONFIG decides — reps →
             // StrengthCard + set_logs; else the metric card + cardio_logs.
             // conditioning_only only seeds the default field set now.
-            const card = !routesToStrength({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
+            const cardFor = () => !routesToStrength({ name: ex.exerciseName, canonicalName: ex.canonicalName, conditioningOnly: ex.conditioningOnly, logFields: ex.logFields }) ? (
               <CardioCard
-                asDiv
                 key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
@@ -377,7 +376,6 @@ export default function LogSessionPage() {
               />
             ) : (
               <StrengthCard
-                asDiv
                 key={ex.instanceId}
                 ex={ex}
                 sessionId={sessionId}
@@ -392,16 +390,10 @@ export default function LogSessionPage() {
             );
             // The grip is the ONLY drag activator (6px, PointerSensor) — the
             // rest of the card stays tappable, so logging is unaffected.
-            return (
-              <SortableRow key={ex.instanceId} id={ex.instanceId} as="li">
-                {(grip) => (
-                  <>
-                    <button type="button" ref={grip.ref} {...grip.props} aria-label={`Reorder ${ex.exerciseName}`}>⠿</button>
-                    {card}
-                  </>
-                )}
-              </SortableRow>
-            );
+            // The card IS the sortable <li> and renders its own grip inside
+            // its header, so there is no wrapper element and no nesting to get
+            // wrong.
+            return cardFor();
           })}
         </ol>
         </SortableList>

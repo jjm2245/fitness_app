@@ -1438,3 +1438,29 @@
 }
 .noteGlyph { flex-shrink: 0; opacity: 0.7; font-size: 0.7rem; }
 .noteLineText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Drag handle, INSIDE the header row and leftmost — matching the program
+   editor, and away from the ⋯ so a drag and a menu tap aren't neighbours.
+   Adds NO height: the shared 44px tap-target minimum applies here as it does
+   to the ⋯ button, which already set this row's 52px. Measured in the running
+   app rather than assumed — the icon is 18px wide, the target is the full 44. */
+.cardGrip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: grab;
+  /* The grip is the ONLY drag activator; the card is full of tappable inputs.
+     Suppressing touch scrolling here (and only here) is what lets a vertical
+     drag start on a touch device without the page scrolling instead. */
+  touch-action: none;
+}
+.cardGrip:active {
+  cursor: grabbing;
+  color: var(--text-2);
+}

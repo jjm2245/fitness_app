@@ -50,3 +50,43 @@
 .active {
   color: var(--accent);
 }
+
+/* Running rest, floating just above the nav on non-session screens. Fixed like
+   the bar itself so it never scrolls away — the whole point is that it stays
+   visible while you look something up mid-rest. */
+.restPill {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(80px + env(safe-area-inset-bottom) + 8px);
+  z-index: 51;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--text-1);
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+.restPill strong {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.restDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: restPulse 2s ease-in-out infinite;
+}
+@keyframes restPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .restDot { animation: none; }
+}
