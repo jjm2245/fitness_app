@@ -282,6 +282,7 @@ Neither is a to-do list.
 | Import / restore | The **export** is now restorable (sequences + procedure shipped in the file, 2026-07-29). Reading one back is a separate build nobody has needed yet. |
 | Per-exercise history + per-muscle volume | This is **Stats v1** — see §10 for the inventory of what already exists to build it on. |
 | Progress-photo blob storage | A decision **owed before `progress_photos` is first written**, not after: the export would otherwise carry rows referencing images it does not contain, and no later fix repairs files already downloaded. |
+| Nutrition's colour | A decision **owed before Nutrition is built**: `--hue-nutrition` is byte-identical to `--warning` (`#f59e0b`). They never share a surface today, so nothing looks wrong — Nutrition shipping is the event that puts amber on live content beside real warnings. See [`DESIGN.md`](DESIGN.md), "A decision owed BEFORE Nutrition is built". |
 
 **The one open `SPEC-DRIFT` entry is open on purpose.**
 `workout_logs.finished_at is named for a fact it stopped carrying` remains open

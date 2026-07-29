@@ -159,13 +159,35 @@ celebration in that hue would fight it — the eye would have to disambiguate
 app's "special" signal (primary buttons), so the PR chip extends it rather than
 introducing a fifth colour.
 
-> **⚠ Gap found while writing this.** `--hue-nutrition` is `#f59e0b` — **byte
-> identical to `--warning`**. Amber therefore carries two meanings in the token
-> set: the warning state, and the Nutrition domain hue (Home/Stats locked tiles,
-> and the `illness` timeline-note kind). They don't currently collide *visually*
-> because they never share a surface, but the claim "the meanings don't overlap"
-> is true of usage, not of the tokens. Worth resolving before Nutrition ships and
-> amber starts appearing on live content next to real warnings.
+### ⚠ A decision owed BEFORE Nutrition is built
+
+`--hue-nutrition` is `#f59e0b` — **byte-identical to `--warning`**. Amber
+therefore carries two meanings in the token set: the warning/required state, and
+the Nutrition domain hue (the Home and Stats `LockedTile`s, and the `illness`
+timeline-note kind).
+
+**There is no visual collision today, and that is exactly the trap.** The two
+never share a surface — warnings are inline on live content, the Nutrition hue
+appears only on a locked placeholder tile — so nothing looks wrong and nobody has
+had cause to notice. **Nutrition shipping is precisely the event that ends that**,
+putting amber on real, daily-entry content beside real warnings, on the same
+screens. At that point the user has to disambiguate "your nutrition section" from
+"something is wrong" by position alone.
+
+Like the `progress_photos` blob decision (`CURRENT_STATE.md` §9), **this is owed
+before the feature is built, not after** — once Nutrition surfaces exist, every
+screen built in the interim has to be revisited, and a colour change lands as a
+visible reskin rather than a choice.
+
+**The fix has two shapes; neither is picked here:**
+
+- **Move Nutrition off amber** — pick a hue that doesn't collide (the palette has
+  room; `--hue-body` pink and `--hue-recovery` teal are already distinct), or
+- **Move warnings off amber** — but that is the larger change, since amber-as-
+  warning is conventional and used in more places (stack ceilings, required
+  anchors, pending-sync dots, unit-slip advisories).
+
+The first is almost certainly cheaper. Recorded as available rather than decided.
 
 ## Affordance grammar
 
@@ -230,31 +252,61 @@ alone suffices.
 - **Tap-to-replace** — focusing selects the contents, so typing replaces a
   default rather than appending to it.
 
-> **⚠ Gap found while writing this.** The convention is often stated as *"mono
-> face so values read as data"*, and that is **not what shipped for entry
-> inputs**. `.cellInput` and `.fieldInput` use `font-variant-numeric:
-> tabular-nums` (which aligns digits) but the default UI face. Mono
-> (`--font-mono`) is reserved for **standalone numeric displays**: the rest timer
-> (`.timerDigits`, `.timerHeldDigits`), the `best` line (`.bestLoad`), stat
-> values (`.statValue`), the session-bar and rest-pill counters. Logged set rows
-> (`.setMain`) are also not mono. Either the rule is "mono for read-only numeric
-> displays, tabular-nums for entry" — which is defensible and is what exists — or
-> the inputs are inconsistent. **Decide before the next UI round;** don't assume
-> the mock's mono inputs are what's built.
+**Typeface for numbers — the rule that actually fits the app:**
 
-## Absence is stated, never a placeholder zero
+| Case | Face | Examples |
+|---|---|---|
+| **Isolated numeric value** — a number that stands alone as data | `--font-mono` + `tabular-nums` | rest timer (`.timerDigits`, `.timerHeldDigits`), the `best` line (`.bestLoad`), stat values (`.statValue`), the session-bar counter, the rest pill |
+| **Number embedded in prose or in a form** | UI face + `tabular-nums` | logged set rows (`✓ 180 lb × 8 · to failure`), every entry field (`.cellInput`, `.fieldInput`) |
 
-A missing value renders as words, never as `0` — a zero claims a measurement that
-was never taken, which is the same NULL-is-not-a-default rule the data model
-follows.
+**Mono inside a sentence reads as a ransom note.** A set row *is* a sentence with
+numbers in it — tick, load, unit, ×, reps, effort — and setting the numerals in a
+different face breaks it into fragments. A timer is not a sentence; it is a
+number, and mono makes it hold still while it counts. That is the whole rule, and
+it is why read-only-vs-editable is the wrong axis: `.setMain` is read-only and
+correctly **not** mono.
 
-> **⚠ Consistency gap.** The *principle* holds everywhere, but the *rendering*
-> is not unified. Settings → About you uses `not set` in muted italic
-> (`.aboutUnset`). The session card uses `— no prior data`; rest edges use
-> `rest —`; equipment fields use `unknown` as placeholder text. All are honest,
-> none is a fake zero, but a fresh reader should not expect one canonical
-> treatment. Unifying is a real (small) improvement available whenever the next
-> UI round touches these.
+> **⚠ Do not take the mocks as the spec here.** The HTML mocks set logged set
+> rows and entry fields in mono; the shipped app does not, deliberately, for the
+> reason above. `.cellInput` and `.fieldInput` carry `font-variant-numeric:
+> tabular-nums` with the default UI face. A fresh advisor working from mocks with
+> no screenshots will specify mono inputs and be describing something that was
+> tried and is not what's built.
+
+## Absence is a vocabulary, not one string
+
+**The governing rule: absence is stated in words, never as `0`.** A zero claims a
+measurement that was never taken — the same NULL-is-not-a-default rule the data
+model follows, made visible. Absence must never read as a value.
+
+Above that rule sit **five distinct terms**, and they are a deliberate vocabulary
+rather than an inconsistency to standardise away. Each says something the others
+don't; collapsing them into one string would lose information the user needs:
+
+| Term | Means | Where |
+|---|---|---|
+| `not set` | **You haven't told us.** An unfilled profile field or spec. | Settings → About you (`.aboutUnset`, muted italic) |
+| `— no prior data` | **There's nothing yet.** No history exists to show. | Session card's `last` line, first session on a lane |
+| `rest —` | **This particular one wasn't recorded.** Other rests were. | Rest edge between set rows |
+| `no rest` | **A recorded, deliberate zero** — e.g. a unilateral L→R turnaround. | Rest edge, when `restSeconds === 0` |
+| `unknown` | **The value exists in the world but was never measured.** | Built-in weight placeholder; `pulley_ratio_kind` |
+
+**`rest —` versus `no rest` is the pair worth understanding**, because it is the
+whole principle in two adjacent strings. `null` renders `rest —` ("not
+recorded"); a stored `0` renders `no rest` ("there genuinely wasn't any"). They
+sit in the same slot, look different, and mean different things — which is
+precisely why a fake zero would be a lie rather than a shortcut.
+
+**Inspected against usage while writing this; all five match their gloss.** One
+note for a fresh reader: `unknown` does double duty. It is both a display
+placeholder (the built-in weight field) and a **stored enum member**
+(`pulley_ratio_kind` = `"unknown" | "1:1" | "2:1" | "other"`, where the equipment
+list simply hides the badge when it is unknown). The meaning is the same in both
+— *not determined* — but one is text on screen and the other is a value in the
+database. Not drift; worth knowing before treating every `unknown` as a string.
+
+**Pick from this list rather than inventing a sixth.** If a new surface needs an
+absence state, one of these five almost certainly already carries the meaning.
 
 ## Advisories never block
 
@@ -290,7 +342,10 @@ deliberately; spending a quarter of the primary navigation on it would price a
 constant cost against an occasional need.
 
 - **The freed fourth slot is reserved for Nutrition** if it ships — a domain with
-  daily entry earns a slot in a way Settings doesn't.
+  daily entry earns a slot in a way Settings doesn't. **Before building it, settle
+  the amber collision** (see "A decision owed BEFORE Nutrition is built" above):
+  `--hue-nutrition` and `--warning` are the same hex, and Nutrition is the feature
+  that first puts them on one screen.
 - **Recovery belongs as a Home card, not a tab.** It is *glanceable* rather than
   *navigable*: the useful interaction is reading one number, not entering a
   section and moving around inside it.
