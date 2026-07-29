@@ -1,8 +1,8 @@
 {
   "migrations": {
-    "count": 35,
-    "latest": "0034_timeline_notes",
-    "expected": 35
+    "count": 36,
+    "latest": "0035_timestamptz",
+    "expected": 36
   },
   "tests": {
     "files": 27,

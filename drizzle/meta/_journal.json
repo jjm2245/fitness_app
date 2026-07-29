@@ -246,6 +246,13 @@
       "when": 1785206368718,
       "tag": "0034_timeline_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785292768718,
+      "tag": "0035_timestamptz",
+      "breakpoints": true
     }
   ]
 }

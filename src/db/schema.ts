@@ -103,8 +103,8 @@ export const profile = pgTable("profile", {
   activitySeed: text("activity_seed").notNull().default("sedentary"),
   proteinTargetG: numeric("protein_target_g"),
   preferences: jsonb("preferences").notNull().default({}),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ---------------------------------------------------------------------------
@@ -171,8 +171,8 @@ export const exercises = pgTable("exercises", {
   // improvements keep flowing through untouched rows. Resolved ONLY via
   // lib/logFields.ts; core never reads this (set_logs-only invariant).
   logFields: jsonb("log_fields"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Join table carrying the fractional emphasis used for set-counting (§7).
@@ -250,7 +250,7 @@ export const equipment = pgTable("equipment", {
   // Meaningful on CABLE units; the form hides it elsewhere.
   pulleyRatioKind: text("pulley_ratio_kind").default("unknown"), // 1:1 | 2:1 | other | unknown
   notes: text("notes"), // free-text description: serials, links, quirks
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Which machines apply to which exercise (Part 3c). A machine label is
@@ -285,8 +285,8 @@ export const programs = pgTable("programs", {
   // one such row exists; listPrograms() excludes it so it never shows in the
   // program switcher. See DECISIONS.md.
   isBlockLibrary: boolean("is_block_library").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // A day is real, ordered, renameable data — not a hardcoded tag. order_index
@@ -356,7 +356,7 @@ export const workoutLogs = pgTable("workout_logs", {
   // pattern as rest_source='user'. Null = system-stamped. A user-set value is
   // never overwritten by finish stamping.
   firstFinishedSource: text("first_finished_source"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // The ordered list of exercises actually performed in a session (spec §7a,
@@ -394,7 +394,7 @@ export const sessionExercises = pgTable("session_exercises", {
   // (not just the local `completed` store) so a finished session's checked state
   // survives a PWA reinstall / IndexedDB wipe — it re-hydrates from the server.
   completed: boolean("completed").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const setLogs = pgTable("set_logs", {
@@ -445,7 +445,7 @@ export const setLogs = pgTable("set_logs", {
   // Additive numerical weight only — pulley ratios etc. stay descriptive.
   loadEntered: numeric("load_entered"),
   builtinOffset: numeric("builtin_offset"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Cardio / conditioning gets its own shape (duration/incline/speed/… — never
@@ -486,7 +486,7 @@ export const cardioLogs = pgTable("cardio_logs", {
   // 'working' via the column default.
   setType: setTypeEnum("set_type").notNull().default("working"),
   notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const injuryFlags = pgTable("injury_flags", {
@@ -495,8 +495,8 @@ export const injuryFlags = pgTable("injury_flags", {
   severity: text("severity"),
   notes: text("notes"),
   active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ---------------------------------------------------------------------------

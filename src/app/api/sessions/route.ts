@@ -33,28 +33,19 @@ const HUSK_AGE_MS = 5 * 60_000;
 // description (program day name — or "Ad-hoc" — plus a distinct exercise count)
 // so the client doesn't have to re-fetch every set to label a session.
 export async function GET() {
-  // (b) Husk sweep, best-effort and non-fatal: drop UNFINISHED sessions with no
-  // sets and no cardio, older than the age guard. Same predicate and same
-  // 5-minute threshold as the local sweep (`discardSessionIfEmpty`), so the two
-  // cannot drift. Recoverable by construction — a device that still holds such
-  // a session locally re-creates the row on its next sync.
+  // Housekeeping: drop sessions that were started and abandoned with nothing
+  // logged. Since migration 0035 `created_at` is `timestamptz`, so this
+  // comparison needs no shim and never did need a change — but the reason has
+  // changed, and that is the point of the migration.
   //
-  // The occurrence cascade is what makes this safe to widen: deleting the log
-  // takes its `session_exercises` with it (ON DELETE CASCADE), and there are no
-  // sets to orphan, because "no sets" is the precondition.
+  // BEFORE 0035 this was correct only by coincidence: the column was tz-less,
+  // and the bound below is a JS Date the driver sends with an offset, which
+  // Postgres resolved against the SESSION zone before dropping the offset. That
+  // happened to be the same zone `defaultNow()` wrote in, so the two agreed —
+  // on prod because both are UTC, on the dev box because both are Eastern. A
+  // host in a third zone would have made this guard hours loose, silently.
   //
-  // THE AGE COMPARISON BELOW IS CORRECT AS WRITTEN — do not "fix" it.
-  // `created_at` is `timestamp WITHOUT time zone` and it is compared against a
-  // bound JS Date, which looks like the login_attempts bug and is not. When
-  // Postgres compares a timestamp to a timestamptz it casts the timestamp using
-  // the session `TimeZone`, which is exactly the zone `defaultNow()` wrote it
-  // in — nothing else ever writes this column. Verified empirically on the
-  // local America/New_York database: the bare comparison and an explicit
-  // `at time zone current_setting('TimeZone')` agree on every row.
-  //
-  // What DID break login_attempts was the write side: values arriving from the
-  // app in the PROCESS's zone mixed with `now()` values in the DB's zone. That
-  // hazard is real and is recorded in SPEC-DRIFT; it does not apply here.
+  // Now both sides are true instants and the comparison means what it says.
   try {
     await db.execute(sql`
       delete from ${workoutLogs}

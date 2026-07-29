@@ -5685,3 +5685,64 @@ them disagree in the first place.
 `entryTouched` still wins over everything — verified by typing 77, switching
 units, and watching the line narrow to `100 lb × 12, 10, 8` while the input
 stayed 77.
+
+---
+
+## 2026-07-29 (0035 timestamptz) — LOCAL APPLIED, PROD HELD
+
+13 `timestamp WITHOUT time zone` columns across 9 tables become `timestamptz`.
+The nine `date` columns are untouched and are not in the migration: a weigh-in
+on Jul 27 is Jul 27 in every zone, and converting one would introduce the exact
+bug this removes.
+
+### The USING clause is `current_setting('TimeZone')`, not `'UTC'`
+
+The owner's brief specified `AT TIME ZONE 'UTC'`, which is correct on prod
+(Neon TimeZone = GMT) and **wrong locally** — the dev box runs
+America/New_York for both node and Postgres, so local rows hold Eastern
+wall-clocks. Since migrations run local-first, a hardcoded 'UTC' would have
+corrupted the rehearsal meant to validate them.
+
+Demonstrated on the local run rather than argued: `set_logs` id 29 was
+`2026-07-12 01:42:19.825773` and is now `2026-07-12 01:42:19.825773-04` — the
+wall-clock digits byte-identical, the correct Eastern offset added. A hardcoded
+'UTC' would have rendered it `2026-07-11 21:42:19-04`, four hours off.
+
+### Pre-flight (read-only, prod)
+
+* **0 indexes** touch any of the 13 columns; every index on those tables is on
+  `id` or a client id. **0 views**, **0 generated columns**, every default is
+  exactly `now()`. The 13 constraints on them are all NOT NULL (`contype='n'`),
+  which `ALTER COLUMN ... TYPE` preserves. Nothing to drop or rebuild.
+* `timeline_notes_start_idx` is on `start_date`, type `date` — not converting.
+* Values are UTC on prod: `set_logs.created_at` vs `logged_at` agree 222/222.
+* Both writers agree: `now()` and app `new Date()` landed 95 ms apart.
+
+### Shims removed in the same round (the owner's amendment, and he was right)
+
+`utcSafeShape()` and `createdAtInstant`'s double conversion in the export, and
+the `at time zone` round-trip in `sessions/[id]`. All three were identity
+round-trips only while the session zone is GMT. The export now uses a plain
+`select()` and returns the same ISO-8601 Z strings — verified live: `set_logs`
+id 31, raw `2026-07-12 22:23:13.511111-04`, exports as
+`2026-07-13T02:23:13.511Z`, byte-identical to what the old shim computed.
+
+`api/sessions/route.ts`'s husk predicate needs **no change** and never did — but
+its comment did, because it explained the old hazard as though it were current.
+Before 0035 it was correct only by coincidence: a JS Date bound compared against
+a tz-less column resolved through the session zone, which happened to match the
+zone `defaultNow()` wrote in — on prod because both are UTC, on the dev box
+because both are Eastern. A host in a third zone would have made it hours loose,
+silently. Both sides are now instants.
+
+### Two corrections to the verification list
+
+* **The volume checksum is 259046, not 236416.** 236416 was taken at 215 sets;
+  prod now holds 245 after the Jul 28 session. The gate is "unchanged ACROSS the
+  migration" (259046 → 259046), not equality with the older figure — asserting
+  236416 would fail for a reason that has nothing to do with this change.
+* **The 19:58 anchor lives on `first_finished_at`, not `finished_at`.** Log 3's
+  `first_finished_at` is `2026-07-14 23:58:41+00` = 19:58 ET as expected;
+  `finished_at` reads 00:53 ET because it is a last-modified stamp and was
+  rewritten on Jul 28. Both columns are already `timestamptz` and neither is in
+  this migration, so this is about which one to READ when checking the anchor.

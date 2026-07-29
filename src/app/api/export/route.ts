@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq, getTableColumns, sql } from "drizzle-orm";
-import type { PgTable } from "drizzle-orm/pg-core";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   profile,
@@ -115,38 +114,6 @@ const EXCLUDED = [
   },
 ] as const;
 
-/**
- * A select shape in which every `timestamp WITHOUT time zone` column is
- * rendered by POSTGRES as a strict ISO-8601 Z string, and every other column is
- * passed through untouched.
- *
- * The bug this closes: node-postgres parses a tz-less timestamp in the RUNNING
- * PROCESS's timezone. `created_at = '2026-07-14 23:01:31'` came back as
- * `2026-07-15T03:01:31Z` when the export ran on a machine in America/New_York —
- * correct on Vercel (UTC) and four hours wrong anywhere else. A file whose
- * timestamps depend on where it was generated is not a backup.
- *
- * The value was WRITTEN by `now()` under the database's `TimeZone`, so it is
- * re-interpreted under that same setting rather than a hardcoded 'UTC' — prod
- * is GMT, the local dev database is America/New_York, and this is right for
- * both.
- *
- * Deliberately scoped to this route. The global fix is a `setTypeParser(1114, …)`
- * in `db/client.ts`, which changes the return type of every query in the app and
- * needs its own round with real verification — not a rider on an export change.
- */
-function utcSafeShape(table: PgTable) {
-  const cols = getTableColumns(table);
-  const shape: Record<string, unknown> = {};
-  for (const [key, col] of Object.entries(cols)) {
-    const c = col as unknown as { columnType: string; withTimezone?: boolean };
-    shape[key] =
-      c.columnType === "PgTimestamp" && c.withTimezone === false
-        ? sql`to_char((${col} at time zone current_setting('TimeZone')) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
-        : col;
-  }
-  return shape as Record<string, never>;
-}
 
 /**
  * Human-readable aliases ADDED BESIDE the raw columns — never replacing them.
@@ -197,9 +164,12 @@ async function jsonResponse() {
   // db/client.ts) and an export is a background chore, not a hot path. Doing
   // this in parallel would starve whatever else the owner is doing.
   for (const { name, table } of TABLES) {
-    // utcSafeShape, not a bare select(): tz-less timestamps must be rendered by
+    // A plain select(): since migration 0035 every timestamp column is
+    // `timestamptz`, so the driver returns a real instant and JSON.stringify
+    // emits the same ISO-8601 Z string the old shim built by hand. Nothing to
+    // re-interpret, because nothing is ambiguous any more.
     // Postgres, or the file's contents depend on where it was generated.
-    const rows = await db.select(utcSafeShape(table)).from(table);
+    const rows = await db.select().from(table);
     tables[name] = withDisplayAliases(name, rows);
     counts[name] = rows.length;
   }
@@ -273,21 +243,17 @@ function endedAt(r: { firstFinishedAt: Date | null; finishedAt: Date | null }): 
 }
 
 /**
- * `created_at` is `timestamp WITHOUT time zone`, so it carries a wall clock with
- * no offset. It was WRITTEN by `now()` under the database's `TimeZone` setting,
- * so re-interpreting it under that same setting recovers the true instant —
- * which is right for prod (GMT) and for the local dev database (America/
- * New_York) without hardcoding either.
+ * The session start as an ISO-8601 Z string for the CSV.
  *
- * Hardcoding 'UTC' here was wrong by four hours locally; this is the version
- * that doesn't depend on where it runs.
- *
- * Formatted to a strict ISO-8601 Z string in SQL rather than handed back as a
- * value: a raw `sql` expression carries no column decoder, so drizzle would
- * return a Postgres literal that `new Date()` parses only by luck.
+ * Since 0035 `created_at` is `timestamptz`, so this is a single RENDER in UTC —
+ * not the old `at time zone current_setting('TimeZone') at time zone 'UTC'`
+ * round-trip, which existed only to supply the zone a tz-less column withheld.
+ * Still formatted in SQL rather than returned raw: a bare `sql` expression
+ * carries no column decoder, so drizzle would hand back a Postgres literal that
+ * `new Date()` parses only by luck.
  */
 const createdAtInstant = sql<string>`to_char(
-  (${workoutLogs.createdAt} at time zone current_setting('TimeZone')) at time zone 'UTC',
+  ${workoutLogs.createdAt} at time zone 'UTC',
   'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
 )`;
 
