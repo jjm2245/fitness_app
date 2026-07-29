@@ -114,6 +114,24 @@ const EXCLUDED = [
   },
 ] as const;
 
+/**
+ * How to put this file back. Shipped INSIDE the export for the same reason the
+ * exclusions are: the person restoring is least likely to have this repo open,
+ * and the audit's conclusion was that the file was complete while the
+ * PROCEDURE was the trap.
+ */
+const RESTORE = {
+  procedure: [
+    "1. Create an empty database and apply the migrations FROM THE REPO (npm run db:migrate). Schema does not come from this file — drizzle.__drizzle_migrations is excluded on purpose, and app.migrationsApplied here tells you which revision this snapshot was taken at.",
+    "2. Insert every table's rows WITH THEIR EXPLICIT `id` VALUES. Do not let the database assign new ones. Ids are emitted verbatim precisely so foreign keys resolve: set_logs.workout_log_id, session_exercises.workout_log_id, program_exercises.day_id and the rest all point at these numbers, and renumbering would silently re-parent logged history.",
+    "3. THEN fix the sequences, or the first row you write afterwards collides on the primary key: SELECT setval(pg_get_serial_sequence(t, 'id'), (SELECT max(id) FROM t)) for every table with a serial id. The `sequences` block records what each sequence held when this file was made, so you can check your work — but deriving from max(id) is the safer instruction, since it is self-correcting.",
+  ],
+  text_primary_keys:
+    "exercises, equipment and muscles use STABLE TEXT ids, not sequences. They need no setval and cannot be renumbered — which is the point: set_logs.exercise_id and set_logs.equipment_id reference them by name.",
+  why_the_full_library_ships:
+    "All 878 exercises are exported, not just the handful the owner customised, because set_logs.exercise_id and program_exercises.exercise_id are foreign keys into that table. Trimming it to 'the ones in use' would leave logged history pointing at rows that only a correctly-versioned re-seed could recreate — and any drift there orphans sets. It is not bloat; it is what makes the history resolvable.",
+} as const;
+
 
 /**
  * Human-readable aliases ADDED BESIDE the raw columns — never replacing them.
@@ -142,6 +160,16 @@ function withDisplayAliases(name: string, rows: unknown[]): unknown[] {
 }
 
 export async function GET(request: NextRequest) {
+  // What the DEVICE reported it had waiting when it asked for this file. The
+  // server cannot see IndexedDB, so this is REPORTED rather than measured —
+  // null means nobody reported (the endpoint was fetched directly), which is
+  // not the same as zero.
+  const pendingAtExport = (() => {
+    const raw = request.nextUrl.searchParams.get("pendingAtExport");
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+  })();
   const params = request.nextUrl.searchParams;
   const format = params.get("format");
   if (format === "csv") {
@@ -153,10 +181,10 @@ export async function GET(request: NextRequest) {
   if (format != null && format !== "json") {
     return NextResponse.json({ error: "unsupported format", supported: ["json", "csv"] }, { status: 400 });
   }
-  return jsonResponse();
+  return jsonResponse(pendingAtExport);
 }
 
-async function jsonResponse() {
+async function jsonResponse(pendingAtExport: number | null) {
   const tables: Record<string, unknown[]> = {};
   const counts: Record<string, number> = {};
 
@@ -174,10 +202,26 @@ async function jsonResponse() {
     counts[name] = rows.length;
   }
 
+  // Sequence state. WITHOUT THIS a restore that inserts explicit ids leaves
+  // every sequence at 1, so the first newly logged set asks for id = 1 and
+  // collides — a restore that looks perfect and fails on write #1. Read-only:
+  // this reads pg_sequences, it does not touch them.
+  const seqRows = await db.execute<{ sequencename: string; last_value: string | null }>(
+    sql`select sequencename, last_value from pg_sequences where schemaname = 'public' order by sequencename`
+  );
+  const sequences: Record<string, number | null> = {};
+  for (const r of (seqRows as unknown as { rows?: Array<{ sequencename: string; last_value: string | null }> }).rows ??
+    (seqRows as unknown as Array<{ sequencename: string; last_value: string | null }>)) {
+    sequences[r.sequencename] = r.last_value == null ? null : Number(r.last_value);
+  }
+
   const payload = {
     format: "fitness-agent-export",
     formatVersion: FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
+    // Non-zero means this snapshot may be SHORT: the device still held writes
+    // that had not reached the database when the file was built.
+    pendingAtExport,
     app: {
       version: pkg.version,
       migrationsApplied: await appliedMigrationCount(),
@@ -187,6 +231,8 @@ async function jsonResponse() {
     // whether it's complete, without trusting that the download finished.
     counts,
     excluded: EXCLUDED,
+    sequences,
+    restore: RESTORE,
     // Canonical units, stated in the file. A number in here is meaningless
     // without them, and the display preference is a per-device reading choice
     // that never touched storage.
@@ -210,6 +256,10 @@ async function jsonResponse() {
         "SIX columns on `profile` hold SCHEMA DEFAULTS, not values the owner entered, and no screen shows or edits them: goal_mode ('recomp'), training_age ('novice'), available_days (6), activity_seed ('sedentary'), equipment_profile ({}) and preferences ({}). They were populated by the column defaults the moment the row was created. Do NOT read them as facts about the owner — 'available_days: 6' in particular reads like a training schedule and is not one. Only dob, sex, height_in and training_years are owner-entered, and any of those may be NULL.",
       timeline_notes:
         "Dated free-text annotations explaining what happened BETWEEN sessions: illness, injury, travel, a deliberate deload. They exist because a gap in workout_logs is otherwise uninterpretable — two weeks of silence looks identical whether the owner was sick, deloading, travelling, or had stopped. end_date NULL means the period is STILL ONGOING as of `exportedAt`, not that it is unknown or unbounded; compare against exportedAt to bound it. A single-day note has start_date equal to end_date. `kind` is a loose label, not a controlled vocabulary — treat unfamiliar values as valid. ABSENCE OF A NOTE OVER A GAP MEANS NOTHING WAS RECORDED, NOT THAT NOTHING HAPPENED: these are opt-in, so silence is never evidence. Unlike injury_flags, this table is inert — nothing in the training engine reads it.",
+      sequences_and_restore:
+        "`sequences` holds each Postgres sequence's value at export time, and `restore` states the procedure. They exist because a restore that inserts explicit ids — which it must, or foreign keys re-parent — leaves every sequence at 1, so the first newly written row collides on the primary key. The file looks perfectly restored right up until the next set is logged.",
+      pendingAtExport:
+        "How many un-synced writes the DEVICE reported holding when it requested this file. NON-ZERO MEANS THIS SNAPSHOT MAY BE SHORT: those sets existed on the phone but had not reached the database, and an export reads the database. NULL means no device reported (the endpoint was fetched directly) and is NOT the same as zero.",
       bodyweight_is_not_load:
         "Bodyweight is a body-composition metric and is NEVER added to set_logs.load. Bodyweight exercises (pullups, dips, captain's chair) correctly record load 0 when nothing was added — the load column measures what was ADDED to the body, not what was moved.",
     },

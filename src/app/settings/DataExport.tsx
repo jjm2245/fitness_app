@@ -4,6 +4,7 @@ import { useState } from "react";
 import styles from "./settings.module.css";
 import editors from "@/components/editors/editors.module.css";
 import { exportFilename } from "@/lib/exportCsv";
+import { pendingCount, sync } from "@/lib/sessionStore";
 
 // "Your data" — the way out.
 //
@@ -58,10 +59,45 @@ export function DataExport() {
     return `Export failed (${res.status}).`;
   }
 
+  /**
+   * An export reads the DATABASE. Anything this device has logged but not yet
+   * pushed is therefore absent from the file — silently, since the server has
+   * no way to know it existed. So the device, which does know, says so before
+   * building it. Same principle as the delete-queue banner: a failure that
+   * can't be seen is worse than one that interrupts.
+   *
+   * Never a hard block. Exporting a short file on purpose is a legitimate
+   * choice; exporting one by accident is not.
+   */
+  async function guardPending(): Promise<number | null> {
+    let n = 0;
+    try {
+      n = await pendingCount();
+    } catch {
+      return 0; // no local store (fresh browser) — nothing can be pending
+    }
+    if (n === 0) return 0;
+    setStatus({ kind: "working", what: `Syncing ${n} pending ${n === 1 ? "change" : "changes"} first…` });
+    try {
+      await sync();
+      n = await pendingCount();
+    } catch {
+      /* offline or the server refused — fall through to the confirm */
+    }
+    if (n === 0) return 0;
+    const ok = window.confirm(
+      `${n} ${n === 1 ? "change is" : "changes are"} still waiting to sync, so they are NOT in the database yet and will be missing from this export.\n\n` +
+        `Export anyway? The file will record that ${n} ${n === 1 ? "was" : "were"} outstanding.`
+    );
+    return ok ? n : null;
+  }
+
   async function exportJson() {
+    const pending = await guardPending();
+    if (pending == null) return setStatus({ kind: "idle" });
     setStatus({ kind: "working", what: "Building snapshot…" });
     try {
-      const res = await fetch("/api/export", { cache: "no-store" });
+      const res = await fetch(`/api/export?pendingAtExport=${pending}`, { cache: "no-store" });
       if (!res.ok) return setStatus({ kind: "error", text: await fail(res) });
       const payload = await res.json();
       // The one thing the server can't see. Labelled, not blended in, so a
@@ -73,7 +109,9 @@ export function DataExport() {
       setStatus({
         kind: "done",
         // Echo the numbers back so the file can be checked without opening it.
-        text: `${name} — ${c.set_logs ?? 0} sets · ${c.workout_logs ?? 0} sessions · ${c.equipment ?? 0} machines · ${c.exercises ?? 0} exercises`,
+        text:
+          `${name} — ${c.set_logs ?? 0} sets · ${c.workout_logs ?? 0} sessions · ${c.equipment ?? 0} machines · ${c.exercises ?? 0} exercises` +
+          (pending > 0 ? ` · ⚠ ${pending} unsynced not included` : ""),
       });
     } catch {
       setStatus({ kind: "error", text: "Couldn't reach the server. An export needs a connection — it reads the database, not this device." });

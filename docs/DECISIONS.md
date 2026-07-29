@@ -5850,3 +5850,65 @@ including History". It doesn't: `SetRow` has exactly one consumer
 (`StrengthCard`), and History renders session-level rows and drills into
 `/log/[id]` for sets. Nothing about how History composes rows had to change.
 The mock's per-exercise PR arc belongs with Stats, as it says.
+
+---
+
+## 2026-07-29 (export: restorable, not just complete)
+
+The audit's finding was that the file is complete and the PROCEDURE is the trap.
+Three gaps closed, one decision recorded.
+
+### 1 · `sequences` in the envelope
+
+All 17 serial primary keys are emitted as literal ids so foreign keys resolve —
+`set_logs.workout_log_id`, `session_exercises.workout_log_id`,
+`program_exercises.day_id` and the rest point at those numbers, and letting the
+database reassign them would silently re-parent logged history. But a restore
+that inserts explicit ids leaves every sequence at 1, so the first newly logged
+set asks for `id = 1` and collides. **A restore that looks perfect and fails on
+write #1.** The envelope now carries each sequence's value, read from
+`pg_sequences`. Read-only: it reads the catalogue, it does not touch a sequence.
+
+### 2 · `restore` in the envelope
+
+Three steps, shipped inside the file for the same reason `excluded` is: whoever
+restores is least likely to have this repo open. Migrations come from the repo
+(`__drizzle_migrations` is excluded deliberately, and `app.migrationsApplied`
+names the revision the snapshot was taken at); insert with explicit ids; then
+`setval` — derived from `max(id)` rather than from the recorded value, because
+that instruction is self-correcting and the block is then a check on the work.
+
+It also states that `exercises`, `equipment` and `muscles` use stable TEXT ids
+needing no setval, and **why the full 878-exercise library ships** — so a later
+reader doesn't mistake it for bloat and trim it. Trimming to "the ones in use"
+would leave `set_logs.exercise_id` pointing at rows only a correctly-versioned
+re-seed could recreate, and any drift there orphans sets.
+
+### 3 · `pendingAtExport` — the gap the audit found and stopped short of
+
+The audit noted an export taken with undrained writes is silently short and
+concluded "the file gives no hint." That was the wrong place to stop: the export
+is triggered from the device, which knows its own pending count.
+
+Now it tries to **sync first**, and only if writes remain does it name the
+number and ask. Never a hard block — exporting a short file deliberately is
+legitimate; doing it by accident is not. Same principle as the delete-queue
+banner: an invisible failure is worse than an interrupting one.
+
+The count is REPORTED, not measured: the server cannot see IndexedDB, so it
+arrives as a query parameter. `null` therefore means nobody reported (the
+endpoint was fetched directly) and is deliberately **not** the same as `0` —
+otherwise a raw `curl` would produce a file claiming nothing was outstanding.
+
+### 4 · `progress_photos` — recorded, not built
+
+The table is empty and exports as rows only. **If it ever fills, the export will
+carry rows referencing images the file does not contain** — a snapshot that
+looks complete and restores to broken references. Blobs are a different problem
+from rows: base64 in the JSON would bloat a file the owner is meant to be able
+to open, and a side-car archive changes the export from one file to a bundle.
+
+**This is a decision owed BEFORE the table is first written, not after.** Once
+photos exist, every export taken in the interim is silently incomplete, and no
+later fix repairs files already downloaded. Whoever wires the first
+progress-photo write should resolve the export story in the same round.
