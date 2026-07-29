@@ -5635,9 +5635,32 @@ elapsed). A backgrounded tab is a strictly weaker disruption than that reload.
 The last place the missing `ORDER BY` survived. The line read `sets[0]`, so it
 showed the heaviest load with reps in load order: a session logged 164 → 175 →
 180 rendered `last 180 lb × 5, 6, 9`. It now reads `setsInOrder`, ordered by
-`set_index` then `id` server-side (**set_index**, not `logged_at` — `logged_at`
-is NULL on 23 backfilled rows and would sort them arbitrarily, while set_index is
-present on every row). Warm-ups excluded, same as prefill.
+`set_index` then `id` server-side. Warm-ups excluded, same as prefill.
+
+**Correction (same day):** the first version of this note justified `set_index`
+over `logged_at` by claiming `logged_at` is NULL on 23 backfilled rows. That is
+backwards — prompt 49 backfilled ids 7–29 FROM `created_at` precisely so they
+would have one, and the check afterwards returned `missing_logged_at 0`. Re-read
+against prod: 245 rows, **0 missing `logged_at`**, all 23 of ids 7–29 populated.
+The choice is still right, for the real reason: `set_index` is the explicitly
+recorded logged order, whereas `logged_at` is a derived stamp on those 23 rows
+and would order them by when the backfill computed them.
+
+**Drop segments, checked while correcting this.** A drop SHARES its parent's
+`set_index` — three pairs in prod (55/56, 60/61, 109/110), all `working` rows —
+so `id` is not a formality in that ORDER BY, it is the only thing separating a
+parent from its drop. In all three the parent holds the lower id and the heavier
+load, so `set_index, id` yields parent-then-drop, which is the order they
+happened. Locked with a test so a future "tidy" of the ordering can't silently
+reverse a drop pair.
+
+What the line does with them is **unchanged and imperfect**: drops are `working`
+rows, so they were already inside the old `sets` array and are already counted in
+the rep list. The line flattens them, so Machine Shoulder Press on 2026-07-16
+reads `… 7, 3` where the `3` is a drop segment, not a third working set. The set
+ROWS distinguish drops with `↳ drop`; a one-line summary cannot. Left alone
+deliberately — changing what the line COUNTS is a behaviour change, and this
+round was an ordering fix. Worth a decision of its own if the `3` ever misleads.
 
 The shared adapter is still NOT sorted, for the reason established last round:
 core's `topSet` breaks ties by input order. `session.sets` is returned unchanged

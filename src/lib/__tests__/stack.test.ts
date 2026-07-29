@@ -204,3 +204,33 @@ describe("dual weight display — only on a real mismatch", () => {
     }
   });
 });
+
+describe("logged-order ordering rule (last-session route)", () => {
+  // Mirrors `ORDER BY set_index ASC, id ASC`. The rule lives in SQL; this
+  // pins the PROPERTY it exists for, using the real prod drop pairs.
+  const bySetIndexThenId = <T extends { setIndex: number; id: number }>(rows: T[]) =>
+    [...rows].sort((a, b) => a.setIndex - b.setIndex || a.id - b.id);
+
+  it("keeps a drop segment immediately AFTER its parent — they share a set_index", () => {
+    // Real rows: Machine Shoulder Press 2026-07-16, parent 130x7 then drop 100x3.
+    const rows = [
+      { id: 56, setIndex: 3, load: 100, reps: 3 }, // drop, deliberately first
+      { id: 55, setIndex: 3, load: 130, reps: 7 }, // parent
+      { id: 54, setIndex: 2, load: 130, reps: 8 },
+    ];
+    expect(bySetIndexThenId(rows).map((r) => r.id)).toEqual([54, 55, 56]);
+    // Parent's heavier load leads; the reduced-load segment follows.
+    expect(bySetIndexThenId(rows).map((r) => r.load)).toEqual([130, 130, 100]);
+  });
+
+  it("orders plain sets by set_index regardless of the order rows arrive in", () => {
+    const rows = [
+      { id: 3, setIndex: 4, load: 180, reps: 5 },
+      { id: 1, setIndex: 2, load: 164, reps: 9 },
+      { id: 2, setIndex: 3, load: 175, reps: 6 },
+    ];
+    // The session as logged: 164 -> 175 -> 180, NOT the load-descending order
+    // the unordered adapter happens to return.
+    expect(bySetIndexThenId(rows).map((r) => r.load)).toEqual([164, 175, 180]);
+  });
+});

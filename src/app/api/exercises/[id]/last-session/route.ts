@@ -92,8 +92,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .from(setLogs)
     .innerJoin(workoutLogs, eq(setLogs.workoutLogId, workoutLogs.id))
     .where(and(eq(setLogs.exerciseId, exerciseId), eq(workoutLogs.date, last.date), eq(setLogs.setType, "working")))
-    // set_index is the logged order; id breaks ties, since set_index has known
-    // gaps and repeats in the owner's history (documented 2026-07-27).
+    // `set_index` is the EXPLICITLY RECORDED logged order — preferred over
+    // `logged_at`, which on ids 7–29 is a value the 2026-07-27 backfill derived
+    // from `created_at` rather than something observed. (`logged_at` is present
+    // on all 245 rows; it is not a coverage question, it is a provenance one.)
+    //
+    // `id` is not just a formality: a DROP SEGMENT SHARES ITS PARENT'S
+    // set_index, so it is the only thing separating them. Verified in prod —
+    // all three drop pairs (55/56, 60/61, 109/110) have the parent at the lower
+    // id and the heavier load, so parent-then-drop is the chronological order
+    // this produces.
     .orderBy(asc(setLogs.setIndex), asc(setLogs.id));
 
   const laneOrdered =
@@ -111,6 +119,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       // The session AS LOGGED: ordered by set_index, warm-ups excluded. This is
       // what the card's "last …" line renders, so the line, the first-set load
       // and the prefilled values all describe the same set.
+      //
+      // DROP SEGMENTS ARE INCLUDED, unchanged from before: they are `working`
+      // rows, so they were already in the old `sets` array and are already
+      // counted in the line's rep list. The line flattens them, so a 3-rep drop
+      // reads like a 3-rep set — the set ROWS distinguish them with `↳ drop`,
+      // this one-line summary cannot. Left as-is deliberately; changing what
+      // the line counts is a behaviour change, not an ordering fix.
       setsInOrder: laneOrdered.map((r) => ({ load: Number(r.load), reps: r.reps })),
       // Warm-ups are already excluded by the WHERE above, so this is the first
       // WORKING set — where you started, not where you finished or peaked.
