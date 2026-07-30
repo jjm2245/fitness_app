@@ -280,7 +280,8 @@ Neither is a to-do list.
 |---|---|
 | The five progression findings (dead `regression` on bodyweight, `topSet` tie degeneration, the `rir ?? target` assumption, exercise-specific norms, plateau interpretation) | They need **interpretation**, not more rules. Recorded in full in DECISIONS 2026-07-28 — including the rep-decay proxy that was considered and **rejected**, so it isn't rediscovered. Belongs to the LLM phase. |
 | Import / restore | The **export** is now restorable (sequences + procedure shipped in the file, 2026-07-29). Reading one back is a separate build nobody has needed yet. |
-| Per-exercise history + per-muscle volume | This is **Stats v1** — see §10 for the inventory of what already exists to build it on. |
+| Per-exercise history (+ PR arc) | This is **Stats v1** — see §10 for the inventory. **v1 does not touch `core/volume.ts`**: it is lane/set/PR work over `set_logs`. |
+| Per-muscle volume | **Stats v2**, not v1. This is the round that finally gives `core/volume.ts` a production consumer — and the round that first exercises the three-tier emphasis drift (SPEC-DRIFT §7). Nothing before it validates either. |
 | Progress-photo blob storage | A decision **owed before `progress_photos` is first written**, not after: the export would otherwise carry rows referencing images it does not contain, and no later fix repairs files already downloaded. |
 | Nutrition's colour | A decision **owed before Nutrition is built**: `--hue-nutrition` is byte-identical to `--warning` (`#f59e0b`). They never share a surface today, so nothing looks wrong — Nutrition shipping is the event that puts amber on live content beside real warnings. See [`DESIGN.md`](DESIGN.md), "A decision owed BEFORE Nutrition is built". |
 
@@ -350,6 +351,28 @@ the next spec revision, **not unfinished work.**
   building a short file, recording it as `pendingAtExport`. `null` there means
   *nobody reported* (a raw fetch) and is deliberately **not** zero. 21 of 22
   tables ship; only `login_attempts` is excluded (rate-limit telemetry).
+- **`/api/exercises/[id]/last-session` merges same-day sessions.** The strength
+  branch keys "the last session" on `workout_logs.date` (core's
+  `toSessionSummaries` groups by date, and the ordered query filters
+  `eq(workoutLogs.date, last.date)`), so two sessions logged on one calendar day
+  would silently read as one — sets pooled, `last`/prefill/PR-bar computed over
+  the union. **Unhit today, verified in prod: 9 sessions on 9 distinct dates.**
+  Recorded before it happens rather than after; the fix is keying on
+  `workout_log_id`, which reaches into core's session grouping and deserves its
+  own round.
+- **`/api/exercises/manage` ships the whole library: 878 rows, ~261 kB JSON**
+  (measured against prod with the route's actual 12 columns — `description` is
+  the heavy one). Correct for its own consumer (the Exercises manager, which
+  genuinely lists everything), wrong as a data source for anything else: only
+  ~28 exercises appear in `set_logs`. The next surface that needs "exercises
+  with history" should get a scoped endpoint, not inherit this payload.
+- **`.restPill` references a token that doesn't exist** —
+  `GlobalNav.module.css:70` says `color: var(--text-1)`, but the token is
+  `--text` (there is no `--text-1`). Invalid at computed-value time → falls back
+  to the inherited colour, which happens to look right — the exact silent
+  failure mode a bad token invites, found while verifying `DESIGN.md`'s tier
+  table (which named the same phantom token; now fixed). **One-character fix
+  owed next code round** — this round was docs-only by rule.
 - **Legacy `completed` IndexedDB store** — dead mirror; remove.
 - Some historical `set_logs.equipment_type` are null on named-machine sets (type
   recoverable via the equipment row) — cosmetic; self-corrects on edit.
@@ -364,6 +387,13 @@ it is a proposal, and the numbers are read from production on 2026-07-29.
 Exports `countedSetContribution`, `volumeByMuscle`, `volumeByMuscleInRange`,
 `VOLUME_LANDMARKS` (floor 8, productive 10–20) and `classifyVolumeZone`. Its only
 importer today is its own test file — it has never been wired to a screen.
+
+**And Stats v1 does not change that.** v1 as scoped (per-exercise history + the
+PR arc) reads `set_logs` per lane and never calls this module — its first
+production consumer arrives with per-muscle volume in **v2**. Consequence worth
+stating so nobody assumes otherwise later: **shipping v1 does not validate the
+three-tier emphasis drift** recorded in SPEC-DRIFT §7. That entry stays untested
+until v2 actually sums `exercise_muscles.emphasis` on screen.
 
 It expects `SetLogInput[]` (the shape `loadSetLogInputsForExercise` produces,
 carrying `exerciseId`, `date`, `setType`, `load`, `reps`, `rir`, `machineId`) plus
@@ -396,6 +426,22 @@ so any "volume by muscle" surface reads a graph far larger than the training
 history that references it. That is intentional (the library ships whole so
 `set_logs.exercise_id` always resolves), but it means the graph size is not a
 proxy for how much has actually been trained.
+
+### The lane shape of the real data (read 2026-07-30 — re-check before building)
+
+The structural question for a per-exercise view is how many lanes exist in
+practice, and the answer is nearly unanimous: **26 of 28 logged exercises have
+exactly one lane; 2 have two; none has three or more.** Median **2.5 sessions**
+per exercise (range 1–6). The two multi-lane cases are both genuine, not data
+gaps: Machine Shoulder (Military) Press (VSL18 + LifeFitnessShoulder) and Seated
+Back Extension Machine (VSL02 + a dumbbell portable lane). Every NULL
+`equipment_id` row carries a portable snapshot type (bodyweight / dumbbell) —
+**zero unattributed context-bound rows** remain.
+
+Design consequence, stated but not designed here: a permanent lane switcher is
+dead chrome on 26 of 28 screens, and stacked per-lane sections have no case that
+overflows a phone today — whatever v1 builds should treat multi-lane as the
+exception it is, while still honouring it where it's real.
 
 ### Lane semantics — the constraint on every per-exercise chart
 
@@ -432,12 +478,19 @@ load-descending), and a drop segment shares its parent's `set_index` — order b
 
 ### The current `/stats` route
 
-A **59-line placeholder**. `src/app/stats/page.tsx` renders a title and three
-`LockedTile`s (Training trends / Recovery / Nutrition) using the same locked-tile
-language as Home. **It reads no data and has no API route behind it.** Stats v1
+A **59-line placeholder**. `src/app/stats/page.tsx` renders a title and **four**
+`LockedTile`s (Training trends / Recovery / Nutrition / **Body**) using the same
+locked-tile language as Home. **It reads no data and has no API route behind it.** Stats v1
 is a greenfield surface on top of a populated database, not a rewrite.
 
-## 11. The effort-coverage constraint (read before designing anything on effort)
+## 11. Data-shape constraints (read before designing anything numeric)
+
+Three facts about the data every numeric surface — Stats, and later any
+LLM-facing summary — inherits. Three fresh advisors derived the second and third
+independently from the other docs; stating them here is cheaper than having
+every reader re-derive them.
+
+### Effort coverage is low and stays low
 
 Effort is recorded on **71 of 244 sets — 29%** in production today, and **this is
 expected to stay low.** The owner logs to a rep target, not to failure, so most
@@ -464,6 +517,46 @@ is the expected shape of an easy session and a hard one alike. See DECISIONS
 
 *(The figure moves as more is logged — it was 24% (52/215) when the progression
 brief measured it in July. The constraint is the shape, not the number.)*
+
+### Bodyweight lanes log `load 0` BY DESIGN — branch, don't degrade
+
+Pullups, Dips and Captain's Chair: **25 working sets, load min 0, max 0**, and
+that is correct — load measures what was *added* to the body (the closed
+bodyweight decision). Consequences, stated so they are met here rather than
+discovered on screen:
+
+- **A load-based chart draws a flat line at zero.** Forever.
+- **PR detection is structurally impossible** on these lanes — a PR requires
+  strictly greater, and every load ties at 0. Correct, not a bug (DECISIONS
+  2026-07-29).
+- **Volume-load is 0 every session**, which is also why `regression` can never
+  fire there — the highest-ranked open SPEC-DRIFT entry ("Regression detection
+  is structurally unreachable on bodyweight lanes").
+
+Any load-based view needs a **separate branch** for these lanes (reps are the
+signal there), not a degraded rendering of the same one.
+
+### Progression often happens in reps, not load — measured, not anecdotal
+
+`MIN_HISTORY = 1` exists in DECISIONS precisely because the `last` reference is
+typically one working weight with several rep counts (`120 lb × 12, 11, 10`) —
+requiring two distinct loads "silenced the check on essentially every real
+exercise."
+
+Measured against prod (2026-07-30), session→session transitions of the **top
+working load per lane** (warm-ups and drop segments excluded):
+
+| transitions | load up | load down | **load flat** | flat *with* rep progress |
+|---|---|---|---|---|
+| 50 | 14 | 14 | **22 (44%)** | 7 |
+
+So on **44% of transitions a load line does not move**, and about a third of
+those flats carry real rep progress — `110 × 11 → 110 × 12, 12` is a measurably
+stronger session that a load-only chart renders as nothing. Lane-level: of 25
+lanes with 2+ sessions, 21 have moved load at least once; the 4 that never have
+are the three bodyweight lanes plus Dumbbell Shrug. **Load and reps have to
+travel together in the same mark** — a load-only view is flattest exactly where
+progress is most often real.
 
 ## 12. Core generality self-check
 

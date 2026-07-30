@@ -115,7 +115,13 @@ smoothed over. An inaccurate style guide is worse than none.
 Every sheet, card and form field uses the same three levels:
 
 1. **Label** — small, letter-spaced, uppercase, `var(--text-3)`. Names the thing.
-2. **Value** — the prominent element. Full size, `var(--text-1)`.
+2. **Value** — the prominent element. Full size, `var(--text)`.
+   *(The token is `--text` — **there is no `--text-1`**. An earlier version of
+   this line named `--text-1`, and exactly the failure that invites already
+   happened once: `.restPill` in `GlobalNav.module.css` shipped with
+   `color: var(--text-1)`, which is invalid at computed-value time, silently
+   falls back to the inherited colour, and happened to look right. Recorded in
+   `CURRENT_STATE.md` §9; the muted tiers are `--text-2` / `--text-3`.)*
 3. **Hint** — smaller, muted, sits *below* the value. Explains or qualifies.
 
 `.fieldLabel` / `.fieldInput` / `.fieldNote` in `editors.module.css` are the
