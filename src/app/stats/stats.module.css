@@ -22,3 +22,278 @@
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* ── Stats v1 — index + exercise screens ─────────────────────────────────────
+   Typography rule (DESIGN.md): mono ONLY for isolated numeric values — the
+   index best figure, header bests, chart axis/point labels. Numbers inside a
+   phrase (figures with ×, deltas, sublines, tonnage) stay UI face with
+   tabular-nums. The word "lane" never renders. */
+
+.exList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.exRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: none;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.exMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.exNameLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.exName {
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Machine tag — informational, never a warning. */
+.mTag {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.mTagUnspec {
+  font-style: italic;
+}
+/* Delta tiers: progress is bright, everything else stays quiet. */
+.tierBright {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.tierQuiet {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.exFigure {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+/* Isolated numeric value → mono. */
+.figMono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.figLabel {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+.figDate {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+.exChev {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.prChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.55rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  background: linear-gradient(100deg, var(--accent), #8B5CF6);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ── Exercise screen ── */
+.exHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.exHeaderSub {
+  font-size: 0.82rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.bestsLine {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.metaDot {
+  color: var(--text-3);
+}
+.segRow {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.seg,
+.segOn {
+  font-size: 0.8rem;
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.segOn {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.sessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sessRow {
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sessTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* A phrase with numbers in it — UI face, tabular-nums, NOT mono. */
+.sessFigure {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.sessSub {
+  font-size: 0.76rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Chart view ── */
+.chartCol {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.chartSection {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 10px 8px 4px;
+  background: var(--card);
+}
+.chartTitle {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-2);
+  margin: 0 0 4px 6px;
+}
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.chartLine {
+  stroke: color-mix(in srgb, var(--accent) 70%, var(--text-3));
+  stroke-width: 1.6;
+}
+.chartDot {
+  fill: var(--text-2);
+}
+.chartDotPr {
+  fill: var(--accent-2);
+}
+/* Chart labels are isolated numerals → mono. */
+.chartAxis,
+.chartPointLabel {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  fill: var(--text-3);
+}
+.chartPointLabel {
+  fill: var(--text-2);
+}
+.chartAxisUnit {
+  font-size: 7.5px;
+  fill: var(--text-3);
+}
+.chartDate {
+  font-size: 7.5px;
+  fill: var(--text-3);
+}
+
+/* ── Comparability (dormant until a qualifying pair exists) ── */
+.suggestCard {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.suggestBasis {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 0;
+}
+.suggestActions {
+  display: flex;
+  gap: 8px;
+}
+.suggestActions button {
+  font-size: 0.78rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.decisionLine {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.decisionFlip {
+  font-size: 0.74rem;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}

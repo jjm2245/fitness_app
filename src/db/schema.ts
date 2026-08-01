@@ -10,6 +10,7 @@ import {
   timestamp,
   jsonb,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -564,6 +565,29 @@ export const nutritionEntries = pgTable("nutrition_entries", {
 // silently start excluding exercises from substitution. `timeline_notes` is
 // inert by construction: NOTHING in `src/core/*` may ever read it, and no
 // adapter may pass it in. It explains history; it never changes training.
+// Machine-comparability DECISIONS — and only decisions. Suggestions are
+// computed on demand (src/lib/comparability.ts) and never stored; what
+// persists is the owner's answer, because the answer carries knowledge the
+// specs don't have (same model? same cam?). Pair-level and exercise-agnostic.
+// A rejected pair is never re-suggested. `basis` snapshots the generated
+// reasoning AT DECISION TIME, so a later spec edit can't silently change what
+// was agreed to — and it is the landing site for the future measured-overlap
+// calibration.
+export const equipmentComparability = pgTable(
+  "equipment_comparability",
+  {
+    id: serial("id").primaryKey(),
+    // Ordered a < b (enforced by CHECK in the migration) — one row per pair.
+    equipmentIdA: text("equipment_id_a").notNull().references(() => equipment.id),
+    equipmentIdB: text("equipment_id_b").notNull().references(() => equipment.id),
+    kind: text("kind").notNull(), // 'same_setup' | 'ratio_estimate'
+    status: text("status").notNull(), // 'confirmed' | 'rejected'
+    basis: text("basis").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("eq_comp_pair_kind_unique").on(t.equipmentIdA, t.equipmentIdB, t.kind)]
+);
+
 export const timelineNotes = pgTable("timeline_notes", {
   id: serial("id").primaryKey(),
   startDate: date("start_date").notNull(),

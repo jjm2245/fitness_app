@@ -5948,3 +5948,79 @@ for a fact it stopped carrying`, and it is open **deliberately**: the label is
 already correct at every site that reads it (`ended_at` / `last_updated_at` in
 the CSVs, `first_finished_at` for the stable instant). Renaming the column would
 be a migration for a name. It is a note for the next spec revision, not work.
+
+---
+
+## 2026-08-01 (Stats v1) — hub, exercise index, exercise screen, comparability
+
+Built additively: three new routes under `/api/stats/*`, two new screens plus
+the hub lit in place, two new pure-function modules, one new table (LOCAL ONLY —
+prod migration held for sign-off, below). Nothing in core, the logging flow, or
+any shipped route changed.
+
+### Step 0 gates, as resolved
+
+- **G1** pass: warm-ups are `set_type='warmup'`; a drop segment shares its
+  parent's `drop_set_group` with the parent at the LOWEST id — both from schema
+  + the rule pinned against the three real prod pairs. Nothing inferred from
+  data patterns.
+- **G2** pass: `equipment_type` itself is the cammed/plain distinction —
+  `selectorized` (and leverage `plate_loaded`) are cammed, `cable` is a plain
+  station. Mapping: `ratio_estimate` only for cable+cable; the cam caveat lands
+  on selectorized/plate_loaded `same_setup` bases.
+- **G4** BOTH overlay branches skipped, engine built regardless: prod has no
+  exercise with two cable units at all (so no differing-ratio pair), and the one
+  two-machine exercise (Machine Shoulder Press: VSL18 + LifeFitnessShoulder) is
+  not spec-identical — LFS records no specs, and both pulleys are 'unknown',
+  which `suggestSameSetup` correctly refuses (both-unknown is not both-known).
+  The suggestion card + decision line are data-driven, not stubs: they render
+  the moment a qualifying pair exists, and were driven end-to-end against a
+  staged spec-identical local pair.
+- **G5** skipped: max machine lanes on any exercise is 2 (Q1), so no collapse
+  rule.
+
+### Deviations from the brief, reported not buried
+
+1. **`comparability.ts` lives in `src/lib/`, not `src/core/`.** The brief named
+   core, but core's standing invariant is equipment-blindness (opaque lane keys;
+   "core never learns what a Smith is"), the session self-check greps core for
+   equipment vocabulary, and the same brief says "do not modify core".
+   Comparability is nothing but equipment knowledge. Same purity, same tests,
+   other side of the boundary. (`prs.ts` and `laneKey` similarly live in
+   `src/lib/` — consumed from there, not reimplemented.)
+2. **State 6 on a no-machine lane reads "first session"**, not "first session on
+   this machine" — the exact string would be false for Pullups. Machine lanes
+   keep the exact string.
+
+### What the data rules bought, verified live
+
+- Two sessions on one calendar date stay two rows everywhere (the last-session
+  route's date-grouping trap, avoided by keying on workout_logs.id). Fixture:
+  two logs on 2026-07-27 → two rows, the second delta'd against the first.
+- A 900 lb drop segment above the lane best: never the figure, never a PR,
+  never the best — but its 2,700 lb counts in tonnage and its set in the count.
+- Reps lanes: no "best" label, no PR chip anywhere, `last N reps` instead,
+  charts labeled in reps, deltas in total session reps.
+- Interleaved lanes: Jul 21 (lane B) deltas against Jul 16 (lane B), not
+  Jul 18 (lane A).
+- kg preference: `best 59 kg · fixA`, `59 kg × 10`, `+4.5 kg` — conversion at
+  render, storage untouched.
+- Decisions: confirm → suggestion gone + state line; flip works both ways;
+  rejected stays suppressed; **the List payload is byte-identical with and
+  without the decision** — estimates and merges are chart rendering, never truth.
+
+### Typography and vocabulary
+
+Mono ONLY on isolated numerals (index best figure, header bests, chart axis +
+point labels). Set-row figures, deltas, sublines and tonnage are UI face with
+tabular-nums. "lane" appears in code and comments only; on screen it is
+"machines", with the absence tags "no machine" (portable, permanent) and
+italic "unspecified" (context-bound, pooled).
+
+### Held for approval (G3)
+
+Migration 0036 (`equipment_comparability`) is applied LOCALLY only.
+EXPECTED_MIGRATIONS is 37 in this commit, so THE PUSH IS HELD TOO — deploying
+code that expects a table prod lacks would 500 the exercise screen's
+comparability read. Prod order on approval: migrate prod (direct endpoint) →
+push → verify health 37/37 and the new chunks by content hash.

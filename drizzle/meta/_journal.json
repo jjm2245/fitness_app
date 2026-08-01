@@ -253,6 +253,13 @@
       "when": 1785292768718,
       "tag": "0035_timestamptz",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785379168718,
+      "tag": "0036_equipment_comparability",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,13 @@
 {
   "migrations": {
-    "count": 36,
-    "latest": "0035_timestamptz",
-    "expected": 36
+    "count": 37,
+    "latest": "0036_equipment_comparability",
+    "expected": 37
   },
   "tests": {
-    "files": 28,
-    "cases": 363
+    "files": 30,
+    "cases": 393
   },
   "tables": 20,
-  "routes": 43
+  "routes": 46
 }
