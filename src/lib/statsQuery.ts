@@ -109,6 +109,7 @@ export interface DecisionRow {
   kind: "same_setup" | "ratio_estimate";
   status: "confirmed" | "rejected";
   basis: string;
+  factor: number | null;
   decidedAt: string;
 }
 
@@ -121,6 +122,7 @@ export async function loadDecisions(): Promise<DecisionRow[]> {
     kind: r.kind as DecisionRow["kind"],
     status: r.status as DecisionRow["status"],
     basis: r.basis,
+    factor: r.factor == null ? null : Number(r.factor),
     decidedAt: r.decidedAt.toISOString(),
   }));
 }

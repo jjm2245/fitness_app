@@ -583,6 +583,10 @@ export const equipmentComparability = pgTable(
     kind: text("kind").notNull(), // 'same_setup' | 'ratio_estimate'
     status: text("status").notNull(), // 'confirmed' | 'rejected'
     basis: text("basis").notNull(),
+  // Owner-declared scale factor (×N). NULL for same_setup and spec-suggested
+  // estimates; REQUIRED (CHECK) when an owner declares a ratio — the
+  // declaration IS the number, stored nowhere else.
+  factor: numeric("factor"),
     decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique("eq_comp_pair_kind_unique").on(t.equipmentIdA, t.equipmentIdB, t.kind)]

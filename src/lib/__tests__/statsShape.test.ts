@@ -10,7 +10,8 @@ import {
   groupLaneSessions,
   figureSets,
   type Figure,
-  type StatSet, laneLabel, PORTABLE_LANE } from "../statsShape";
+  type StatSet, laneLabel, PORTABLE_LANE, xFractions, paddedDomain, shapeLane } from "../statsShape";
+import { markPrs } from "../prs";
 
 const set = (id: number, load: number, reps: number, over: Partial<StatSet> = {}): StatSet => ({
   id,
@@ -195,5 +196,78 @@ describe("absence tokens never leak into rendered strings (NULL-spec unit)", () 
         }
       }
     }
+  });
+});
+
+describe("pluralizer — exact strings at n=1 and n=2, both currencies", () => {
+  const w = (n: number) => String(n);
+  const F = (load: number, reps: number, total: number): Figure => ({ load, reps, setId: 1, totalReps: total });
+  it("loaded currency", () => {
+    expect(deltaText(delta(F(50,10,30), F(60,8,24), "loaded"), w)).toBe("+10 lb");            // 1
+    expect(deltaText(delta(F(50,10,30), F(50,11,33), "loaded"), w)).toBe("same load · 1 more rep");   // 2 singular
+    expect(deltaText(delta(F(50,10,30), F(50,12,36), "loaded"), w)).toBe("same load · 2 more reps");  // 2 plural
+    expect(deltaText(delta(F(50,10,30), F(50,10,30), "loaded"), w)).toBe("held at 50 lb");    // 3
+    expect(deltaText(delta(F(50,10,30), F(50,9,27), "loaded"), w)).toBe("same load · 1 fewer rep");   // 4 singular
+    expect(deltaText(delta(F(50,10,30), F(50,8,24), "loaded"), w)).toBe("same load · 2 fewer reps");  // 4 plural
+    expect(deltaText(delta(F(50,10,30), F(40,10,30), "loaded"), w)).toBe("−10 lb");           // 5
+    expect(deltaText(delta(null, F(50,10,30), "loaded"), w)).toBe("first session on this machine"); // 6
+    expect(deltaText(delta(null, F(50,10,30), "loaded"), w, "lb", false)).toBe("first session");
+  });
+  it("reps currency", () => {
+    expect(deltaText(delta(F(0,10,20), F(0,10,21), "reps"), w)).toBe("+1 rep");     // 1 singular
+    expect(deltaText(delta(F(0,10,20), F(0,10,22), "reps"), w)).toBe("+2 reps");    // 1 plural
+    expect(deltaText(delta(F(0,1,1), F(0,1,1), "reps"), w)).toBe("held at 1 rep"); // 3 singular
+    expect(deltaText(delta(F(0,10,20), F(0,10,20), "reps"), w)).toBe("held at 20 reps"); // 3
+    expect(deltaText(delta(F(0,10,20), F(0,10,19), "reps"), w)).toBe("−1 rep");     // 5 singular
+    expect(deltaText(delta(F(0,10,20), F(0,10,17), "reps"), w)).toBe("−3 reps");    // 5 plural
+  });
+});
+
+describe("chart math — time-true x, padded y", () => {
+  it("x positions are proportional to real date gaps, not index-spaced", () => {
+    // Jul 1 → Jul 2 → Jul 31: the second gap is 29× the first.
+    const [a, b, c] = xFractions(["2026-07-01", "2026-07-02", "2026-07-31"]);
+    expect(a).toBe(0);
+    expect(c).toBe(1);
+    expect(b).toBeCloseTo(1 / 30, 5);
+  });
+  it("degenerate spans center rather than divide by zero", () => {
+    expect(xFractions(["2026-07-01"])).toEqual([0.5]);
+    expect(xFractions(["2026-07-01", "2026-07-01"])).toEqual([0.5, 0.5]);
+  });
+  it("y domain pads ~10% so extremes never sit on the frame", () => {
+    const [lo, hi] = paddedDomain([100, 200]);
+    expect(lo).toBeCloseTo(90);
+    expect(hi).toBeCloseTo(210);
+    const [flo, fhi] = paddedDomain([130, 130]); // flat series still breathes
+    expect(flo).toBeLessThan(130);
+    expect(fhi).toBeGreaterThan(130);
+  });
+});
+
+describe("shapeLane — chart PR dots ≡ list chips ≡ markPrs (one source)", () => {
+  it("interleaved-lane fixture with a drop segment above the best", () => {
+    // Lane history: 100 → 110 (PR) → session with drop segment 900 (never PR).
+    const sessions = [
+      { workoutLogId: 1, date: "2026-07-14", sets: [set(1, 100, 10)] },
+      { workoutLogId: 2, date: "2026-07-18", sets: [set(2, 110, 10)] },
+      {
+        workoutLogId: 3,
+        date: "2026-07-23",
+        sets: [set(3, 110, 9), set(4, 105, 7, { dropGroup: "g" }), set(5, 900, 3, { dropGroup: "g" })],
+      },
+    ];
+    const { rows, points, prSetIds } = shapeLane(sessions, "loaded", markPrs);
+    // markPrs is the ONLY source: set 2 PR'd; the 900 segment did not.
+    expect(prSetIds).toEqual(new Set([2]));
+    // Row flags equal point flags equal markPrs membership, session by session.
+    for (const p of points) {
+      const row = rows.find((r) => r.workoutLogId === p.workoutLogId)!;
+      expect(p.isPr).toBe(row.isPr);
+      const sess = sessions.find((s) => s.workoutLogId === p.workoutLogId)!;
+      expect(p.isPr).toBe(sess.sets.some((st) => prSetIds.has(st.id)));
+    }
+    // The segment never supplies a figure either.
+    expect(points.map((p) => p.value)).toEqual([100, 110, 110]);
   });
 });

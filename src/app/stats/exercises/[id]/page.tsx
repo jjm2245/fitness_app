@@ -1,24 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import styles from "../../stats.module.css";
 import { deltaText, type Delta, type LaneMode } from "@/lib/statsShape";
 import { useWeightUnit } from "@/lib/useUnit";
 import { displayLb, lbToKg } from "@/lib/units";
+import { StatsChart, type ChartPoint } from "@/components/stats/StatsChart";
+import { NumberInput } from "@/components/NumberInput";
 
 // /stats/exercises/[id] — one exercise's full history.
 //
-// List = one combined chronological stream (sessions grouped by
-// workout_logs.id server-side — two sessions on one date stay two rows).
-// Chart = per-machine sections, inline SVG, no chart library. A machine with
-// exactly one session keeps its list row inside Chart view — no one-dot charts.
+// Chart view = charts + the FULL session list beneath (one screen, both
+// reads); List view = rows only. Sessions keyed on workout_logs.id. A machine
+// with one session renders no chart — the quiet line explains why. Tapping a
+// chart point scrolls to and briefly highlights that session's row.
 //
-// Comparability rendering effects (shared-axis merge, dashed ratio estimate)
-// are G4-SKIPPED this round: no spec-identical pair and no differing-ratio
-// plain-cable pair exists in the data, so sections stay separate regardless of
-// decisions. The suggestion card and decision line below are data-driven and
-// simply never render until a qualifying pair exists.
+// Combine flow: any undecided machine pair raises the card (once per pair) in
+// Chart view. Decisions render as merged chart / scaled estimate / separate
+// sections; every state carries a one-tap way back in. Estimates never mint
+// PRs, never enter deltas, never touch bests — List and the index are
+// byte-identical under any decision or factor.
 
 interface SessionRow {
   workoutLogId: number;
@@ -30,10 +32,31 @@ interface SessionRow {
   figure: { load: number; reps: number } | null;
   repsList: number[] | null;
   setsCount: number;
-  tonnage: number;
   delta: Delta;
   deltaHasUnit: boolean;
   isPr: boolean;
+}
+
+interface Decision {
+  id: number;
+  a: string;
+  b: string;
+  kind: "same_setup" | "ratio_estimate";
+  status: "confirmed" | "rejected";
+  basis: string;
+  factor: number | null;
+}
+
+interface Pair {
+  a: string;
+  b: string;
+  aLabel: string;
+  bLabel: string;
+  situation: "match" | "differ" | "unknown";
+  specBasis: string | null;
+  anchor: string;
+  estimated: string;
+  decision: Decision | null;
 }
 
 interface Payload {
@@ -44,19 +67,13 @@ interface Payload {
   dateRange: { from: string; to: string };
   bests: Array<{ lane: string; machineTag: string; laneMode: LaneMode; load?: number; reps?: number; date: string }>;
   sessions: SessionRow[];
-  chart: Array<{
-    lane: string;
-    machineTag: string;
-    laneMode: LaneMode;
-    points: Array<{ workoutLogId: number; date: string; value: number; reps: number; isPr: boolean }>;
-  }>;
-  comparability: {
-    suggestions: Array<{ kind: string; a: string; b: string; aLabel: string; bLabel: string; basis: string }>;
-    decisions: Array<{ id: number; a: string; b: string; kind: string; status: string; basis: string }>;
-  };
+  chart: Array<{ lane: string; machineTag: string; laneMode: LaneMode; points: ChartPoint[] }>;
+  comparability: { pairs: Pair[] };
 }
 
 const VIEW_KEY = "fitness-app:stats-view";
+const SORT_KEY = "fitness-app:stats-session-sort";
+type RowSort = "date" | "value";
 
 function shortDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -65,22 +82,39 @@ function shortDay(iso: string): string {
 
 export default function ExerciseStatsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const exerciseId = decodeURIComponent(params.id);
   const [data, setData] = useState<Payload | null>(null);
   const [missing, setMissing] = useState(false);
-  // SSR-safe view-mode adoption — default first, stored value in an effect
-  // (the useUnit hydration rule).
   const [view, setView] = useState<"list" | "chart">("list");
+  const [rowSort, setRowSort] = useState<RowSort>("date");
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The combine card: open pair + prefill (reopened decisions land here too).
+  const [cardPair, setCardPair] = useState<Pair | null>(null);
+  const [cardMode, setCardMode] = useState<"same" | "scaled" | null>(null);
+  const [cardFactor, setCardFactor] = useState("2");
+
   useEffect(() => {
     const v = window.localStorage.getItem(VIEW_KEY);
     if (v === "chart") setView("chart");
+    const s = window.localStorage.getItem(SORT_KEY);
+    if (s === "value") setRowSort("value");
   }, []);
   function pickView(v: "list" | "chart") {
     setView(v);
     try {
       window.localStorage.setItem(VIEW_KEY, v);
     } catch {
-      /* private mode — the segment still switches for this visit */
+      /* private mode */
+    }
+  }
+  function pickSort(s: RowSort) {
+    setRowSort(s);
+    try {
+      window.localStorage.setItem(SORT_KEY, s);
+    } catch {
+      /* private mode */
     }
   }
 
@@ -97,40 +131,135 @@ export default function ExerciseStatsPage() {
     void refresh();
   }, [refresh]);
 
-  async function decide(s: { a: string; b: string; kind: string; basis: string }, status: "confirmed" | "rejected") {
+  async function writeDecision(pair: Pair, kind: "same_setup" | "ratio_estimate", status: "confirmed" | "rejected", factor?: number) {
+    const basis =
+      status === "rejected"
+        ? "owner-declared kept separate"
+        : kind === "same_setup"
+        ? pair.specBasis ?? "owner-declared same setup"
+        : `owner-declared ×${factor} (${labelFor(pair, pair.estimated)} ×${factor} → ${labelFor(pair, pair.anchor)})`;
     await fetch("/api/stats/comparability", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...s, status }),
+      body: JSON.stringify({ a: pair.a, b: pair.b, kind, status, basis, factor: kind === "ratio_estimate" ? factor : null }),
     });
+    setCardPair(null);
+    setCardMode(null);
     await refresh();
   }
 
-  if (missing) {
+  function labelFor(pair: Pair, id: string) {
+    return id === pair.a ? pair.aLabel : pair.bLabel;
+  }
+
+  function openCard(pair: Pair) {
+    setCardPair(pair);
+    const d = pair.decision;
+    if (d && d.status === "confirmed" && d.kind === "ratio_estimate") {
+      setCardMode("scaled");
+      setCardFactor(String(d.factor ?? 2));
+    } else if (d && d.status === "confirmed") {
+      setCardMode("same");
+    } else {
+      setCardMode(null);
+      setCardFactor("2");
+    }
+  }
+
+  function tapPoint(workoutLogId: number, lane?: string) {
+    const key = `sess-${workoutLogId}-${lane ?? ""}`;
+    const el = document.getElementById(key) ?? document.querySelector(`[id^="sess-${workoutLogId}-"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlight(el.id);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlight(null), 1600);
+  }
+
+  if (missing)
     return (
       <main className={styles.page}>
         <p className={styles.note}>No history for this exercise yet.</p>
       </main>
     );
-  }
-  if (!data) {
+  if (!data)
     return (
       <main className={styles.page}>
         <p className={styles.note}>Loading…</p>
       </main>
     );
-  }
 
-  const singlePointLanes = new Set(data.chart.filter((c) => c.points.length < 2).map((c) => c.lane));
+  const isRepsExercise = data.sessions.every((s) => s.laneMode === "reps");
+  const sortedSessions = [...data.sessions].sort((a, b) => {
+    if (rowSort === "value") {
+      const va = a.laneMode === "reps" ? a.figure?.reps ?? 0 : a.figure?.load ?? 0;
+      const vb = b.laneMode === "reps" ? b.figure?.reps ?? 0 : b.figure?.load ?? 0;
+      return vb - va || b.date.localeCompare(a.date);
+    }
+    return a.date === b.date ? b.workoutLogId - a.workoutLogId : b.date.localeCompare(a.date);
+  });
+
+  // Chart composition under decisions. Confirmed pairs collapse two lanes into
+  // one chart (merged or estimated); everything else renders per-machine.
+  const confirmed = data.comparability.pairs.filter((p) => p.decision?.status === "confirmed");
+  const mergedLanes = new Set(confirmed.flatMap((p) => [p.a, p.b]));
+  const soloCharts = data.chart.filter((c) => !mergedLanes.has(c.lane));
+  const undecidedPairs = data.comparability.pairs.filter((p) => p.decision == null);
+  const rejectedPairs = data.comparability.pairs.filter((p) => p.decision?.status === "rejected");
+
+  const sessionList = (
+    <ul className={styles.sessList}>
+      {sortedSessions.map((s) => (
+        <li
+          key={`${s.workoutLogId}-${s.lane}`}
+          id={`sess-${s.workoutLogId}-${s.lane}`}
+          className={`${styles.sessRow} ${highlight === `sess-${s.workoutLogId}-${s.lane}` ? styles.sessRowHot : ""}`}
+        >
+          <div className={styles.sessTop}>
+            <span className={styles.sessFigure}>
+              {s.laneMode === "reps"
+                ? s.repsList && s.repsList.length > 0
+                  ? `${s.repsList.join(", ")} reps`
+                  : "—"
+                : s.figure
+                ? `${w(s.figure.load)} ${wUnit} × ${s.figure.reps}`
+                : "—"}
+            </span>
+            {s.isPr && s.laneMode === "loaded" && (
+              <span className={styles.prChip} title="Personal record on this machine when logged">
+                <span aria-hidden="true">★</span> PR
+              </span>
+            )}
+          </div>
+          <div className={styles.sessSub}>
+            {shortDay(s.date)}
+            <span className={styles.metaDot}> · </span>
+            {s.machineTagKind === "unspecified" ? <span className={styles.mTagUnspec}>unspecified</span> : s.machineTag}
+            <span className={styles.metaDot}> · </span>
+            {s.setsCount} {s.setsCount === 1 ? "set" : "sets"}
+          </div>
+          <div className={s.delta.tier === "bright" ? styles.tierBright : styles.tierQuiet}>
+            {deltaText(s.delta, w, wUnit, s.deltaHasUnit)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <main className={styles.page}>
       <header className={styles.exHeader}>
+        {/* Back to the index — present on BOTH views. */}
+        <button type="button" className={styles.backLink} onClick={() => router.push("/stats/exercises")} aria-label="Back to exercises">
+          ‹ Exercises
+        </button>
         <h1 className={styles.title}>{data.name}</h1>
         <p className={styles.exHeaderSub}>
-          {data.sessionCount} {data.sessionCount === 1 ? "session" : "sessions"} · {data.machineCount}{" "}
-          {data.machineCount === 1 ? "machine" : "machines"} · {shortDay(data.dateRange.from)} –{" "}
-          {shortDay(data.dateRange.to)}
+          {data.sessionCount} {data.sessionCount === 1 ? "session" : "sessions"} ·{" "}
+          {data.machineCount >= 1
+            ? `${data.machineCount} ${data.machineCount === 1 ? "machine" : "machines"}`
+            : "no machine"}{" "}
+          · {shortDay(data.dateRange.from)} – {shortDay(data.dateRange.to)}
         </p>
         <p className={styles.bestsLine}>
           {data.bests.map((b, i) => (
@@ -154,183 +283,141 @@ export default function ExerciseStatsPage() {
           ))}
         </p>
         <div className={styles.segRow} role="tablist" aria-label="View">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "list"}
-            className={view === "list" ? styles.segOn : styles.seg}
-            onClick={() => pickView("list")}
-          >
+          <button type="button" role="tab" aria-selected={view === "list"} className={view === "list" ? styles.segOn : styles.seg} onClick={() => pickView("list")}>
             List
           </button>
+          <button type="button" role="tab" aria-selected={view === "chart"} className={view === "chart" ? styles.segOn : styles.seg} onClick={() => pickView("chart")}>
+            Chart
+          </button>
+          {/* The sort chip — the current order is never implicit. */}
           <button
             type="button"
-            role="tab"
-            aria-selected={view === "chart"}
-            className={view === "chart" ? styles.segOn : styles.seg}
-            onClick={() => pickView("chart")}
+            className={styles.sortChip}
+            onClick={() => pickSort(rowSort === "date" ? "value" : "date")}
+            title="Change the session order"
           >
-            Chart
+            {rowSort === "date" ? "by date ↓" : isRepsExercise ? "by reps" : "by load"}
           </button>
         </div>
       </header>
 
       {view === "list" ? (
-        <ul className={styles.sessList}>
-          {data.sessions.map((s) => (
-            <SessionLine key={`${s.workoutLogId}-${s.lane}`} s={s} w={w} unit={wUnit} />
-          ))}
-        </ul>
+        sessionList
       ) : (
         <div className={styles.chartCol}>
-          {/* Undecided suggestion among these machines → the quiet card. */}
-          {data.comparability.suggestions.map((s) => (
-            <div key={`${s.a}|${s.b}|${s.kind}`} className={styles.suggestCard}>
-              <p className={styles.suggestBasis}>{s.basis}</p>
+          {/* Combine card — once per undecided pair, or reopened prefilled. */}
+          {(cardPair ? [cardPair] : undecidedPairs).map((p) => (
+            <div key={`${p.a}|${p.b}`} className={styles.suggestCard}>
+              <p className={styles.combineTitle}>Combine these machines?</p>
+              <p className={styles.suggestBasis}>
+                {p.specBasis ??
+                  (p.situation === "differ"
+                    ? `${p.aLabel} and ${p.bLabel} record different setups — combine only if you know they read the same.`
+                    : `${p.aLabel} and ${p.bLabel} — not enough recorded specs to compare them; you know the machines, we don't.`)}
+              </p>
+              {/* The factor row when scaled mode is open — but every OTHER
+                  exit stays visible beneath it: switching mode, editing the
+                  factor, or separating are each ONE tap from any state. */}
+              {cardMode === "scaled" && cardPair?.a === p.a && cardPair?.b === p.b && (
+                <div className={styles.factorRow}>
+                  <span className={styles.figLabel}>{labelFor(p, p.estimated)} reads ×</span>
+                  <NumberInput value={cardFactor} onChange={setCardFactor} maxIntDigits={2} className={styles.factorInput} ariaLabel="Scale factor" />
+                  <span className={styles.figLabel}>against {labelFor(p, p.anchor)}</span>
+                  <button
+                    type="button"
+                    className={styles.combineBtn}
+                    onClick={() => {
+                      const f = Number(cardFactor);
+                      if (Number.isFinite(f) && f > 0) void writeDecision(p, "ratio_estimate", "confirmed", f);
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
               <div className={styles.suggestActions}>
-                <button type="button" onClick={() => decide(s, "confirmed")}>Combine</button>
-                <button type="button" onClick={() => decide(s, "rejected")}>Keep separate</button>
+                <button type="button" onClick={() => void writeDecision(p, "same_setup", "confirmed")}>Same setup</button>
+                {!(cardMode === "scaled" && cardPair?.a === p.a && cardPair?.b === p.b) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCardPair(p);
+                      setCardMode("scaled");
+                    }}
+                  >
+                    Scaled estimate…
+                  </button>
+                )}
+                <button type="button" onClick={() => void writeDecision(p, p.decision?.kind ?? "same_setup", "rejected")}>Keep separate</button>
               </div>
             </div>
           ))}
-          {/* Decided pairs: current state, one tap to flip — both directions. */}
-          {data.comparability.decisions.map((d) => (
-            <p key={d.id} className={styles.decisionLine}>
-              {d.status === "confirmed" ? "combined" : "kept separate"} ·{" "}
-              {d.kind === "same_setup" ? "same setup" : "ratio estimate"}
-              <button
-                type="button"
-                className={styles.decisionFlip}
-                onClick={() => decide(d, d.status === "confirmed" ? "rejected" : "confirmed")}
-              >
-                {d.status === "confirmed" ? "keep separate instead" : "combine instead"}
-              </button>
-            </p>
-          ))}
 
-          {data.chart
+          {/* Confirmed pairs → one chart each (merged or estimated). */}
+          {confirmed.map((p) => {
+            const laneA = data.chart.find((c) => c.lane === (p.decision!.kind === "ratio_estimate" ? p.anchor : p.a));
+            const laneB = data.chart.find((c) => c.lane === (p.decision!.kind === "ratio_estimate" ? p.estimated : p.b));
+            if (!laneA || !laneB) return null;
+            const est = p.decision!.kind === "ratio_estimate";
+            return (
+              <section key={`${p.a}|${p.b}`} className={styles.chartSection}>
+                <h2 className={styles.chartTitle}>
+                  {laneA.machineTag} + {laneB.machineTag}
+                </h2>
+                {est && (
+                  <p className={styles.chartLegend}>
+                    {laneB.machineTag} · ×{p.decision!.factor} · your assumption
+                  </p>
+                )}
+                <StatsChart
+                  points={laneA.points}
+                  mode={laneA.laneMode}
+                  w={w}
+                  unit={wUnit}
+                  secondary={{ lane: laneB.lane, points: laneB.points }}
+                  secondaryStyle={est ? "estimated" : "merged"}
+                  factor={p.decision!.factor}
+                  onPointTap={tapPoint}
+                />
+                <p className={styles.chartFoot}>
+                  {est
+                    ? `Estimated — ${laneB.machineTag} ×${p.decision!.factor} is your assumption, not a measurement; estimated points never count as PRs. Filling both machines' specs suggests a basis; measured overlap can fit the factor later.`
+                    : "Combined — you marked these machines as the same setup"}
+                  <button type="button" className={styles.decisionFlip} onClick={() => openCard(p)}>
+                    change
+                  </button>
+                </p>
+              </section>
+            );
+          })}
+
+          {/* Undecided / rejected lanes render per machine. */}
+          {soloCharts
             .filter((c) => c.points.length >= 2)
             .map((c) => (
               <section key={c.lane} className={styles.chartSection}>
                 <h2 className={styles.chartTitle}>
-                  {c.machineTag === "unspecified" ? (
-                    <span className={`${styles.mTag} ${styles.mTagUnspec}`}>unspecified</span>
-                  ) : (
-                    c.machineTag
-                  )}
+                  {c.machineTag === "unspecified" ? <span className={`${styles.mTag} ${styles.mTagUnspec}`}>unspecified</span> : c.machineTag}
                 </h2>
-                <LaneChart points={c.points} mode={c.laneMode} w={w} unit={wUnit} />
+                <StatsChart points={c.points} mode={c.laneMode} w={w} unit={wUnit} onPointTap={tapPoint} />
               </section>
             ))}
 
-          {/* A machine with one session keeps its LIST row here — no one-dot charts. */}
-          {data.sessions
-            .filter((s) => singlePointLanes.has(s.lane))
-            .map((s) => (
-              <ul key={`single-${s.workoutLogId}-${s.lane}`} className={styles.sessList}>
-                <SessionLine s={s} w={w} unit={wUnit} />
-              </ul>
-            ))}
+          {soloCharts.some((c) => c.points.length < 2) && (
+            <p className={styles.note}>charts appear after 2 sessions on a machine</p>
+          )}
+
+          {/* A rejected pair keeps a quiet way back in. */}
+          {rejectedPairs.length > 0 && cardPair == null && (
+            <button type="button" className={styles.combineLink} onClick={() => openCard(rejectedPairs[0])}>
+              Combine machines…
+            </button>
+          )}
+
+          {/* Chart view carries the full list beneath — one screen, both reads. */}
+          {sessionList}
         </div>
       )}
     </main>
-  );
-}
-
-function SessionLine({ s, w, unit }: { s: SessionRow; w: (lb: number) => string | number; unit: string }) {
-  return (
-    <li className={styles.sessRow}>
-      <div className={styles.sessTop}>
-        <span className={styles.sessFigure}>
-          {s.laneMode === "reps"
-            ? s.repsList && s.repsList.length > 0
-              ? `${s.repsList.join(", ")} reps`
-              : "—"
-            : s.figure
-            ? `${w(s.figure.load)} ${unit} × ${s.figure.reps}`
-            : "—"}
-        </span>
-        {s.isPr && s.laneMode === "loaded" && (
-          <span className={styles.prChip} title="Personal record on this machine when logged">
-            <span aria-hidden="true">★</span> PR
-          </span>
-        )}
-      </div>
-      <div className={styles.sessSub}>
-        {shortDay(s.date)}
-        <span className={styles.metaDot}> · </span>
-        {s.machineTagKind === "unspecified" ? (
-          <span className={styles.mTagUnspec}>unspecified</span>
-        ) : (
-          s.machineTag
-        )}
-        <span className={styles.metaDot}> · </span>
-        {s.setsCount} {s.setsCount === 1 ? "set" : "sets"}
-        {s.laneMode === "loaded" && (
-          <>
-            <span className={styles.metaDot}> · </span>
-            {w(s.tonnage)} {unit}
-          </>
-        )}
-      </div>
-      <div className={s.delta.tier === "bright" ? styles.tierBright : styles.tierQuiet}>
-        {deltaText(s.delta, w, unit, s.deltaHasUnit)}
-      </div>
-    </li>
-  );
-}
-
-// Inline SVG — top-working-set line for a single machine. No chart library.
-// Point and axis labels are MONO (isolated numeric values); everything else on
-// this screen that mixes numbers into phrases stays in the UI face.
-function LaneChart({
-  points,
-  mode,
-  w,
-  unit,
-}: {
-  points: Array<{ date: string; value: number; reps: number; isPr: boolean }>;
-  mode: LaneMode;
-  w: (lb: number) => string | number;
-  unit: string;
-}) {
-  const W = 340;
-  const H = 130;
-  const PAD_LEFT = 30;
-  const PAD_RIGHT = 16;
-  const PAD_TOP = 26;
-  const PAD_BOTTOM = 30;
-  const vals = points.map((p) => p.value);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = max - min || 1;
-  const x = (i: number) => PAD_LEFT + (i * (W - PAD_LEFT - PAD_RIGHT)) / (points.length - 1);
-  const y = (v: number) => PAD_TOP + (H - PAD_TOP - PAD_BOTTOM) * (1 - (v - min) / span);
-  const fmt = (v: number) => (mode === "loaded" ? `${w(v)}` : `${v}`);
-  const axisUnit = mode === "loaded" ? unit : "reps";
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={styles.chartSvg} role="img" aria-label="Top working set per session">
-      {/* axis endpoints — min and max, mono */}
-      <text x={2} y={y(max) + 3} className={styles.chartAxis}>{fmt(max)}</text>
-      <text x={2} y={y(min) + 3} className={styles.chartAxis}>{fmt(min)}</text>
-      <text x={2} y={H - 4} className={styles.chartAxisUnit}>{axisUnit}</text>
-      <polyline
-        fill="none"
-        className={styles.chartLine}
-        points={points.map((p, i) => `${x(i)},${y(p.value)}`).join(" ")}
-      />
-      {points.map((p, i) => (
-        <g key={`${p.date}-${i}`}>
-          <circle cx={x(i)} cy={y(p.value)} r={p.isPr ? 4 : 2.6} className={p.isPr ? styles.chartDotPr : styles.chartDot} />
-          <text x={x(i)} y={y(p.value) - 8} textAnchor="middle" className={styles.chartPointLabel}>
-            {mode === "loaded" ? `${w(p.value)}×${p.reps}` : `${p.value}`}
-          </text>
-          <text x={x(i)} y={H - 16} textAnchor="middle" className={styles.chartDate}>
-            {shortDay(p.date)}
-          </text>
-        </g>
-      ))}
-    </svg>
   );
 }

@@ -1,0 +1,52 @@
+/* Token contract: every colour is a CSS variable — no hex in chart code. */
+
+.wrap {
+  position: relative;
+}
+.axisUnit {
+  position: absolute;
+  left: 8px;
+  bottom: 0;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--text-3);
+}
+.line {
+  stroke: var(--accent);
+}
+.dot {
+  fill: var(--text-2);
+  cursor: pointer;
+}
+.dotPr {
+  fill: var(--accent-2);
+  cursor: pointer;
+}
+/* Estimated points: OPEN circle in the muted tier — visibly not a fact. */
+.dotEst {
+  fill: var(--card);
+  stroke: var(--text-3);
+  stroke-width: 1.4;
+  cursor: pointer;
+}
+.label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  fill: var(--text-2);
+}
+.labelEst {
+  font-family: var(--font-mono);
+  font-style: italic;
+  font-size: 8px;
+  fill: var(--text-3);
+}
+.tick {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  fill: var(--text-3);
+}
+.tickDate {
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  fill: var(--text-3);
+}

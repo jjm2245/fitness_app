@@ -297,3 +297,229 @@
   cursor: pointer;
   padding: 0;
 }
+
+/* ── v1.1: hub hero + rail ─────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 16px 14px;
+  border-radius: var(--radius-lg);
+  /* Gradient wash: accent into the card surface. */
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--card)), var(--card) 70%);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.heroTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.heroName {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+.heroChev {
+  color: var(--text-3);
+  font-size: 1.1rem;
+}
+.heroEvent {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-height: 1.1em;
+}
+.heroSpark {
+  width: 120px;
+  height: 30px;
+  margin-top: 2px;
+}
+.heroSparkLine {
+  stroke: color-mix(in srgb, var(--accent) 60%, var(--text-3));
+  stroke-width: 1.4;
+}
+.heroSparkDot {
+  fill: var(--text-2);
+}
+.heroSparkDotPr {
+  fill: var(--accent-2);
+}
+.railLabel {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 4px 2px 0;
+}
+
+/* ── v1.1: index header (Equipment's anatomy) + rows ───────────────────── */
+.idxHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.idxSearch {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.sortWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.sortBtn {
+  font-size: 0.78rem;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sortMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 170px;
+}
+.sortOpt,
+.sortOptOn {
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sortOptOn {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* The ONLY colour a row carries: the accent left edge on positive verdicts. */
+.exRowUp {
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+.idxMeta {
+  font-size: 0.76rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.idxMetaBit {
+  color: var(--text-3);
+}
+.trendUp {
+  color: var(--accent);
+}
+.trendDown {
+  color: var(--warning);
+}
+.trendFlat {
+  color: var(--text-3);
+}
+.figTag {
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+/* ── v1.1: exercise screen ─────────────────────────────────────────────── */
+.backLink {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.sortChip {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.sessRowHot {
+  animation: sessGlow 1.6s ease-out forwards;
+}
+@keyframes sessGlow {
+  0% { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sessRowHot { animation: none; }
+}
+.combineTitle {
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin: 0;
+}
+.combineBtn {
+  font-size: 0.78rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+.factorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.factorInput {
+  width: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.chartLegend {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  font-style: italic;
+  margin: 0 0 2px 6px;
+}
+.chartFoot {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin: 6px 6px 2px;
+}
+.combineLink {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 2px;
+}

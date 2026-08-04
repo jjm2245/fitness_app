@@ -279,6 +279,60 @@ correctly **not** mono.
 > no screenshots will specify mono inputs and be describing something that was
 > tried and is not what's built.
 
+**The tagged-figure pattern (Stats index):** when a row's right column carries
+one headline number, it gets a two-line stack — a small-caps tag (`BEST`, or
+`LAST` on reps lanes) in `--text-3` over the mono value (`.figTag` / `.figMono`).
+The tag names *what kind of fact* the number is, so the value itself stays bare;
+`BEST 130 lb` and `LAST 9 reps` differ in epistemic weight (an all-time max vs.
+merely the latest reading) and the tag is what carries that difference. Reuse
+this stack for any future "one figure per row" column rather than inventing a
+new arrangement.
+
+## Charts — the token contract (Stats, Recharts)
+
+Charts are Recharts (3.10.1, direct — no shadcn wrapper; it requires Tailwind
+and this repo is CSS Modules) but they must be indistinguishable from
+hand-drawn app chrome. The contract, greppable in
+`src/components/stats/StatsChart.tsx` + `statsChart.module.css`:
+
+- **CSS variables only — zero hex** in chart code. No Recharts default palette,
+  no Recharts `<Legend>`; legends are app components outside the SVG.
+- **Ticks and point labels are isolated numerals → mono** (the same rule as the
+  timer), rendered by our own tick/label renderers, never Recharts defaults.
+- **The measured series** is an accent line over an accent→transparent gradient
+  area. **PR points** are `--accent-2` at a larger radius — the same colour that
+  marks PRs everywhere else.
+- **Estimated series are visibly not facts**: dashed `--text-3` line, open
+  circles (card-filled, stroked), italic `RAW → est N` labels. An estimate never
+  mints a PR, delta, or best.
+- **The x axis is time-true** — point positions are proportional to real dates,
+  not evenly spaced by index. A three-week gap must look like one.
+- **The y domain is padded (~10% of span)** so no point sits on the frame.
+- **One session on a machine = no chart.** A single dot suggests a trend that
+  doesn't exist; the page renders a quiet
+  `charts appear after 2 sessions on a machine` line instead.
+
+## The combine card — decision copy (Stats)
+
+When one exercise spans two machines, the Chart view asks — once, in one card
+per undecided pair — with fixed strings, so the decision reads the same
+everywhere:
+
+- Title: **`Combine these machines?`** Below it, honest situation copy in the
+  hint tier: specs match / specs differ / specs unknown — never a fake
+  confidence.
+- Three exits, all visible, every state one tap deep: **`Same setup`** /
+  **`Scaled estimate…`** (opens a factor input above the actions — the other
+  two exits stay visible) / **`Keep separate`**.
+- Confirmed same-setup → merged solid chart titled `A + B`, footnote
+  `Combined — you marked these machines as the same setup`, with `change`.
+- Scaled → dashed estimate with legend `×N · your assumption`, a footnote
+  naming the upgrade path, and `change` (reopens prefilled).
+- Rejected → separate charts plus a quiet **`Combine machines…`** link — the
+  decision is reversible, so the door stays visible but silent.
+- Basis strings are snapshots, not re-derivations: `owner-declared same setup`,
+  `owner-declared ×N (…)`.
+
 ## Absence is a vocabulary, not one string
 
 **The governing rule: absence is stated in words, never as `0`.** A zero claims a

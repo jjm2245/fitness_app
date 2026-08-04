@@ -6073,3 +6073,107 @@ has a shipped consumer (delta state 2 renders bright); the deferred table gains
 the ratio-overlay tripwire and the LFS-measurement backlog line. Two open UX
 questions recorded, not resolved: the calendar-month PR counter and
 machine-switch delta legibility — both awaiting phone review.
+
+## 2026-08-04 — Stats v1.1: hub hero, index redesign, Recharts, the combine flow (push HELD on G1)
+
+Committed locally; **not pushed** — the round carries migration 0037
+(`equipment_comparability.factor`) with `EXPECTED_MIGRATIONS = 38`, and prod is
+at 37. Pushing before the prod migration would fail health AND the comparability
+routes (`loadDecisions` selects `factor`). G1 requires proposing the migration
+and waiting for approval; the deploy sequence on approval is the same as
+0036/0037: migrate prod (direct endpoint) → counts → push → health 38/38 →
+content-hash the chunks.
+
+### G1 — migration 0037, proposed and held
+
+`factor numeric NULL` on `equipment_comparability`, plus two CHECKs:
+`eq_comp_factor_positive` (NULL or > 0) and `eq_comp_owner_ratio_needs_factor` —
+a **confirmed** owner-declared `ratio_estimate` row must carry its factor,
+because the declaration IS the number (deleting the row would delete it; no
+other table knows it). The CHECK was narrowed to `status='confirmed'` after a
+live catch: the unqualified version made *rejecting* a previously-scaled pair
+impossible ("keep separate" carries no ratio, and shouldn't). Down path:
+drop both CHECKs, drop the column. Basis conventions for owner rows:
+`owner-declared same setup` / `owner-declared ×N (…)` — checked by prefix in
+the app, recorded in the migration comment.
+
+### G2 — charts are Recharts direct; shadcn skipped with reasons
+
+shadcn's chart wrapper requires Tailwind; this repo is CSS Modules on DESIGN
+tokens. Adopting it would have been a stack migration smuggled inside a chart
+migration — skipped, Recharts 3.10.1 imported directly. The entire token
+contract landed with **zero per-piece SVG fallbacks**: CSS vars only (no hex —
+greped), own tick/label renderers in mono, accent line + gradient area, PR dots
+`--accent-2` larger, estimated series dashed/open-circle/italic `RAW → est N`,
+time-true x, padded y, no `<Legend>`, no default palette. One Recharts trap
+worth recording: **label callbacks receive index but NOT payload** — each
+series' label renderer must close over its own points array. Indexing the
+primary series from the estimated line's labels rendered the wrong numbers
+(`100 → est 100` where the estimate was 400) — caught live, fixed in
+`pointLabel(series, est)`.
+
+### G3 — trend words from the shipped engine, verbatim
+
+`src/lib/trendVerdict.ts` is a thin adapter over the progression engine: the
+engine's own verdict identifiers with underscores read as spaces (`hold`,
+`progressing`, `increase load`, `true stall`, `regression`,
+`insufficient data`, `new machine baseline`), the `/api/progression` route's
+own defaults (repRangeMax 12, targetRir 2, stallSessionThreshold 3). No local
+word list (the checklist greps for one — the only matches are comments), no
+forked thresholds. Consequence the owner will see: a lane rising
+100→110→120→130 lb reads **`hold`**, because the engine's positive verdicts
+are rep-ceiling-gated (`increase_load`) or reps-rising (`progressing`) — Stats
+now agrees with Train by construction, including where the engine's word is
+conservative.
+
+### Screens
+
+- **Hub hero**: Exercises as the one live zone — gradient wash, event line
+  `Last PR · <exercise> <value> · <Nd ago>` (computed `no PRs yet` zero state,
+  verified by fixture injection), working-set sparkline over the last 8
+  sessions, terminal dot `--accent-2` iff the latest session minted a PR. The
+  v1 `N tracked · N PRs` subline is deleted — which also **resolves the
+  calendar-month PR counter question** recorded at v1 (the surface no longer
+  exists). The machine-switch delta question is resolved as accepted: the sort
+  chip gives the timeline explicit ordering context.
+- **Index**: Equipment's header anatomy (live search + Recently trained / A–Z /
+  Z–A / Most sessions, persisted); meta line
+  `<trend> · PR <Nd ago> · <N> sessions` (reps lanes omit the PR fact); right
+  column = small-caps BEST/LAST over a mono value; accent left edge is the only
+  colour on positive rows. Slot order is kept constant on 1-session rows
+  (`<word> · no PR yet · 1 session`) rather than the brief's
+  `1 session · <word>` — flagged, not silently deviated.
+- **Exercise screen**: back control both views; sort chip always visible
+  (`by date ↓` / `by load` / `by reps`); tonnage removed from rows; portable
+  header reads `no machine`; Chart view = charts + full session list; tapping
+  a point scrolls to and highlights its row.
+- **Combine flow**: one card per undecided pair, three exits always visible,
+  every state one tap deep (a live catch: opening the factor input had hidden
+  the other exits — fixed by always rendering the actions row). One live
+  decision per pair — writing a decision deletes the other kind's rows.
+  Verified end-to-end live: undecided → ×2 → reopen prefilled → ×1.8 → reject →
+  re-combine same-setup, with **List and index byte-identical under every
+  state** and per-machine PR chips unchanged (4 chips ≡ 4 chart dots under the
+  merge).
+
+### Accumulated fixes
+
+- `plural()` in statsShape: `1 fewer rep` / `2 more reps` / `held at 1 rep` —
+  exact-string tests both currencies.
+- Chart PR dots ≡ list chips **by construction**: `shapeLane()` computes rows,
+  points and `prSetIds` in one pass from one `markPrs` call.
+- Chart math unit-tested: time-true x fractions, degenerate single-date → 0.5,
+  padded y domain (flat series get a synthetic pad).
+
+### Checklist snags worth keeping
+
+The two live-prod checklist items (Ab Crunch Jul 14 PR in both views; Decline
+Russian Twist single-session line) are **blocked pre-deploy by design** — the
+v1.1 build cannot point at prod until 0037 runs there. Verified at the data
+level read-only instead: Ab Crunch Jul 14 is the first session on its lane
+(140 lb top working set → mints under markPrs; prod has since added an Aug 3
+session at 150 — a new PR); Decline Russian Twist has exactly one session
+(Aug 3, `dumbbell:unspecified`). Re-run the two view checks right after the G1
+deploy. Local fixtures (fixA/fixB shoulder-press sessions, pullups, the
+comparability rows) created for the lifecycle verification were deleted after —
+local workout_logs 88–95.

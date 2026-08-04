@@ -157,22 +157,51 @@ export function deltaText(
 ): string {
   if (d.state === 6) return hasUnit ? "first session on this machine" : "first session";
   if (d.mode === "reps") {
-    if (d.state === 1) return `+${d.dReps} reps`;
-    if (d.state === 3) return `held at ${d.dReps} reps`;
-    return `−${Math.abs(d.dReps ?? 0)} reps`;
+    if (d.state === 1) return `+${plural(d.dReps!, "rep")}`;
+    if (d.state === 3) return `held at ${plural(d.dReps!, "rep")}`;
+    return `−${plural(Math.abs(d.dReps ?? 0), "rep")}`;
   }
   switch (d.state) {
     case 1:
       return `+${w(d.dLoad!)} ${unit}`;
     case 2:
-      return `same load · ${d.dReps} more reps`;
+      return `same load · ${plural(d.dReps!, "more rep", "more reps")}`;
     case 3:
       return `held at ${w(d.load!)} ${unit}`;
     case 4:
-      return `same load · ${Math.abs(d.dReps!)} fewer reps`;
+      return `same load · ${plural(Math.abs(d.dReps!), "fewer rep", "fewer reps")}`;
     case 5:
       return `−${w(Math.abs(d.dLoad!))} ${unit}`;
   }
+}
+
+/** `1 rep` / `2 reps` — the singular slipped through v1 ("1 fewer reps"). One
+ *  helper for both currencies so the two can't diverge again. */
+export function plural(n: number, singular: string, pluralForm?: string): string {
+  return `${n} ${n === 1 ? singular : pluralForm ?? `${singular}s`}`;
+}
+
+
+/**
+ * TIME-TRUE x positions: fraction 0..1 proportional to real dates, so a
+ * two-week gap LOOKS like a two-week gap. Equal-date degenerate span centers.
+ */
+export function xFractions(dates: string[]): number[] {
+  if (dates.length <= 1) return dates.map(() => 0.5);
+  const ts = dates.map((d) => Date.parse(`${d}T00:00:00Z`));
+  const min = Math.min(...ts);
+  const span = Math.max(...ts) - min;
+  if (span === 0) return ts.map(() => 0.5);
+  return ts.map((t) => (t - min) / span);
+}
+
+/** Y domain padded ~10% beyond the lane's min/max so no point sits on the
+ *  frame. A flat series still gets breathing room. */
+export function paddedDomain(values: number[]): [number, number] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = (max - min || Math.max(Math.abs(max), 1) * 0.2) * 0.1;
+  return [min - pad, max + pad];
 }
 
 /** Net change since the lane began — the index's arc subline. Same grammar,
@@ -201,4 +230,78 @@ export function groupLaneSessions<
     sess.sets.push({ id: r.id, setIndex: r.setIndex, setType: r.setType, load: r.load, reps: r.reps, dropGroup: r.dropGroup });
   }
   return lanes;
+}
+
+// ── Lane shaping: rows + chart points from ONE pass, ONE PR source ─────────
+//
+// v1 computed the session rows and the chart points in separate loops inside
+// the route; both read the same flags, but nothing STRUCTURAL kept them in
+// agreement. Chart PR dots must byte-match the List chips, so both now come
+// out of this single function and the fixture test asserts the equivalence.
+
+export interface ShapedRow {
+  workoutLogId: number;
+  date: string;
+  figure: { load: number; reps: number } | null;
+  repsList: number[] | null;
+  setsCount: number;
+  delta: Delta;
+  isPr: boolean;
+}
+
+export interface ShapedPoint {
+  workoutLogId: number;
+  date: string;
+  value: number;
+  reps: number;
+  isPr: boolean;
+}
+
+export function shapeLane(
+  sessions: LaneSession[],
+  mode: LaneMode,
+  markPrsFn: (
+    sets: Array<{ key: string | number; load: number; setType: "warmup" | "working"; isDropSegment: boolean }>,
+    priorBest: number | null
+  ) => Set<string | number>
+): { rows: ShapedRow[]; points: ShapedPoint[]; prSetIds: Set<string | number> } {
+  const allSets = sessions.flatMap((s) =>
+    s.sets.map((st) => ({
+      key: st.id,
+      load: st.load,
+      setType: st.setType,
+      isDropSegment: isDropSegment(st, s.sets),
+    }))
+  );
+  const prSetIds = markPrsFn(allSets, null);
+
+  const rows: ShapedRow[] = [];
+  const points: ShapedPoint[] = [];
+  let prev: Figure | null = null;
+
+  for (const s of sessions) {
+    const fig = sessionFigure(s.sets);
+    const isPr = mode === "loaded" && s.sets.some((st) => prSetIds.has(st.id));
+    rows.push({
+      workoutLogId: s.workoutLogId,
+      date: s.date,
+      figure: fig ? { load: fig.load, reps: fig.reps } : null,
+      repsList: mode === "reps" ? s.sets.filter((st) => st.setType === "working").map((st) => st.reps) : null,
+      setsCount: workingSetCount(s.sets),
+      delta: delta(prev, fig ?? { load: 0, reps: 0, setId: -1, totalReps: 0 }, mode),
+      isPr,
+    });
+    if (fig) {
+      points.push({
+        workoutLogId: s.workoutLogId,
+        date: s.date,
+        value: mode === "loaded" ? fig.load : fig.reps,
+        reps: fig.reps,
+        // SAME flag as the row — never recomputed. The fixture test pins this.
+        isPr,
+      });
+      prev = fig;
+    }
+  }
+  return { rows, points, prSetIds };
 }
