@@ -6024,3 +6024,52 @@ EXPECTED_MIGRATIONS is 37 in this commit, so THE PUSH IS HELD TOO — deploying
 code that expects a table prod lacks would 500 the exercise screen's
 comparability read. Prod order on approval: migrate prod (direct endpoint) →
 push → verify health 37/37 and the new chunks by content hash.
+
+---
+
+## 2026-08-04 (Stats v1 follow-up) — deploy, NULL-spec verification, docs
+
+### The path question, settled by `ls` rather than assertion
+
+`prs.ts`, `comparability.ts`, `statsShape.ts`, `statsQuery.ts` and `laneKey`
+(in `equipment.ts`) all live in `src/lib/`; `src/core/` holds exactly its five
+engine modules. **No doc claimed otherwise** — the `core/` attribution existed
+only in the build brief, and the 2026-08-01 entry already records the
+deviation. Nothing to correct; recorded so the check itself is on file.
+
+### LifeFitnessShoulder as a first-class NULL-spec test asset
+
+Until the owner measures it at the gym, NULL is the truth and Stats degrades
+around it rather than papering over it:
+
+- **Token-leak test added** (`statsShape.test.ts`): `laneLabel` across all four
+  lane shapes and `deltaText` across all six states × both currencies × both
+  machine-word forms never emit `null` / `undefined` / `NaN`. A unit id with no
+  equipment row falls back to the id string, never `undefined`.
+- **Transition-readiness test added** (`comparability.test.ts`): the exact
+  VSL18 + LFS pair, all-NULL → no suggestion; facts filled → `same_setup`
+  fires with the FILLED values quoted in the basis (10 / 200 / 1:1) plus the
+  cam caveat; a PARTIAL fill (max without increment) still refuses. Suggestions
+  are computed on demand at request time — no store, no cache — so the gym
+  visit activates the engine with zero code changes, no restart, no
+  invalidation step.
+- **Spec-read surface verified by grep**: equipment spec columns appear only in
+  `loadUnitSpecs`; the index route consumes labels alone; the exercise route
+  passes specs solely into `suggestFor`. No screen fetches equipment; no spec
+  value can reach a rendered string outside a suggestion basis.
+- `laneLabel` / `PORTABLE_LANE` moved from `statsQuery.ts` (imports the db
+  client) into pure `statsShape.ts`, re-exported for the routes — display rules
+  must be testable without a database.
+
+### Docs
+
+DESIGN.md's absence vocabulary gains the two machine-absence terms
+("no machine" = permanent correct NULL; italic "unspecified" = pooled
+context-bound lane) and the state-6 string PAIR, recorded together so the two
+renderings can't drift apart. CURRENT_STATE §10's placeholder inventory is
+replaced with shipped reality including WHY comparability is dormant
+(both-unknown ≠ both-known); §11 notes the reps-carry-progress constraint now
+has a shipped consumer (delta state 2 renders bright); the deferred table gains
+the ratio-overlay tripwire and the LFS-measurement backlog line. Two open UX
+questions recorded, not resolved: the calendar-month PR counter and
+machine-switch delta legibility — both awaiting phone review.

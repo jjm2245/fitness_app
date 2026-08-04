@@ -10,8 +10,7 @@ import {
   groupLaneSessions,
   figureSets,
   type Figure,
-  type StatSet,
-} from "../statsShape";
+  type StatSet, laneLabel, PORTABLE_LANE } from "../statsShape";
 
 const set = (id: number, load: number, reps: number, over: Partial<StatSet> = {}): StatSet => ({
   id,
@@ -159,5 +158,42 @@ describe("lane mode and the arc", () => {
   it("arc is net first→latest; single session is state 6", () => {
     expect(deltaText(arc(fig(140, 10), fig(160, 8), "loaded", 3))).toBe("+20 lb");
     expect(arc(fig(140, 10), fig(140, 10), "loaded", 1).state).toBe(6);
+  });
+});
+
+describe("absence tokens never leak into rendered strings (NULL-spec unit)", () => {
+  // The live subject is LifeFitnessShoulder — every spec NULL, pulley unknown.
+  // Its LANE must render from label + logged loads alone; no string surface may
+  // contain "null", "undefined" or "NaN".
+  const leaky = (s: string) => /\bnull\b|\bundefined\b|\bNaN\b/i.test(s);
+  const w = (lb: number) => String(lb);
+
+  it("laneLabel: unit label, pooled 'unspecified', portable 'no machine' — never a token", () => {
+    const labels = new Map([["lfs", "LifeFitnessShoulder"]]);
+    for (const lane of ["lfs", "selectorized:unspecified", PORTABLE_LANE, "some-unknown-id"]) {
+      const out = laneLabel(lane, labels);
+      expect(leaky(out), out).toBe(false);
+    }
+    // An id with no unit row falls back to the ID STRING, not undefined.
+    expect(laneLabel("ghost-id", labels)).toBe("ghost-id");
+  });
+
+  it("deltaText: all six states, both currencies, machine and no-machine — clean", () => {
+    const figs: Array<[Figure | null, Figure]> = [
+      [null, { load: 50, reps: 10, setId: 1, totalReps: 30 }],
+      [{ load: 50, reps: 10, setId: 1, totalReps: 30 }, { load: 60, reps: 8, setId: 2, totalReps: 24 }],
+      [{ load: 50, reps: 10, setId: 1, totalReps: 30 }, { load: 50, reps: 12, setId: 2, totalReps: 36 }],
+      [{ load: 50, reps: 10, setId: 1, totalReps: 30 }, { load: 50, reps: 10, setId: 2, totalReps: 30 }],
+      [{ load: 50, reps: 10, setId: 1, totalReps: 30 }, { load: 50, reps: 8, setId: 2, totalReps: 24 }],
+      [{ load: 50, reps: 10, setId: 1, totalReps: 30 }, { load: 40, reps: 10, setId: 2, totalReps: 30 }],
+    ];
+    for (const mode of ["loaded", "reps"] as const) {
+      for (const [prev, curr] of figs) {
+        for (const hasUnit of [true, false]) {
+          const out = deltaText(delta(prev, curr, mode), w, "lb", hasUnit);
+          expect(leaky(out), out).toBe(false);
+        }
+      }
+    }
   });
 });

@@ -296,6 +296,8 @@ don't; collapsing them into one string would lose information the user needs:
 | `rest —` | **This particular one wasn't recorded.** Other rests were. | Rest edge between set rows |
 | `no rest` | **A recorded, deliberate zero** — e.g. a unilateral L→R turnaround. | Rest edge, when `restSeconds === 0` |
 | `unknown` | **The value exists in the world but was never measured.** | Built-in weight placeholder; `pulley_ratio_kind` |
+| `no machine` | **Permanent, correct NULL** — portable/bodyweight work has no unit to name, ever. | Stats machine tags (index rows, timeline rows, chart sections) |
+| `unspecified` | **Context-bound, no unit picked** — a POOLED lane whose numbers average across unknown machines. Italic, to read as softer than a named unit. | Stats machine tags |
 
 **`rest —` versus `no rest` is the pair worth understanding**, because it is the
 whole principle in two adjacent strings. `null` renders `rest —` ("not
@@ -311,7 +313,12 @@ list simply hides the badge when it is unknown). The meaning is the same in both
 — *not determined* — but one is text on screen and the other is a value in the
 database. Not drift; worth knowing before treating every `unknown` as a string.
 
-**Pick from this list rather than inventing a sixth.** If a new surface needs an
+**One string PAIR travels with these:** delta state 6 reads
+`first session on this machine` on machine lanes and `first session` on
+no-machine lanes — the longer form would be false for Pullups. They are one
+state with two renderings, recorded together so they can't drift independently.
+
+**Pick from this list rather than inventing a new term.** If a new surface needs an
 absence state, one of these five almost certainly already carries the meaning.
 
 ## Advisories never block

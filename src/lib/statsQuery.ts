@@ -11,7 +11,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { equipment, equipmentComparability, exercises, setLogs, workoutLogs } from "@/db/schema";
 import { laneKey } from "@/lib/equipment";
-import type { StatSet } from "@/lib/statsShape";
+import { PORTABLE_LANE, type StatSet } from "@/lib/statsShape";
 
 export interface StatRow extends StatSet {
   exerciseId: string;
@@ -24,14 +24,9 @@ export interface StatRow extends StatSet {
   hasUnit: boolean;
 }
 
-export const PORTABLE_LANE = "portable";
-
-/** On-screen machine tag for a lane key. The word "lane" never renders. */
-export function laneLabel(lane: string, unitLabels: Map<string, string>): string {
-  if (lane === PORTABLE_LANE) return "no machine";
-  if (lane.endsWith(":unspecified")) return "unspecified";
-  return unitLabels.get(lane) ?? lane;
-}
+// Pure display/grouping helpers live in statsShape (testable without a db
+// client); re-exported here so the routes keep one import surface.
+export { PORTABLE_LANE, laneLabel } from "@/lib/statsShape";
 
 export async function loadStatRows(exerciseId?: string): Promise<StatRow[]> {
   const base = db

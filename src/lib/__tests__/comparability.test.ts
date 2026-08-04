@@ -131,3 +131,71 @@ describe("NULL-unit lanes and decisions (checklist 7–8)", () => {
     expect(parseRatio(null)).toBeNull();
   });
 });
+
+describe("transition readiness — filling a NULL-spec unit activates the engine, nothing else", () => {
+  // The live case this rehearses: LifeFitnessShoulder carries every spec NULL
+  // and pulley 'unknown'. The owner will measure it at the gym and fill the
+  // facts through the existing equipment form. That edit alone — no migration,
+  // no restart, no cache step — must surface the suggestion, because
+  // suggestions are COMPUTED ON DEMAND from the unit rows at request time and
+  // never stored.
+  const vsl18 = unit("VSL18", {
+    equipmentType: "selectorized",
+    pulleyRatioKind: "1:1",
+    plateIncrement: 10,
+    addOnWeight: 5,
+    stackMax: 200,
+    stackUnit: "lb",
+    builtInWeight: null,
+  });
+
+  it("before the gym visit: all-NULL specs -> no suggestion of any kind", () => {
+    const lfsBefore = unit("LifeFitnessShoulder", {
+      equipmentType: "selectorized",
+      pulleyRatioKind: "unknown",
+      plateIncrement: null,
+      addOnWeight: null,
+      stackMax: null,
+      stackUnit: "lb",
+      builtInWeight: null,
+    });
+    expect(suggestFor([vsl18, lfsBefore], [])).toEqual([]);
+  });
+
+  it("after: same pair, facts filled -> same_setup fires, basis quotes the FILLED values", () => {
+    const lfsAfter = unit("LifeFitnessShoulder", {
+      equipmentType: "selectorized",
+      pulleyRatioKind: "1:1",
+      plateIncrement: 10,
+      addOnWeight: 5,
+      stackMax: 200,
+      stackUnit: "lb",
+      builtInWeight: null,
+    });
+    const out = suggestFor([vsl18, lfsAfter], []);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe("same_setup");
+    // The basis is generated from the actual stored facts — not a template
+    // with placeholders — so the owner reads back exactly what they measured.
+    expect(out[0].basis).toContain("10");
+    expect(out[0].basis).toContain("200");
+    expect(out[0].basis).toContain("1:1");
+    // Cammed caveat: selectorized match must say cams differ across models.
+    expect(out[0].basis.toLowerCase()).toContain("cam");
+    // NO value leaked as a token anywhere in the text.
+    expect(/\bnull\b|\bundefined\b|\bNaN\b/i.test(out[0].basis)).toBe(false);
+  });
+
+  it("a partial fill (max but no increment) still refuses — all facts or nothing", () => {
+    const lfsPartial = unit("LifeFitnessShoulder", {
+      equipmentType: "selectorized",
+      pulleyRatioKind: "1:1",
+      plateIncrement: null,
+      addOnWeight: 5,
+      stackMax: 200,
+      stackUnit: "lb",
+      builtInWeight: null,
+    });
+    expect(suggestFor([vsl18, lfsPartial], [])).toEqual([]);
+  });
+});

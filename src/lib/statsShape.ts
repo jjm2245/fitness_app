@@ -38,6 +38,19 @@ export function figureSets(sets: StatSet[]): StatSet[] {
   return sets.filter((s) => s.setType === "working" && !isDropSegment(s, sets));
 }
 
+/** The null lane's grouping key. On screen it renders "no machine" — the
+ *  permanent, correct absence for portable/bodyweight work. */
+export const PORTABLE_LANE = "portable";
+
+/** On-screen machine tag for a lane key. The word "lane" never renders:
+ *  a named unit shows its label, the pooled context-bound lane shows
+ *  "unspecified" (italic at the call site), the portable lane "no machine". */
+export function laneLabel(lane: string, unitLabels: Map<string, string>): string {
+  if (lane === PORTABLE_LANE) return "no machine";
+  if (lane.endsWith(":unspecified")) return "unspecified";
+  return unitLabels.get(lane) ?? lane;
+}
+
 export type LaneMode = "loaded" | "reps";
 
 export function laneMode(allSets: StatSet[]): LaneMode {
