@@ -6177,3 +6177,36 @@ session at 150 — a new PR); Decline Russian Twist has exactly one session
 deploy. Local fixtures (fixA/fixB shoulder-press sessions, pullups, the
 comparability rows) created for the lifecycle verification were deleted after —
 local workout_logs 88–95.
+
+## 2026-08-05 — Stats v1.1 deployed (G1 executed); one recorded constraint coupling
+
+Deploy per the approved sequence: prod migrated 37→38 on the direct endpoint
+(tables 23 unchanged, `equipment_comparability` 0 rows before and after; both
+CHECKs and the `factor numeric` column verified present by
+`pg_get_constraintdef`), then push `d3d77dc`, health settled 38/38 (one interim
+38/37 poll — old build, new DB, expected), stats chunk
+`1-e74mj-d53xd.js` sha256-identical local vs prod
+(`db86062b…`, carries the v1.1 strings). The two checklist items blocked
+pre-deploy now confirmed at the view level against real prod data: Ab Crunch
+Jul 14 renders as a PR dot (r 4.5, computed `rgb(139,92,246)` = `--accent-2`)
+matching its `★ PR` list chip, and Aug 3's 150 lb renders the same way;
+Decline Russian Twist renders no chart and the exact
+`charts appear after 2 sessions on a machine` line. The hub hero reads
+`Last PR · Ab Crunch Machine 150 lb · 2d ago` with the violet terminal spark
+dot — live data, not fixtures.
+
+**Recorded dependency — `eq_comp_owner_ratio_needs_factor` keys on basis
+text.** The constraint distinguishes owner-declared ratio rows from
+spec-suggested ones by `basis LIKE 'owner-declared%'` — there is no `source`
+column; the basis prefix IS the discriminator. This is accepted coupling, but
+it means **the `owner-declared` prefix wording is constraint-affecting, not
+cosmetic**: renaming it in `writeDecision` (or the API's prefix validation)
+without migrating the CHECK would let a confirmed owner ratio row land without
+its factor. Change the prefix only together with the constraint.
+
+One rendering note for the same reason (verified correct, recorded to prevent
+a false bug report): Decline Russian Twist logs carry `dumbbell` type with no
+unit, and the screen reads **`no machine`** — dumbbells are a portable type,
+so `laneKey()` maps them to the portable lane, not `dumbbell:unspecified`. A
+raw SQL `COALESCE(equipment_id, type||':unspecified', 'portable')` does NOT
+reproduce the lane rule; use `laneKey()`.
